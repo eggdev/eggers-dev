@@ -7,17 +7,15 @@ import Button from "@material-ui/core/Button";
 import Dialog from "@material-ui/core/Dialog";
 import Card from "@material-ui/core/Card";
 import CardHeader from "@material-ui/core/CardHeader";
-import CardMedia from "@material-ui/core/CardMedia";
+import CardContent from "@material-ui/core/CardContent";
 import CardActions from "@material-ui/core/CardActions";
 import Slide from "@material-ui/core/Slide";
-import Typography from "@material-ui/core/Typography";
+
+import DeviceContainers from "../../components/DeviceContainers/DeviceContainers";
 
 const useStyles = makeStyles((theme) => ({
-  cardMedia: {
-    height: 225,
-    margin: `0 auto`,
-    backgroundPosition: "center top",
-    backgroundSize: "cover",
+  cardContent: {
+    overflowY: "auto"
   },
 }));
 
@@ -26,7 +24,7 @@ const Transition = React.forwardRef(function Transition(props, ref) {
 });
 
 const Project = () => {
-  const { cardMedia } = useStyles();
+  const { cardContent } = useStyles();
   const routeMatch = useRouteMatch("/portfolio/:id");
   const history = useHistory();
   const [projectId, setProjectId] = useState(routeMatch.params.id);
@@ -56,7 +54,9 @@ const Project = () => {
     >
       <Card>
         <CardHeader title={title} subheader={description} />
-        <CardMedia className={cardMedia} title={title} image={desktop_image} />
+        <CardContent className={cardContent}>
+          <DeviceContainers projectDetails={project} />
+        </CardContent>
         <CardActions>
           {web_url && (
             <Button

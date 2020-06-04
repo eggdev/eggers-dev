@@ -57,11 +57,13 @@ const Portfolio = () => {
           />
           <Grid container spacing={2} justify="flex-start">
             {filteredProjects.map((project) => (
-              <PortfolioItem
-                key={project._id}
-                data={project}
-                openProjectDialog={openProjectDialog}
-              />
+                project.active && (
+                  <PortfolioItem
+                    key={project._id}
+                    data={project}
+                    openProjectDialog={openProjectDialog}
+                  />
+                )
             ))}
           </Grid>
         </>
