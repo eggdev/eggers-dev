@@ -6,7 +6,6 @@ import MobileContainer from "./Mobile/MobileContainer";
 
 const DeviceContainers = ({ projectDetails }) => {
   const { mobile_image, tablet_image, desktop_image } = projectDetails;
-
   
   return (
     <>
