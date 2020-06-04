@@ -1,6 +1,7 @@
 //https://github.com/the-road-to-learn-react/use-data-api/blob/master/src/index.js
 import { useState, useEffect, useReducer } from "react";
 const API = window.API_URL;
+// const API = "http://localhost:8080";
 
 const fetchReducer = (state, action) => {
   switch (action.type) {
@@ -31,7 +32,6 @@ const useFetch = (requestType) => {
   });
 
   useEffect(() => {
-    console.log(requestType);
     const { path } = requestOptions;
     let didCancel = false;
     const fetchData = async () => {

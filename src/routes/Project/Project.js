@@ -1,23 +1,41 @@
 import React, { useEffect, useState } from "react";
 import { useRouteMatch, useHistory } from "react-router-dom";
-
+import { makeStyles } from "@material-ui/core/styles";
 import useFetch from "../../hooks/useFetch";
-
+import { Language, GitHub } from "@material-ui/icons";
+import Button from "@material-ui/core/Button";
 import Dialog from "@material-ui/core/Dialog";
+import Card from "@material-ui/core/Card";
+import CardHeader from "@material-ui/core/CardHeader";
+import CardMedia from "@material-ui/core/CardMedia";
+import CardActions from "@material-ui/core/CardActions";
 import Slide from "@material-ui/core/Slide";
+import Typography from "@material-ui/core/Typography";
+
+const useStyles = makeStyles((theme) => ({
+  cardMedia: {
+    height: 225,
+    margin: `0 auto`,
+    backgroundPosition: "center top",
+    backgroundSize: "cover",
+  },
+}));
 
 const Transition = React.forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
 });
 
 const Project = () => {
+  const { cardMedia } = useStyles();
   const routeMatch = useRouteMatch("/portfolio/:id");
   const history = useHistory();
   const [projectId, setProjectId] = useState(routeMatch.params.id);
 
-  const [{ data, isLoading, isError, errorData }] = useFetch(
+  const [{ data: project, isLoading, isError, errorData }] = useFetch(
     `projects/${projectId}`
   );
+
+  const { title, description, desktop_image, web_url, github } = project;
 
   const closeProjectDialog = () => {
     history.push(`/portfolio`);
@@ -27,15 +45,47 @@ const Project = () => {
     setProjectId(routeMatch ? routeMatch.params.id : "");
   }, [routeMatch]);
 
-  console.log(data);
   return (
     <Dialog
+      maxWidth="md"
+      fullWidth
       open={routeMatch ? routeMatch.isExact : false}
       onClose={closeProjectDialog}
       TransitionComponent={Transition}
       keepMounted
     >
-      <h1>Hello</h1>
+      <Card>
+        <CardHeader title={title} subheader={description} />
+        <CardMedia className={cardMedia} title={title} image={desktop_image} />
+        <CardActions>
+          {web_url && (
+            <Button
+              size="small"
+              variant="contained"
+              href={web_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              startIcon={<Language />}
+            >
+              Web
+            </Button>
+          )}
+          {github &&
+            github.map((link, index) => (
+              <Button
+                key={`${index}_link`}
+                size="small"
+                variant="contained"
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                startIcon={<GitHub />}
+              >
+                {link.stack_type.replace(/_/g, " ")}
+              </Button>
+            ))}
+        </CardActions>
+      </Card>
     </Dialog>
   );
 };

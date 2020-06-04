@@ -17,9 +17,7 @@ const Portfolio = () => {
   const isExact = routeMatch && routeMatch.isExact;
 
   const [selectedFilter, setSelectedFilter] = useState(null);
-  const [{ data, isLoading, isError, errorData }, setRequestOptions] = useFetch(
-    "projects"
-  );
+  const [{ data, isLoading, isError, errorData }] = useFetch("projects");
 
   const [filteredProjects, setFilteredProjects] = useState(data);
 
@@ -68,7 +66,7 @@ const Portfolio = () => {
           </Grid>
         </>
       )}
-      <Project />
+      {isExact && <Project />}
     </Container>
   );
 };
