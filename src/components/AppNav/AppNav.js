@@ -8,7 +8,7 @@ const AppNav = () => {
       <Toolbar>
         <Link to="/">Home</Link>
         <Link to="/portfolio">Portfolio</Link>
-        <Link to="/history">History</Link>
+        <Link to="/resume">Resume</Link>
       </Toolbar>
     </AppBar>
   );

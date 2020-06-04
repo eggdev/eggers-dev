@@ -3,7 +3,7 @@ import { Route, Switch } from "react-router-dom";
 import RouteContainer from "../components/RouteContainer/RouteContainer";
 
 const Portfolio = lazy(() => import("./Portfolio/Portfolio"));
-const History = lazy(() => import("./History/History"));
+const Resume = lazy(() => import("./Resume/Resume"));
 const Home = lazy(() => import("./Home/Home"));
 const FourOhFour = lazy(() => import("./FourOhFour/FourOhFour"));
 
@@ -13,7 +13,7 @@ const AppRoutes = () => {
       <Suspense fallback={<div>Loading...</div>}>
         <Switch>
           <Route path="/portfolio" component={Portfolio} />
-          <Route path="/history" exact component={History} />
+          <Route path="/resume" exact component={Resume} />
           <Route path="/" exact component={Home} />
           <Route component={FourOhFour} />
         </Switch>
