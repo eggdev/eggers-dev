@@ -12,6 +12,7 @@ import CardActions from "@material-ui/core/CardActions";
 import Slide from "@material-ui/core/Slide";
 
 import DeviceContainers from "../../components/DeviceContainers/DeviceContainers";
+import Technologies from "../../components/Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
   cardContent: {
@@ -33,7 +34,7 @@ const Project = () => {
     `projects/${projectId}`
   );
 
-  const { title, description, desktop_image, web_url, github } = project;
+  const { title, description, web_url, github, primary_technologies, secondary_technologies } = project;
 
   const closeProjectDialog = () => {
     history.push(`/portfolio`);
@@ -56,6 +57,7 @@ const Project = () => {
         <CardHeader title={title} subheader={description} />
         <CardContent className={cardContent}>
           <DeviceContainers projectDetails={project} />
+          <Technologies primary={primary_technologies} secondary={secondary_technologies} />
         </CardContent>
         <CardActions>
           {web_url && (
