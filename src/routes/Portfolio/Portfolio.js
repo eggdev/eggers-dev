@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { useHistory, useRouteMatch } from "react-router-dom";
+import Project from "../Project/Project";
+
 import { getPortfolioItem } from "../../components/PortfolioItems/PortfolioItems";
 import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
 import ErrorComponent from "../../components/ErrorComponent/ErrorComponent";
@@ -9,9 +12,13 @@ import useFetch from "../../hooks/useFetch";
 import { getFiltersArray } from "../../utils/helpers";
 
 const Portfolio = () => {
+  const history = useHistory();
+  const routeMatch = useRouteMatch("/portfolio/:id");
+  const isExact = routeMatch && routeMatch.isExact;
+
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }, setRequestOptions] = useFetch(
-    "portfolio"
+    "projects"
   );
 
   const [filteredProjects, setFilteredProjects] = useState(data);
@@ -33,6 +40,10 @@ const Portfolio = () => {
     );
   }, [data, selectedFilter]);
 
+  const openProjectDialog = (projectInfo) => {
+    history.push(`/portfolio/${projectInfo._id}`);
+  };
+
   return (
     <Container>
       {isLoading ? (
@@ -48,11 +59,16 @@ const Portfolio = () => {
           />
           <Grid container spacing={2} justify="flex-start">
             {filteredProjects.map((project) => (
-              <PortfolioItem key={project._id} data={project} />
+              <PortfolioItem
+                key={project._id}
+                data={project}
+                openProjectDialog={openProjectDialog}
+              />
             ))}
           </Grid>
         </>
       )}
+      <Project />
     </Container>
   );
 };

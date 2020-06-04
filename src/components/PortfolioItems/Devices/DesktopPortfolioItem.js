@@ -52,7 +52,7 @@ const useStyles = makeStyles((theme) => ({
     padding: theme.spacing(1),
   },
 }));
-const DesktopPortfolioItem = ({ data }) => {
+const DesktopPortfolioItem = ({ data, openProjectDialog }) => {
   const {
     cardHeader,
     cardMedia,
@@ -65,7 +65,9 @@ const DesktopPortfolioItem = ({ data }) => {
   } = useStyles();
   const { desktop_image, title, year_built, github, web_url } = data;
 
-  const handleOpenProject = () => console.log("big");
+  const handleOpenProject = () => {
+    openProjectDialog(data);
+  };
 
   return (
     <Grid item xs={12} sm={6} md={4}>
