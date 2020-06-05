@@ -5,10 +5,10 @@ import useFetch from "../../hooks/useFetch";
 import { Language, GitHub } from "@material-ui/icons";
 import Button from "@material-ui/core/Button";
 import Dialog from "@material-ui/core/Dialog";
-import Card from "@material-ui/core/Card";
-import CardHeader from "@material-ui/core/CardHeader";
-import CardContent from "@material-ui/core/CardContent";
-import CardActions from "@material-ui/core/CardActions";
+import DialogTitle from "@material-ui/core/DialogTitle";
+import DialogActions from "@material-ui/core/DialogActions";
+import DialogContent from "@material-ui/core/DialogContent";
+import Typography from "@material-ui/core/Typography";
 import Slide from "@material-ui/core/Slide";
 
 import DeviceContainers from "../../components/DeviceContainers/DeviceContainers";
@@ -16,7 +16,7 @@ import Technologies from "../../components/Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
   cardContent: {
-    overflowY: "auto"
+    overflowY: "auto",
   },
 }));
 
@@ -34,7 +34,14 @@ const Project = () => {
     `projects/${projectId}`
   );
 
-  const { title, description, web_url, github, primary_technologies, secondary_technologies } = project;
+  const {
+    title,
+    description,
+    web_url,
+    github,
+    primary_technologies,
+    secondary_technologies,
+  } = project;
 
   const closeProjectDialog = () => {
     history.push(`/portfolio`);
@@ -53,41 +60,45 @@ const Project = () => {
       TransitionComponent={Transition}
       keepMounted
     >
-      <Card>
-        <CardHeader title={title} subheader={description} />
-        <CardContent className={cardContent}>
-          <DeviceContainers projectDetails={project} />
-          <Technologies primary={primary_technologies} secondary={secondary_technologies} />
-        </CardContent>
-        <CardActions>
-          {web_url && (
+      <DialogTitle>
+        <Typography variant="h4">{title}</Typography> 
+        <Typography variant="body2">{description}</Typography> 
+      </DialogTitle>
+      <DialogContent className={cardContent}>
+        <DeviceContainers projectDetails={project} />
+        <Technologies
+          primary={primary_technologies}
+          secondary={secondary_technologies}
+        />
+      </DialogContent>
+      <DialogActions>
+        {web_url && (
+          <Button
+            size="small"
+            variant="contained"
+            href={web_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            startIcon={<Language />}
+          >
+            Web
+          </Button>
+        )}
+        {github &&
+          github.map((link, index) => (
             <Button
+              key={`${index}_link`}
               size="small"
               variant="contained"
-              href={web_url}
+              href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              startIcon={<Language />}
+              startIcon={<GitHub />}
             >
-              Web
+              {link.stack_type.replace(/_/g, " ")}
             </Button>
-          )}
-          {github &&
-            github.map((link, index) => (
-              <Button
-                key={`${index}_link`}
-                size="small"
-                variant="contained"
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                startIcon={<GitHub />}
-              >
-                {link.stack_type.replace(/_/g, " ")}
-              </Button>
-            ))}
-        </CardActions>
-      </Card>
+          ))}
+      </DialogActions>
     </Dialog>
   );
 };
