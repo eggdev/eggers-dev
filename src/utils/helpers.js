@@ -17,6 +17,10 @@ export const generateFiltersArray = (aggregates, filterOriginKey) => {
   ];
 };
 
+/**
+ * Array of desired filters to display based on key value passed in
+ * @param {*} keyType
+ */
 export const getFiltersArray = (keyType) => {
   switch (keyType) {
     case "primary_technologies":
@@ -24,7 +28,7 @@ export const getFiltersArray = (keyType) => {
         "React",
         "Redux",
         "React Testing Library",
-        "Node",
+        "Express",
         "Mongoose",
         "Material UI",
         "Puppeteer",

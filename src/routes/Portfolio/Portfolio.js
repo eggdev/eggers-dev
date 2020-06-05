@@ -3,7 +3,6 @@ import { useHistory, useRouteMatch } from "react-router-dom";
 import Project from "../Project/Project";
 import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
-import { makeStyles } from "@material-ui/core/styles";
 
 import { getPortfolioItem } from "../../components/PortfolioItems/PortfolioItems";
 import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
@@ -13,14 +12,7 @@ import useFetch from "../../hooks/useFetch";
 
 import { getFiltersArray } from "../../utils/helpers";
 
-const useStyles = makeStyles((theme) => ({
-  fullHeight: {
-    minHeight: "90vh",
-  },
-}));
-
 const Portfolio = () => {
-  const { fullHeight } = useStyles();
   const history = useHistory();
   const routeMatch = useRouteMatch("/portfolio/:id");
   const isExact = routeMatch && routeMatch.isExact;
@@ -52,9 +44,10 @@ const Portfolio = () => {
   };
 
   return (
-    <Container className={fullHeight}>
+    <Container>
       {isLoading ? (
-        <LoadingContainer />
+        // <LoadingContainer />
+        <div></div>
       ) : isError ? (
         <ErrorComponent errorData={errorData} />
       ) : (

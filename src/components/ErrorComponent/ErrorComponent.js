@@ -1,17 +1,16 @@
-import React from 'react';
-import { makeStyles } from '@material-ui/core/styles';
-
-const useStyles = makeStyles(theme => ({
-
-}));
+import React from "react";
+import Container from "@material-ui/core/Container";
+import Typography from "@material-ui/core/Typography";
+import CakeIcon from "@material-ui/icons/Cake";
 
 const ErrorComponent = () => {
-  const classes = useStyles();
-	return (
-    <>
-		  <h1>ErrorComponent Component</h1>
-    </>
-	);
+  return (
+    <Container>
+      <CakeIcon fontSize="large" />
+      <Typography>Something went wrong!</Typography>
+      <Typography>Make a wish for better times!</Typography>
+    </Container>
+  );
 };
 
 export default ErrorComponent;

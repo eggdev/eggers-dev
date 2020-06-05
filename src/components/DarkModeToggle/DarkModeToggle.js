@@ -5,7 +5,7 @@ import { Brightness2, Brightness5 } from "@material-ui/icons";
 
 const useStyles = makeStyles((theme) => ({
   fab: {
-    position: "absolute",
+    position: "fixed",
     bottom: theme.spacing(2),
     left: theme.spacing(2),
     zIndex: theme.zIndex.tooltip,
