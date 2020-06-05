@@ -5,7 +5,6 @@ import CssBaseline from "@material-ui/core/CssBaseline";
 import { makeStyles } from "@material-ui/core/styles";
 import { BrowserRouter as Router } from "react-router-dom";
 import AppRoutes from "./routes/AppRoutes";
-import DarkModeToggle from "./components/DarkModeToggle/DarkModeToggle";
 import SpeedDial from "./components/SpeedDial/SpeedDial";
 import useDarkMode from "./hooks/useDarkMode";
 

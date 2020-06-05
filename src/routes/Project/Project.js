@@ -21,7 +21,9 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const Transition = React.forwardRef(function Transition(props, ref) {
-  return <Slide direction="up" ref={ref} {...props} />;
+  return (
+    <Slide direction="up" mountOnEnter unmountOnExit ref={ref} {...props} />
+  );
 });
 
 const Project = () => {
@@ -30,9 +32,7 @@ const Project = () => {
   const history = useHistory();
   const [projectId, setProjectId] = useState(routeMatch.params.id);
 
-  const [{ data: project }] = useFetch(
-    `projects/${projectId}`
-  );
+  const [{ data: project }] = useFetch(`projects/${projectId}`);
 
   const {
     title,
@@ -53,16 +53,18 @@ const Project = () => {
 
   return (
     <Dialog
-      maxWidth="md"
+      maxWidth="sm"
       fullWidth
-      open={routeMatch ? routeMatch.isExact : false}
+      open={projectId !== ""}
       onClose={closeProjectDialog}
       TransitionComponent={Transition}
       keepMounted
     >
       <DialogTitle>
-        <Typography variant="h4">{title}</Typography> 
-        <Typography variant="body2">{description}</Typography> 
+        <Typography variant="h4" component="span">
+          {title}
+        </Typography>
+        <Typography variant="body2">{description}</Typography>
       </DialogTitle>
       <DialogContent className={cardContent}>
         <DeviceContainers projectDetails={project} />

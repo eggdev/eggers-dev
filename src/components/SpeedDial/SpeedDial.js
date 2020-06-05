@@ -4,7 +4,7 @@ import Fab from "@material-ui/core/Fab";
 import AppsIcon from "@material-ui/icons/Apps";
 import ImportantDevicesIcon from "@material-ui/icons/ImportantDevices";
 import HomeIcon from "@material-ui/icons/Home";
-import OutdoorGrillIcon from "@material-ui/icons/OutdoorGrill";
+// import OutdoorGrillIcon from "@material-ui/icons/OutdoorGrill";
 import WorkIcon from "@material-ui/icons/Work";
 import Link from "../../components/Link/Link";
 import DarkModeToggle from "../DarkModeToggle/DarkModeToggle";

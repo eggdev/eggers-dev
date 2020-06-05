@@ -4,9 +4,9 @@ import Project from "../Project/Project";
 import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
+import Grow from "@material-ui/core/Grow";
 
-import { getPortfolioItem } from "../../components/PortfolioItems/PortfolioItems";
-import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
+import PortfolioItems from "../../components/PortfolioItems/PortfolioItems";
 import ErrorComponent from "../../components/ErrorComponent/ErrorComponent";
 import Filters from "../../components/Filters/Filters";
 import useFetch from "../../hooks/useFetch";
@@ -17,13 +17,9 @@ const Portfolio = () => {
   const history = useHistory();
   const routeMatch = useRouteMatch("/portfolio/:id");
   const isExact = routeMatch && routeMatch.isExact;
-
   const [selectedFilter, setSelectedFilter] = useState(null);
-  const [{ data, isLoading, isError, errorData }] = useFetch("projects");
-
+  const [{ data, isError, errorData }] = useFetch("projects");
   const [filteredProjects, setFilteredProjects] = useState(data);
-
-  const PortfolioItem = getPortfolioItem("desktop");
   const filterArray = getFiltersArray("primary_technologies");
 
   useEffect(() => {
@@ -45,40 +41,43 @@ const Portfolio = () => {
   };
 
   return (
-    <Container>
-      <Grid container item xs={12} justify="center">
-        <Typography gutterBottom={true} variant="h3">
-          Sites Built
-        </Typography>
-        {isLoading ? (
-          // <LoadingContainer />
-          <div></div>
-        ) : isError ? (
-          <ErrorComponent errorData={errorData} />
-        ) : (
-          <>
-            <Filters
-              selectedFilter={selectedFilter}
-              setSelectedFilter={setSelectedFilter}
-              filters={filterArray}
-            />
-            <Grid container spacing={2} justify="flex-start">
-              {filteredProjects.map(
-                (project) =>
-                  project.active && (
-                    <PortfolioItem
-                      key={project._id}
+    <Grid container item xs={12} justify="center">
+      <Typography gutterBottom={true} variant="h3">
+        Sites Built
+      </Typography>
+      {isError ? (
+        <ErrorComponent errorData={errorData} />
+      ) : (
+        <>
+          <Filters
+            selectedFilter={selectedFilter}
+            setSelectedFilter={setSelectedFilter}
+            filters={filterArray}
+          />
+          <Grid container spacing={2} justify="flex-start">
+            {filteredProjects.map(
+              (project, index) =>
+                project.active && (
+                  <Grow
+                    key={project._id}
+                    in={filteredProjects.length > 0}
+                    style={{ transformOrigin: "0 0 0" }}
+                    {...(filteredProjects.length > 0
+                      ? { timeout: index * 1000 }
+                      : {})}
+                  >
+                    <PortfolioItems
                       data={project}
                       openProjectDialog={openProjectDialog}
                     />
-                  )
-              )}
-            </Grid>
-          </>
-        )}
-        {isExact && <Project />}
-      </Grid>
-    </Container>
+                  </Grow>
+                )
+            )}
+          </Grid>
+        </>
+      )}
+      {isExact && <Project />}
+    </Grid>
   );
 };
 

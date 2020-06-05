@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
@@ -7,7 +7,7 @@ import useFetch from "../../hooks/useFetch";
 Moment.globalFormat = "MMM YYYY";
 
 const Jobs = () => {
-  const [{ data, isLoading, isError, errorData }] = useFetch("jobs");
+  const [{ data }] = useFetch("jobs");
   return (
     <Container maxWidth="md">
       <Grid container item xs={12} direction="column" alignItems="center">
