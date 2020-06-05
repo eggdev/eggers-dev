@@ -37,7 +37,7 @@ const routes = [
   { to: "/", icon: HomeIcon, name: "Home" },
   { to: "/portfolio", icon: ImportantDevicesIcon, name: "Portfolio" },
   { to: "/jobs", icon: WorkIcon, name: "Jobs" },
-  { to: "/lab", icon: OutdoorGrillIcon, name: "Lab" },
+  // { to: "/lab", icon: OutdoorGrillIcon, name: "Lab" },
   {
     to: "toggle",
     icon: DarkModeToggle,

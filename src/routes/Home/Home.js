@@ -1,6 +1,7 @@
 import React from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Link from "../../components/Link/Link";
+import SocialIcons from "../../components/SocialIcons/SocialIcons";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 
@@ -41,13 +42,13 @@ const Home = () => {
         </Link>
         .
       </Typography>
-      <Typography variant="h5">
+      {/* <Typography variant="h5">
         See what I've got cooking in the{" "}
         <Link className={navlink} to="/lab" variant="link">
           lab
         </Link>
         .
-      </Typography>
+      </Typography> */}
       <Typography variant="h5">
         Follow the direction of my{" "}
         <Link className={navlink} to="/jobs" variant="link">
@@ -55,7 +56,9 @@ const Home = () => {
         </Link>
         .
       </Typography>
-      <Grid container item xs={12}></Grid>
+      <Grid container item xs={12} justify="center" alignItems="center">
+        <SocialIcons />
+      </Grid>
     </Grid>
   );
 };
