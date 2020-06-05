@@ -42,7 +42,7 @@ const Home = () => {
         .
       </Typography>
       <Typography variant="h5">
-        See what I've got brewing in the{" "}
+        See what I've got cooking in the{" "}
         <Link className={navlink} to="/lab" variant="link">
           lab
         </Link>

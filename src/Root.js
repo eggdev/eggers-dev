@@ -1,10 +1,12 @@
 import React from "react";
 import { ThemeProvider } from "@material-ui/core/styles";
-import { CssBaseline, Box } from "@material-ui/core";
+import Box from "@material-ui/core/Box";
+import CssBaseline from "@material-ui/core/CssBaseline";
 import { makeStyles } from "@material-ui/core/styles";
 import { BrowserRouter as Router } from "react-router-dom";
 import AppRoutes from "./routes/AppRoutes";
 import DarkModeToggle from "./components/DarkModeToggle/DarkModeToggle";
+import SpeedDial from "./components/SpeedDial/SpeedDial";
 import useDarkMode from "./hooks/useDarkMode";
 
 const useStyles = makeStyles((theme) => ({
@@ -24,10 +26,10 @@ const Root = () => {
   return (
     <ThemeProvider theme={muiTheme}>
       <CssBaseline />
-      <DarkModeToggle isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
       <Box className={classes.applicationContainer}>
         <Router>
           <AppRoutes />
+          <SpeedDial isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
         </Router>
       </Box>
     </ThemeProvider>
