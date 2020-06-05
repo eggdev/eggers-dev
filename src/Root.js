@@ -22,7 +22,6 @@ const useStyles = makeStyles((theme) => ({
 const Root = () => {
   const classes = useStyles();
   const { muiTheme, isDarkMode, toggleDarkMode } = useDarkMode();
-
   return (
     <ThemeProvider theme={muiTheme}>
       <CssBaseline />

@@ -1,7 +1,9 @@
 import { useState, useMemo } from "react";
 import { useMediaQuery } from "@material-ui/core";
 import { createMuiTheme } from "@material-ui/core/styles";
-import Theme from "../utils/Theme";
+import Color from "color";
+const defaultFontFamily = ["Maven Pro", "sans-serif"].join(",");
+const primary = "#f2511c";
 
 const useDarkMode = () => {
   const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
@@ -11,9 +13,16 @@ const useDarkMode = () => {
   const muiTheme = useMemo(
     () =>
       createMuiTheme({
-        ...Theme,
+        typography: {
+          fontFamily: defaultFontFamily,
+        },
         palette: {
           type: isDarkMode ? "dark" : "light",
+          primary: {
+            light: Color(primary).lighten(0.95).string(),
+            main: primary,
+            dark: Color(primary).darken(0.5).string(),
+          },
         },
       }),
     [isDarkMode]

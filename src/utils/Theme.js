@@ -1,5 +1,4 @@
 import { createMuiTheme } from "@material-ui/core/styles";
-const defaultFontFamily = ["Maven Pro", "sans-serif"].join(",");
 
 const Theme = createMuiTheme({
   typography: {
@@ -10,7 +9,7 @@ const Theme = createMuiTheme({
       light: "#f2511c",
       main: "#f2511c",
       dark: "#d44703",
-    }
+    },
   },
 });
 
