@@ -4,7 +4,6 @@ import { Route, Switch } from "react-router-dom";
 const Portfolio = lazy(() => import("./Portfolio/Portfolio"));
 const Jobs = lazy(() => import("./Jobs/Jobs"));
 const Lab = lazy(() => import("./Lab/Lab"));
-const Calendar = lazy(() => import("./Calendar/Calendar"));
 const Home = lazy(() => import("./Home/Home"));
 const FourOhFour = lazy(() => import("./FourOhFour/FourOhFour"));
 
