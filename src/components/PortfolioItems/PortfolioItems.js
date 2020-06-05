@@ -101,6 +101,7 @@ const PortfolioItem = ({ data, openProjectDialog }) => {
     mobileCard,
     batteryIcon,
   } = useStyles();
+
   const {
     desktop_image,
     mobile_image,

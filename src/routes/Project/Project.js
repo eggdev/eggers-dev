@@ -11,7 +11,6 @@ import DialogContent from "@material-ui/core/DialogContent";
 import Typography from "@material-ui/core/Typography";
 import Slide from "@material-ui/core/Slide";
 
-import DeviceContainers from "../../components/DeviceContainers/DeviceContainers";
 import Technologies from "../../components/Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
@@ -67,7 +66,6 @@ const Project = () => {
         <Typography variant="body2">{description}</Typography>
       </DialogTitle>
       <DialogContent className={cardContent}>
-        <DeviceContainers projectDetails={project} />
         <Technologies
           primary={primary_technologies}
           secondary={secondary_technologies}

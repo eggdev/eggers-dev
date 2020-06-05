@@ -7,7 +7,9 @@ import HomeIcon from "@material-ui/icons/Home";
 // import OutdoorGrillIcon from "@material-ui/icons/OutdoorGrill";
 import WorkIcon from "@material-ui/icons/Work";
 import Link from "../../components/Link/Link";
-import DarkModeToggle from "../DarkModeToggle/DarkModeToggle";
+import IconButton from "@material-ui/core/IconButton";
+import Brightness2 from "@material-ui/icons/Brightness2";
+import Brightness5 from "@material-ui/icons/Brightness5";
 
 const dialRadius = 32;
 const spacingActions = 16;
@@ -31,6 +33,13 @@ const useStyles = makeStyles((theme) => ({
   actionsClosed: {
     display: "none",
   },
+  iconButton: {
+    background: theme.palette.primary.main,
+    marginTop: theme.spacing(1),
+    "&:hover": {
+      background: theme.palette.primary.dark,
+    },
+  },
 }));
 
 const routes = [
@@ -40,14 +49,18 @@ const routes = [
   // { to: "/lab", icon: OutdoorGrillIcon, name: "Lab" },
   {
     to: "toggle",
-    icon: DarkModeToggle,
     name: "Dark Mode",
   },
 ];
 
 const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
   const [open, setOpen] = useState(false);
-  const { speedDialContainer, actions, actionsClosed } = useStyles();
+  const {
+    speedDialContainer,
+    actions,
+    actionsClosed,
+    iconButton,
+  } = useStyles();
   const handleClick = () => setOpen(!open);
   return (
     <div className={speedDialContainer}>
@@ -57,13 +70,17 @@ const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
       <div className={[actions, !open ? actionsClosed : ""].join(" ")}>
         {routes.map(({ icon: RouteIcon, to, name }) => {
           return to === "toggle" ? (
-            <RouteIcon
-              key={name}
-              isDarkMode={isDarkMode}
-              toggleDarkMode={toggleDarkMode}
-            />
+            <IconButton className={iconButton} onClick={toggleDarkMode}>
+              {isDarkMode ? <Brightness5 /> : <Brightness2 />}
+            </IconButton>
           ) : (
-            <Link key={name} variant="icon" to={to} onClick={handleClick}>
+            <Link
+              className={iconButton}
+              key={name}
+              variant="icon"
+              to={to}
+              onClick={handleClick}
+            >
               <RouteIcon />
             </Link>
           );
