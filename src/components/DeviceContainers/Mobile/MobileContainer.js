@@ -13,7 +13,8 @@ const useStyles = makeStyles(theme => ({
 
 const MobileContainer = ({ mobile_image }) => {
     const classes = useStyles();
-    return <div></div>
+
+    return <div className={classes.mobileProjectContainer} />
     // return <div className={classes.mobileProjectContainer} style={{ backgroundImage: `url(${mobile_image})`}} />
 }
 

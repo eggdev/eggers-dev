@@ -11,8 +11,7 @@ import useDarkMode from "./hooks/useDarkMode";
 const useStyles = makeStyles((theme) => ({
   applicationContainer: {
     position: "relative",
-    minHeight: "100vh",
-    maxHeight: "100vh",
+    minHeight: "100%",
     minWidth: "100vw",
     maxWidth: "100vw",
     overflowX: "hidden",

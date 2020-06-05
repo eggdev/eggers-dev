@@ -30,7 +30,7 @@ const Project = () => {
   const history = useHistory();
   const [projectId, setProjectId] = useState(routeMatch.params.id);
 
-  const [{ data: project, isLoading, isError, errorData }] = useFetch(
+  const [{ data: project }] = useFetch(
     `projects/${projectId}`
   );
 

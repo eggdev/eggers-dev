@@ -12,7 +12,7 @@ const Resume = () => {
 	const { imageTagStyles } = useStyles();
 	return ( 
     <Container maxWidth="md">
-			<img className={imageTagStyles} src={`${process.env.PUBLIC_URL}/resume.png`} />
+			<img alt="Brendan Eggers Resume" className={imageTagStyles} src={`${process.env.PUBLIC_URL}/resume.png`} />
     </Container>
 	);
 };
