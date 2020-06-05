@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useRouteMatch, useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import useFetch from "../../hooks/useFetch";
-import { Language, GitHub } from "@material-ui/icons";
+import Language from "@material-ui/icons/Language";
+import GitHub from "@material-ui/icons/GitHub";
 import Button from "@material-ui/core/Button";
 import Dialog from "@material-ui/core/Dialog";
 import DialogTitle from "@material-ui/core/DialogTitle";
@@ -14,8 +15,13 @@ import Slide from "@material-ui/core/Slide";
 import Technologies from "../../components/Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
+  dialogContainer: {
+    padding: `${theme.spacing(4)}px 0`,
+  },
   cardContent: {
-    overflowY: "auto",
+    display: "flex",
+    justifyContent: "center",
+    flexWrap: "wrap",
   },
 }));
 
@@ -26,7 +32,7 @@ const Transition = React.forwardRef(function Transition(props, ref) {
 });
 
 const Project = () => {
-  const { cardContent } = useStyles();
+  const { cardContent, dialogContainer } = useStyles();
   const routeMatch = useRouteMatch("/portfolio/:id");
   const history = useHistory();
   const [projectId, setProjectId] = useState(routeMatch.params.id);
@@ -58,12 +64,19 @@ const Project = () => {
       onClose={closeProjectDialog}
       TransitionComponent={Transition}
       keepMounted
+      PaperProps={{
+        classes: {
+          root: dialogContainer,
+        },
+      }}
     >
-      <DialogTitle>
-        <Typography variant="h4" component="span">
+      <DialogTitle disableTypography={true}>
+        <Typography variant="h4" align="center">
           {title}
         </Typography>
-        <Typography variant="body2">{description}</Typography>
+        <Typography variant="body2" align="center">
+          {description}
+        </Typography>
       </DialogTitle>
       <DialogContent className={cardContent}>
         <Technologies
@@ -71,7 +84,7 @@ const Project = () => {
           secondary={secondary_technologies}
         />
       </DialogContent>
-      <DialogActions>
+      <DialogActions className={cardContent}>
         {web_url && (
           <Button
             size="small"

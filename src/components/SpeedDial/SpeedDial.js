@@ -10,6 +10,7 @@ import Link from "../../components/Link/Link";
 import IconButton from "@material-ui/core/IconButton";
 import Brightness2 from "@material-ui/icons/Brightness2";
 import Brightness5 from "@material-ui/icons/Brightness5";
+import ClickAwayListener from "@material-ui/core/ClickAwayListener";
 
 const dialRadius = 32;
 const spacingActions = 16;
@@ -63,30 +64,36 @@ const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
   } = useStyles();
   const handleClick = () => setOpen(!open);
   return (
-    <div className={speedDialContainer}>
-      <Fab onClick={handleClick}>
-        <AppsIcon fontSize="large" />
-      </Fab>
-      <div className={[actions, !open ? actionsClosed : ""].join(" ")}>
-        {routes.map(({ icon: RouteIcon, to, name }) => {
-          return to === "toggle" ? (
-            <IconButton className={iconButton} onClick={toggleDarkMode}>
-              {isDarkMode ? <Brightness5 /> : <Brightness2 />}
-            </IconButton>
-          ) : (
-            <Link
-              className={iconButton}
-              key={name}
-              variant="icon"
-              to={to}
-              onClick={handleClick}
-            >
-              <RouteIcon />
-            </Link>
-          );
-        })}
+    <ClickAwayListener onClickAway={() => setOpen(false)}>
+      <div className={speedDialContainer}>
+        <Fab onClick={handleClick}>
+          <AppsIcon fontSize="large" />
+        </Fab>
+        <div className={[actions, !open ? actionsClosed : ""].join(" ")}>
+          {routes.map(({ icon: RouteIcon, to, name }) => {
+            return to === "toggle" ? (
+              <IconButton
+                key={name}
+                className={iconButton}
+                onClick={toggleDarkMode}
+              >
+                {isDarkMode ? <Brightness5 /> : <Brightness2 />}
+              </IconButton>
+            ) : (
+              <Link
+                className={iconButton}
+                key={name}
+                variant="icon"
+                to={to}
+                onClick={handleClick}
+              >
+                <RouteIcon />
+              </Link>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </ClickAwayListener>
   );
 };
 
