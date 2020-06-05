@@ -31,7 +31,6 @@ export const getFiltersArray = (keyType) => {
         "Express",
         "Mongoose",
         "Material UI",
-        "Puppeteer",
         "Angular",
         "Vue",
       ];

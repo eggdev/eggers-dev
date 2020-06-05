@@ -32,10 +32,10 @@ const Home = () => {
     >
       <Typography variant="h3">Hey, I'm Brendan Eggers!</Typography>
       <Typography variant="h5">
-        I'm a Frontend Developer with a focus in React.js.
+        I'm a Frontend Engineer focused in React.js.
       </Typography>
       <Typography variant="h5">
-        Check out the sites I've built in my{" "}
+        Check out what I've built in my{" "}
         <Link className={navlink} to="/portfolio" variant="link">
           portfolio
         </Link>
@@ -49,12 +49,13 @@ const Home = () => {
         .
       </Typography>
       <Typography variant="h5">
-        Grab some time on my{" "}
-        <Link className={navlink} to="/calendar" variant="link">
-          calendar
+        Follow the direction of my{" "}
+        <Link className={navlink} to="/jobs" variant="link">
+          career
         </Link>
         .
       </Typography>
+      <Grid container item xs={12}></Grid>
     </Grid>
   );
 };

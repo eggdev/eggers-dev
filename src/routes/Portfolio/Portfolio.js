@@ -3,6 +3,7 @@ import { useHistory, useRouteMatch } from "react-router-dom";
 import Project from "../Project/Project";
 import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
+import Typography from "@material-ui/core/Typography";
 
 import { getPortfolioItem } from "../../components/PortfolioItems/PortfolioItems";
 import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
@@ -45,33 +46,38 @@ const Portfolio = () => {
 
   return (
     <Container>
-      {isLoading ? (
-        // <LoadingContainer />
-        <div></div>
-      ) : isError ? (
-        <ErrorComponent errorData={errorData} />
-      ) : (
-        <>
-          <Filters
-            selectedFilter={selectedFilter}
-            setSelectedFilter={setSelectedFilter}
-            filters={filterArray}
-          />
-          <Grid container spacing={2} justify="flex-start">
-            {filteredProjects.map(
-              (project) =>
-                project.active && (
-                  <PortfolioItem
-                    key={project._id}
-                    data={project}
-                    openProjectDialog={openProjectDialog}
-                  />
-                )
-            )}
-          </Grid>
-        </>
-      )}
-      {isExact && <Project />}
+      <Grid container item xs={12} justify="center">
+        <Typography gutterBottom={true} variant="h3">
+          Sites Built
+        </Typography>
+        {isLoading ? (
+          // <LoadingContainer />
+          <div></div>
+        ) : isError ? (
+          <ErrorComponent errorData={errorData} />
+        ) : (
+          <>
+            <Filters
+              selectedFilter={selectedFilter}
+              setSelectedFilter={setSelectedFilter}
+              filters={filterArray}
+            />
+            <Grid container spacing={2} justify="flex-start">
+              {filteredProjects.map(
+                (project) =>
+                  project.active && (
+                    <PortfolioItem
+                      key={project._id}
+                      data={project}
+                      openProjectDialog={openProjectDialog}
+                    />
+                  )
+              )}
+            </Grid>
+          </>
+        )}
+        {isExact && <Project />}
+      </Grid>
     </Container>
   );
 };

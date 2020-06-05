@@ -4,8 +4,8 @@ import Fab from "@material-ui/core/Fab";
 import AppsIcon from "@material-ui/icons/Apps";
 import ImportantDevicesIcon from "@material-ui/icons/ImportantDevices";
 import HomeIcon from "@material-ui/icons/Home";
-import CalendarIcon from "@material-ui/icons/CalendarToday";
 import OutdoorGrillIcon from "@material-ui/icons/OutdoorGrill";
+import WorkIcon from "@material-ui/icons/Work";
 import Link from "../../components/Link/Link";
 import DarkModeToggle from "../DarkModeToggle/DarkModeToggle";
 
@@ -36,12 +36,8 @@ const useStyles = makeStyles((theme) => ({
 const routes = [
   { to: "/", icon: HomeIcon, name: "Home" },
   { to: "/portfolio", icon: ImportantDevicesIcon, name: "Portfolio" },
+  { to: "/jobs", icon: WorkIcon, name: "Jobs" },
   { to: "/lab", icon: OutdoorGrillIcon, name: "Lab" },
-  {
-    to: "/calendar",
-    icon: CalendarIcon,
-    name: "Calendar",
-  },
   {
     to: "toggle",
     icon: DarkModeToggle,

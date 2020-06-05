@@ -17,6 +17,7 @@ const useStyles = makeStyles((theme) => ({
     maxWidth: "100vw",
     overflowX: "hidden",
     overflowY: "hidden",
+    padding: theme.spacing(2),
   },
 }));
 
