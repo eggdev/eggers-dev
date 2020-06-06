@@ -51,7 +51,7 @@ const Portfolio = () => {
           Sites Built
         </Typography>
         {isLoading ? (
-          <LoadingContainer isLoading={isLoading} />
+          <LoadingContainer />
         ) : isError ? (
           <ErrorComponent errorData={errorData} />
         ) : (

@@ -4,7 +4,14 @@ import Typography from "@material-ui/core/Typography";
 import Fade from "@material-ui/core/Fade";
 
 const LoadingContainer = ({ isLoading }) => {
+  const [isLoadingLong, setIsLoadingLong] = useState(false);
   const [startFade, setStartFade] = useState(false);
+
+  useLayoutEffect(() => {
+    setTimeout(() => {
+      setIsLoadingLong(true);
+    }, 500);
+  }, [isLoading]);
 
   useLayoutEffect(() => {
     setTimeout(() => {
@@ -14,7 +21,7 @@ const LoadingContainer = ({ isLoading }) => {
 
   return (
     <Grid container justify="center" alignItems="center">
-      <Fade in={isLoading} timeout={500}>
+      <Fade in={isLoadingLong} timeout={500}>
         <Typography variant="h4">Fetching from Heroku</Typography>
       </Fade>
       <Fade in={startFade} timeout={500}>

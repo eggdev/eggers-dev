@@ -18,7 +18,7 @@ const Jobs = () => {
             Job History
           </Typography>
           {isLoading ? (
-            <LoadingContainer isLoading={isLoading} />
+            <LoadingContainer />
           ) : isError ? (
             <ErrorComponent errorData={errorData} />
           ) : (
