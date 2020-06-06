@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect } from "react";
+import React from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import Link from "../../components/Link/Link";
 import SocialIcons from "../../components/SocialIcons/SocialIcons";

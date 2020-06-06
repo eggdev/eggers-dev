@@ -5,7 +5,6 @@ import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import { useTheme } from "@material-ui/core/styles";
 import useMediaQuery from "@material-ui/core/useMediaQuery";
-import Fade from "@material-ui/core/Fade";
 
 import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
 import PortfolioItems from "../../components/PortfolioItems/PortfolioItems";

@@ -9,7 +9,6 @@ import WorkIcon from "@material-ui/icons/Work";
 import SpeedDialAction from "../SpeedDialAction/SpeedDialAction";
 
 import ClickAwayListener from "@material-ui/core/ClickAwayListener";
-import Grow from "@material-ui/core/Grow";
 
 const dialRadius = 32;
 const spacingActions = 16;
