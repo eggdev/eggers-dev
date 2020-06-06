@@ -97,6 +97,16 @@ const Project = () => {
             Web
           </Button>
         )}
+        {github && github.length < 1 && (
+          <Button
+            size="small"
+            variant="contained"
+            disabled
+            startIcon={<GitHub />}
+          >
+            Private
+          </Button>
+        )}
         {github &&
           github.map((link, index) => (
             <Button

@@ -117,15 +117,14 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
   const handleOpenProject = () => {
     openProjectDialog(data);
   };
-  const transitionTimeout = index === 0 ? 400 : index * 400;
   const imgUrl = desktopDevice ? desktop_image : mobile_image;
 
   setTimeout(() => {
     setImageRender(true);
-  }, 400);
+  }, (index + 1) * 100);
 
   return (
-    <Grow in={true} timeout={transitionTimeout}>
+    <Grow in={true} timeout={(index + 1) * 400}>
       <Grid item xs={12} sm={6} lg={4}>
         <Card className={mobileCard}>
           {desktopDevice ? (

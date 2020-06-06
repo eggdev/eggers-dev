@@ -4,10 +4,9 @@ import Fab from "@material-ui/core/Fab";
 import AppsIcon from "@material-ui/icons/Apps";
 import DevicesIcon from "@material-ui/icons/Devices";
 import HomeIcon from "@material-ui/icons/Home";
-import ChildCare from "@material-ui/icons/ChildCare";
 import WorkIcon from "@material-ui/icons/Work";
 import SpeedDialAction from "../SpeedDialAction/SpeedDialAction";
-
+import DeveloperModeIcon from "@material-ui/icons/DeveloperMode";
 import ClickAwayListener from "@material-ui/core/ClickAwayListener";
 
 const dialRadius = 32;
@@ -38,7 +37,7 @@ const routes = [
   { to: "/", icon: HomeIcon, name: "Home" },
   { to: "/portfolio", icon: DevicesIcon, name: "Portfolio" },
   { to: "/jobs", icon: WorkIcon, name: "Jobs" },
-  { to: "/lab", icon: ChildCare, name: "Lab" },
+  { to: "/lab", icon: DeveloperModeIcon, name: "Lab" },
   {
     to: "toggle",
     name: "Dark Mode",

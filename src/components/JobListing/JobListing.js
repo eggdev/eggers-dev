@@ -7,7 +7,7 @@ import Moment from "react-moment";
 const JobListing = ({ jobData: job, index }) => {
   const companySplit = job.company.split("&").join("\n");
   return (
-    <Grow in={true} timeout={index === 0 ? 500 : index * 500}>
+    <Grow in={true} timeout={(index + 1) * 500}>
       <Grid container spacing={2} item xs={12} key={job._id}>
         <Grid item xs={12} sm={5}>
           <Typography
