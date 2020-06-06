@@ -2,8 +2,7 @@ import React from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Link from "../Link/Link";
 import IconButton from "@material-ui/core/IconButton";
-import Brightness2 from "@material-ui/icons/Brightness2";
-import Brightness5 from "@material-ui/icons/Brightness5";
+import Brightness6 from "@material-ui/icons/Brightness6";
 import Grow from "@material-ui/core/Grow";
 
 const useStyles = makeStyles((theme) => ({
@@ -28,11 +27,7 @@ const SpeedDialAction = ({
   return to === "toggle" ? (
     <Grow in={true} timeout={index === 0 ? 500 : index * 500}>
       <IconButton className={iconButton} onClick={toggleDarkMode}>
-        {isDarkMode ? (
-          <Brightness5 color="action" />
-        ) : (
-          <Brightness2 color="action" />
-        )}
+        <Brightness6 color="default" />
       </IconButton>
     </Grow>
   ) : (
@@ -44,7 +39,7 @@ const SpeedDialAction = ({
           to={to}
           onClick={handleClick}
         >
-          <RouteIcon color="action" />
+          <RouteIcon color="default" />
         </Link>
       </div>
     </Grow>

@@ -71,10 +71,10 @@ const Project = () => {
       }}
     >
       <DialogTitle disableTypography={true}>
-        <Typography variant="h4" align="center">
+        <Typography variant="h4" align="center" gutterBottom>
           {title}
         </Typography>
-        <Typography variant="h6" align="center">
+        <Typography variant="h6" align="center" wrap>
           {description}
         </Typography>
       </DialogTitle>
