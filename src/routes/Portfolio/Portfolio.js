@@ -20,10 +20,7 @@ const Portfolio = () => {
   const isExact = routeMatch && routeMatch.isExact;
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }] = useFetch("projects");
-
-  const [filteredProjects, setFilteredProjects] = useState(
-    data.sort((a, b) => (a.year_built < b.year_built ? 1 : -1))
-  );
+  const [filteredProjects, setFilteredProjects] = useState(data);
 
   const filterArray = getFiltersArray("primary_technologies");
   const theme = useTheme();
