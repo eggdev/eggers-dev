@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useLayoutEffect, useState } from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import Card from "@material-ui/core/Card";
 import Grid from "@material-ui/core/Grid";
@@ -13,7 +13,7 @@ import Language from "@material-ui/icons/Language";
 import GitHub from "@material-ui/icons/GitHub";
 import Battery80Icon from "@material-ui/icons/Battery80";
 import Fullscreen from "@material-ui/icons/Fullscreen";
-
+import Grow from "@material-ui/core/Grow";
 import BrowserButtons from "../BrowserButtons/BrowserButtons";
 
 const useStyles = makeStyles((theme) => ({
@@ -85,7 +85,8 @@ const useStyles = makeStyles((theme) => ({
     padding: theme.spacing(1),
   },
 }));
-const PortfolioItem = ({ data, openProjectDialog }) => {
+const PortfolioItem = ({ data, openProjectDialog, index }) => {
+  const [growStart, setGrowStart] = useState(false);
   const theme = useTheme();
   const desktopDevice = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -115,80 +116,90 @@ const PortfolioItem = ({ data, openProjectDialog }) => {
     openProjectDialog(data);
   };
 
-  return (
-    <Grid item xs={12} sm={6} lg={4}>
-      <Card className={mobileCard}>
-        {desktopDevice ? (
-          <CardHeader
-            avatar={<BrowserButtons />}
-            action={<Typography variant="body2">{year_built}</Typography>}
-            classes={{
-              avatar,
-              action,
-              content,
-              subheader,
-            }}
-            className={cardHeader}
-            subheader={title.toLowerCase()}
-          />
-        ) : (
-          <CardHeader
-            avatar={<Typography variant="body2">{year_built}</Typography>}
-            action={<Battery80Icon fontSize="small" className={batteryIcon} />}
-            classes={{
-              avatar,
-              action,
-              content,
-              subheader,
-            }}
-            className={cardHeader}
-            subheader={title.toLowerCase()}
-          />
-        )}
+  useLayoutEffect(() => {
+    setTimeout(() => {
+      setGrowStart(true);
+    }, 250);
+  }, []);
 
-        <CardMedia
-          className={cardMedia}
-          title={title}
-          image={desktopDevice ? desktop_image : mobile_image}
-        />
-        <CardActions disableSpacing>
-          {web_url && (
-            <Button
-              size="small"
-              variant="contained"
-              href={web_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cardButton}
-              startIcon={<Language />}
-            >
-              Web
-            </Button>
+  return (
+    <Grow in={growStart} timeout={index === 0 ? 800 : index * 800}>
+      <Grid item xs={12} sm={6} lg={4}>
+        <Card className={mobileCard}>
+          {desktopDevice ? (
+            <CardHeader
+              avatar={<BrowserButtons />}
+              action={<Typography variant="body2">{year_built}</Typography>}
+              classes={{
+                avatar,
+                action,
+                content,
+                subheader,
+              }}
+              className={cardHeader}
+              subheader={title.toLowerCase()}
+            />
+          ) : (
+            <CardHeader
+              avatar={<Typography variant="body2">{year_built}</Typography>}
+              action={
+                <Battery80Icon fontSize="small" className={batteryIcon} />
+              }
+              classes={{
+                avatar,
+                action,
+                content,
+                subheader,
+              }}
+              className={cardHeader}
+              subheader={title.toLowerCase()}
+            />
           )}
-          {github.map((link, index) => (
-            <Button
-              key={`${index}_link`}
-              size="small"
-              variant="contained"
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cardButton}
-              startIcon={<GitHub />}
-            >
-              {desktopDevice
-                ? link.stack_type.replace(/_/g, " ")
-                : `${link.stack_type
-                    .split("_")[0]
-                    .charAt(0)}${link.stack_type.split("_")[1].charAt(0)}`}
-            </Button>
-          ))}
-          <IconButton className={rightButton} onClick={handleOpenProject}>
-            <Fullscreen />
-          </IconButton>
-        </CardActions>
-      </Card>
-    </Grid>
+
+          <CardMedia
+            className={cardMedia}
+            title={title}
+            image={desktopDevice ? desktop_image : mobile_image}
+          />
+          <CardActions disableSpacing>
+            {web_url && (
+              <Button
+                size="small"
+                variant="contained"
+                href={web_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cardButton}
+                startIcon={<Language />}
+              >
+                Web
+              </Button>
+            )}
+            {github.map((link, index) => (
+              <Button
+                key={`${index}_link`}
+                size="small"
+                variant="contained"
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cardButton}
+                startIcon={<GitHub />}
+              >
+                {desktopDevice
+                  ? link.stack_type.replace(/_/g, " ")
+                  : `${link.stack_type
+                      .split("_")[0]
+                      .charAt(0)}${link.stack_type.split("_")[1].charAt(0)}`}
+              </Button>
+            ))}
+            <IconButton className={rightButton} onClick={handleOpenProject}>
+              <Fullscreen />
+            </IconButton>
+          </CardActions>
+        </Card>
+      </Grid>
+    </Grow>
   );
 };
 
