@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useState } from "react";
+import React from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import Card from "@material-ui/core/Card";
 import Grid from "@material-ui/core/Grid";
@@ -86,7 +86,6 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 const PortfolioItem = ({ data, openProjectDialog, index }) => {
-  const [growStart, setGrowStart] = useState(false);
   const theme = useTheme();
   const desktopDevice = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -116,14 +115,8 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
     openProjectDialog(data);
   };
 
-  useLayoutEffect(() => {
-    setTimeout(() => {
-      setGrowStart(true);
-    }, 250);
-  }, []);
-
   return (
-    <Grow in={growStart} timeout={index === 0 ? 800 : index * 800}>
+    <Grow in={true} timeout={index === 0 ? 800 : index * 600}>
       <Grid item xs={12} sm={6} lg={4}>
         <Card className={mobileCard}>
           {desktopDevice ? (

@@ -12,6 +12,7 @@ import Brightness2 from "@material-ui/icons/Brightness2";
 import Brightness5 from "@material-ui/icons/Brightness5";
 import ClickAwayListener from "@material-ui/core/ClickAwayListener";
 
+import Fade from "@material-ui/core/Fade";
 const dialRadius = 32;
 const spacingActions = 16;
 
@@ -69,29 +70,30 @@ const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
         <Fab onClick={handleClick}>
           <AppsIcon fontSize="large" />
         </Fab>
-        <div className={[actions, !open ? actionsClosed : ""].join(" ")}>
-          {routes.map(({ icon: RouteIcon, to, name }) => {
-            return to === "toggle" ? (
-              <IconButton
-                key={name}
-                className={iconButton}
-                onClick={toggleDarkMode}
-              >
-                {isDarkMode ? <Brightness5 /> : <Brightness2 />}
-              </IconButton>
-            ) : (
-              <Link
-                className={iconButton}
-                key={name}
-                variant="icon"
-                to={to}
-                onClick={handleClick}
-              >
-                <RouteIcon />
-              </Link>
-            );
-          })}
-        </div>
+        <Fade in={open} timeout={500}>
+          <div className={[actions, !open ? actionsClosed : ""].join(" ")}>
+            {routes.map(({ icon: RouteIcon, to, name }, index) => {
+              return to === "toggle" ? (
+                <IconButton
+                  key={name}
+                  className={iconButton}
+                  onClick={toggleDarkMode}
+                >
+                  {isDarkMode ? <Brightness5 /> : <Brightness2 />}
+                </IconButton>
+              ) : (
+                <Link
+                  className={iconButton}
+                  variant="icon"
+                  to={to}
+                  onClick={handleClick}
+                >
+                  <RouteIcon />
+                </Link>
+              );
+            })}
+          </div>
+        </Fade>
       </div>
     </ClickAwayListener>
   );
