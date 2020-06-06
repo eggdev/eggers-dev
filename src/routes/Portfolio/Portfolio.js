@@ -21,25 +21,30 @@ const Portfolio = () => {
   const isExact = routeMatch && routeMatch.isExact;
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }] = useFetch("projects");
+
   const [filteredProjects, setFilteredProjects] = useState(
     data.sort((a, b) => (a.year_built < b.year_built ? 1 : -1))
   );
+
   const filterArray = getFiltersArray("primary_technologies");
   const theme = useTheme();
   const matchDesktop = useMediaQuery(theme.breakpoints.up("md"));
 
   useEffect(() => {
-    setFilteredProjects(
-      selectedFilter
-        ? [
-            ...data.filter(
-              (a) =>
-                a.primary_technologies.includes(selectedFilter) ||
-                a.secondary_technologies.includes(selectedFilter)
-            ),
-          ]
-        : [...data]
-    );
+    setFilteredProjects([]);
+    setTimeout(() => {
+      setFilteredProjects(
+        selectedFilter
+          ? [
+              ...data.filter(
+                (a) =>
+                  a.primary_technologies.includes(selectedFilter) ||
+                  a.secondary_technologies.includes(selectedFilter)
+              ),
+            ]
+          : [...data]
+      );
+    }, 250);
   }, [data, selectedFilter]);
 
   const openProjectDialog = (projectInfo) => {
@@ -47,42 +52,40 @@ const Portfolio = () => {
   };
 
   return (
-    <Fade in={true} timeout={1000}>
-      <Grid container item xs={12} justify="center">
-        <Typography gutterBottom={true} variant="h3">
-          Sites Built
-        </Typography>
-        {isLoading ? (
-          <LoadingContainer />
-        ) : isError ? (
-          <ErrorComponent errorData={errorData} />
-        ) : (
-          <>
-            {matchDesktop && (
-              <Filters
-                selectedFilter={selectedFilter}
-                setSelectedFilter={setSelectedFilter}
-                filters={filterArray}
-              />
+    <Grid container item xs={12} justify="center">
+      <Typography gutterBottom={true} variant="h3">
+        Sites Built
+      </Typography>
+      {isLoading ? (
+        <LoadingContainer />
+      ) : isError ? (
+        <ErrorComponent errorData={errorData} />
+      ) : (
+        <>
+          {matchDesktop && (
+            <Filters
+              selectedFilter={selectedFilter}
+              setSelectedFilter={setSelectedFilter}
+              filters={filterArray}
+            />
+          )}
+          <Grid container spacing={2} justify="flex-start">
+            {filteredProjects.map(
+              (project, index) =>
+                project.active && (
+                  <PortfolioItems
+                    key={project._id}
+                    index={index}
+                    data={project}
+                    openProjectDialog={openProjectDialog}
+                  />
+                )
             )}
-            <Grid container spacing={2} justify="flex-start">
-              {filteredProjects.map(
-                (project, index) =>
-                  project.active && (
-                    <PortfolioItems
-                      key={project._id}
-                      index={index}
-                      data={project}
-                      openProjectDialog={openProjectDialog}
-                    />
-                  )
-              )}
-            </Grid>
-          </>
-        )}
-        {isExact && <Project />}
-      </Grid>
-    </Fade>
+          </Grid>
+        </>
+      )}
+      {isExact && <Project />}
+    </Grid>
   );
 };
 

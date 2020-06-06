@@ -15,6 +15,7 @@ const useStyles = makeStyles((theme) => ({
 
 const Filters = ({ filters = [], selectedFilter, setSelectedFilter }) => {
   const { filterContainer, filter } = useStyles();
+
   return (
     <Grid className={filterContainer} container spacing={1} justify="center">
       <SingleFilter
