@@ -15,6 +15,10 @@ const Jobs = lazy(() => {
   return new Promise((resolve) => resolve(import("./Jobs/Jobs"), 5000));
 });
 
+const Lab = lazy(() => {
+  return new Promise((resolve) => resolve(import("./Lab/Lab"), 5000));
+});
+
 const FourOhFour = lazy(() =>
   import("../components/ErrorComponent/ErrorComponent")
 );
@@ -26,6 +30,7 @@ const AppRoutes = () => {
         <Switch>
           <Route path="/portfolio" component={Portfolio} />
           <Route path="/jobs" exact component={Jobs} />
+          <Route path="/lab" exact component={Lab} />
           <Route path="/" exact component={Home} />
           <Route component={FourOhFour} />
         </Switch>

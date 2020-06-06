@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import Fab from "@material-ui/core/Fab";
 import AppsIcon from "@material-ui/icons/Apps";
-import ImportantDevicesIcon from "@material-ui/icons/ImportantDevices";
+import DevicesIcon from "@material-ui/icons/Devices";
 import HomeIcon from "@material-ui/icons/Home";
-// import OutdoorGrillIcon from "@material-ui/icons/OutdoorGrill";
+import ChildCare from "@material-ui/icons/ChildCare";
 import WorkIcon from "@material-ui/icons/Work";
 import SpeedDialAction from "../SpeedDialAction/SpeedDialAction";
 
@@ -36,9 +36,9 @@ const useStyles = makeStyles((theme) => ({
 
 const routes = [
   { to: "/", icon: HomeIcon, name: "Home" },
-  { to: "/portfolio", icon: ImportantDevicesIcon, name: "Portfolio" },
+  { to: "/portfolio", icon: DevicesIcon, name: "Portfolio" },
   { to: "/jobs", icon: WorkIcon, name: "Jobs" },
-  // { to: "/lab", icon: OutdoorGrillIcon, name: "Lab" },
+  { to: "/lab", icon: ChildCare, name: "Lab" },
   {
     to: "toggle",
     name: "Dark Mode",
