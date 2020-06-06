@@ -16,7 +16,6 @@ import Info from "@material-ui/icons/Info";
 import Grow from "@material-ui/core/Grow";
 import BrowserButtons from "../BrowserButtons/BrowserButtons";
 import Moment from "react-moment";
-Moment.globalFormat = "YYYY";
 
 const useStyles = makeStyles((theme) => ({
   mobileCard: {
@@ -126,7 +125,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
               avatar={<BrowserButtons />}
               action={
                 <Typography variant="body2">
-                  <Moment>{year_built}</Moment>
+                  <Moment format="YYYY">{year_built}</Moment>
                 </Typography>
               }
               classes={{
@@ -142,7 +141,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
             <CardHeader
               avatar={
                 <Typography variant="body2">
-                  <Moment>{year_built}</Moment>
+                  <Moment format="YYYY">{year_built}</Moment>
                 </Typography>
               }
               action={
@@ -178,24 +177,36 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
                 Web
               </Button>
             )}
-            {github.map((link, index) => (
+            {github.length < 1 ? (
               <Button
-                key={`${index}_link`}
-                size="small"
-                variant="contained"
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className={cardButton}
+                variant="contained"
+                size="small"
                 startIcon={<GitHub />}
+                disabled
               >
-                {desktopDevice
-                  ? link.stack_type.replace(/_/g, " ")
-                  : `${link.stack_type
-                      .split("_")[0]
-                      .charAt(0)}${link.stack_type.split("_")[1].charAt(0)}`}
+                Private
               </Button>
-            ))}
+            ) : (
+              github.map((link, index) => (
+                <Button
+                  key={`${index}_link`}
+                  size="small"
+                  variant="contained"
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cardButton}
+                  startIcon={<GitHub />}
+                >
+                  {desktopDevice
+                    ? link.stack_type.replace(/_/g, " ")
+                    : `${link.stack_type
+                        .split("_")[0]
+                        .charAt(0)}${link.stack_type.split("_")[1].charAt(0)}`}
+                </Button>
+              ))
+            )}
             <IconButton className={rightButton} onClick={handleOpenProject}>
               <Info />
             </IconButton>
