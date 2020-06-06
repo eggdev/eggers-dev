@@ -66,8 +66,9 @@ const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
                 toggleDarkMode={toggleDarkMode}
                 handleClick={handleClick}
                 RouteIcon={RouteIcon}
-                to={to}
                 index={index}
+                name={name}
+                to={to}
               />
             ))}
           </div>

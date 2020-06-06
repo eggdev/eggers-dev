@@ -122,7 +122,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
 
   setTimeout(() => {
     setImageRender(true);
-  }, 500);
+  }, 400);
 
   return (
     <Grow in={true} timeout={transitionTimeout}>
@@ -165,7 +165,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
               subheader={title.toLowerCase()}
             />
           )}
-          <Fade in={imageRender} timeout={250}>
+          <Fade in={imageRender} timeout={500}>
             <CardMedia
               component={"img"}
               className={cardMedia}
