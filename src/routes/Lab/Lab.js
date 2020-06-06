@@ -9,30 +9,68 @@ import ListItemText from "@material-ui/core/ListItemText";
 import ListItemAvatar from "@material-ui/core/ListItemAvatar";
 import Divider from "@material-ui/core/Divider";
 import GitHub from "@material-ui/icons/GitHub";
+import HighlightOff from "@material-ui/icons/HighlightOff";
 import Grow from "@material-ui/core/Grow";
 import useFetch from "../../hooks/useFetch";
+import { makeStyles } from "@material-ui/core/styles";
+
+const useStyles = makeStyles((theme) => ({
+  fullWidth: {
+    width: "100%",
+  },
+}));
 
 const Lab = () => {
+  const { fullWidth } = useStyles();
   const [{ data: labs }] = useFetch("lab");
+  const activeProjects = labs.filter((l) => l.github !== "");
+  const futureProjects = labs.filter((l) => l.github === "");
 
   return (
     <Fade in={true} timeout={500}>
-      <Grid container item xs={12} alignItems="center" direction="column">
+      <Grid
+        style={{ margin: "0 auto" }}
+        container
+        item
+        xs={12}
+        md={6}
+        alignItems="center"
+        direction="column"
+      >
         <Typography gutterBottom={true} variant="h3">
-          Work in Progress
+          Laboratory
         </Typography>
-        <Typography variant="h6">Cool things I'm building</Typography>
-        <List>
-          {labs.map((proj, index) => (
-            <Grow in={true} timeout={(index + 1) * 500}>
-              <ListItem
-                key={proj._id}
-                button
-                onClick={() => window.open(`${proj.github}`)}
-              >
+        <List className={fullWidth}>
+          <ListItem>
+            <Typography variant="h5">In Progress</Typography>
+          </ListItem>
+          {activeProjects.map((proj, index) => (
+            <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+              <ListItem button onClick={() => window.open(`${proj.github}`)}>
                 <ListItemAvatar>
                   <Avatar>
                     <GitHub />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={proj.title}
+                  secondary={proj.description}
+                />
+                <Divider />
+              </ListItem>
+            </Grow>
+          ))}
+        </List>
+        <List className={fullWidth}>
+          <ListItem>
+            <Typography variant="h5">Future Projects</Typography>
+          </ListItem>
+          {futureProjects.map((proj, index) => (
+            <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar>
+                    <HighlightOff />
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText
