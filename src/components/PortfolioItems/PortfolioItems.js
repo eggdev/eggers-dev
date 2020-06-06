@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import Card from "@material-ui/core/Card";
 import Grid from "@material-ui/core/Grid";
@@ -14,6 +14,7 @@ import GitHub from "@material-ui/icons/GitHub";
 import Battery80Icon from "@material-ui/icons/Battery80";
 import Info from "@material-ui/icons/Info";
 import Grow from "@material-ui/core/Grow";
+import Fade from "@material-ui/core/Fade";
 import BrowserButtons from "../BrowserButtons/BrowserButtons";
 import Moment from "react-moment";
 
@@ -87,6 +88,7 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 const PortfolioItem = ({ data, openProjectDialog, index }) => {
+  const [imageRender, setImageRender] = useState(false);
   const theme = useTheme();
   const desktopDevice = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -115,9 +117,15 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
   const handleOpenProject = () => {
     openProjectDialog(data);
   };
+  const transitionTimeout = index === 0 ? 400 : index * 400;
+  const imgUrl = desktopDevice ? desktop_image : mobile_image;
+
+  setTimeout(() => {
+    setImageRender(true);
+  }, 500);
 
   return (
-    <Grow in={true} timeout={index === 0 ? 400 : index * 400}>
+    <Grow in={true} timeout={transitionTimeout}>
       <Grid item xs={12} sm={6} lg={4}>
         <Card className={mobileCard}>
           {desktopDevice ? (
@@ -157,12 +165,15 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
               subheader={title.toLowerCase()}
             />
           )}
-
-          <CardMedia
-            className={cardMedia}
-            title={title}
-            image={desktopDevice ? desktop_image : mobile_image}
-          />
+          <Fade in={imageRender} timeout={250}>
+            <CardMedia
+              component={"img"}
+              className={cardMedia}
+              title={title}
+              alt={title}
+              image={imgUrl}
+            />
+          </Fade>
           <CardActions disableSpacing>
             {web_url && (
               <Button

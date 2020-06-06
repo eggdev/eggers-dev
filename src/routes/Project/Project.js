@@ -74,7 +74,7 @@ const Project = () => {
         <Typography variant="h4" align="center" gutterBottom>
           {title}
         </Typography>
-        <Typography variant="h6" align="center" wrap>
+        <Typography variant="h6" align="center">
           {description}
         </Typography>
       </DialogTitle>

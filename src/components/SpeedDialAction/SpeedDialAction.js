@@ -27,7 +27,7 @@ const SpeedDialAction = ({
   return to === "toggle" ? (
     <Grow in={true} timeout={index === 0 ? 500 : index * 500}>
       <IconButton className={iconButton} onClick={toggleDarkMode}>
-        <Brightness6 color="default" />
+        <Brightness6 />
       </IconButton>
     </Grow>
   ) : (
@@ -39,7 +39,7 @@ const SpeedDialAction = ({
           to={to}
           onClick={handleClick}
         >
-          <RouteIcon color="default" />
+          <RouteIcon />
         </Link>
       </div>
     </Grow>
