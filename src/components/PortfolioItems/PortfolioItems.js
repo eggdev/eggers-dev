@@ -12,9 +12,11 @@ import useMediaQuery from "@material-ui/core/useMediaQuery";
 import Language from "@material-ui/icons/Language";
 import GitHub from "@material-ui/icons/GitHub";
 import Battery80Icon from "@material-ui/icons/Battery80";
-import Fullscreen from "@material-ui/icons/Fullscreen";
+import Info from "@material-ui/icons/Info";
 import Grow from "@material-ui/core/Grow";
 import BrowserButtons from "../BrowserButtons/BrowserButtons";
+import Moment from "react-moment";
+Moment.globalFormat = "YYYY";
 
 const useStyles = makeStyles((theme) => ({
   mobileCard: {
@@ -122,7 +124,11 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
           {desktopDevice ? (
             <CardHeader
               avatar={<BrowserButtons />}
-              action={<Typography variant="body2">{year_built}</Typography>}
+              action={
+                <Typography variant="body2">
+                  <Moment>{year_built}</Moment>
+                </Typography>
+              }
               classes={{
                 avatar,
                 action,
@@ -134,7 +140,11 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
             />
           ) : (
             <CardHeader
-              avatar={<Typography variant="body2">{year_built}</Typography>}
+              avatar={
+                <Typography variant="body2">
+                  <Moment>{year_built}</Moment>
+                </Typography>
+              }
               action={
                 <Battery80Icon fontSize="small" className={batteryIcon} />
               }
@@ -187,7 +197,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
               </Button>
             ))}
             <IconButton className={rightButton} onClick={handleOpenProject}>
-              <Fullscreen />
+              <Info />
             </IconButton>
           </CardActions>
         </Card>

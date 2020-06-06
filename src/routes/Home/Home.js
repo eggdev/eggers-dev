@@ -38,7 +38,9 @@ const Home = () => {
       >
         {matches ? (
           <>
-            <Typography variant="h5">Hey, I'm Brendan Eggers!</Typography>
+            <Typography variant="h5" gutterBottom>
+              Hey, I'm Brendan Eggers!
+            </Typography>
             <Typography variant="h6">
               I make cool stuff with React.js.
             </Typography>
@@ -59,9 +61,11 @@ const Home = () => {
           </>
         ) : (
           <>
-            <Typography variant="h3">Hey, I'm Brendan Eggers!</Typography>
-            <Typography variant="h5">
-              I'm a Frontend Engineer focused in React.js.
+            <Typography variant="h3" gutterBottom>
+              Hey, I'm Brendan Eggers!
+            </Typography>
+            <Typography variant="h4">
+              I make cool stuff with React.js.
             </Typography>
             <Typography variant="h5">
               Check out what I've built in my{" "}
@@ -77,7 +81,7 @@ const Home = () => {
           </Link>
           .
         </Typography> */}
-            <Typography variant="h5">
+            <Typography variant="h5" gutterBottom>
               Follow the direction of my{" "}
               <Link className={navlink} to="/jobs" variant="link">
                 career

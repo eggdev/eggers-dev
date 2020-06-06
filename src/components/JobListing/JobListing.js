@@ -20,9 +20,9 @@ const JobListing = ({ jobData: job, index }) => {
           </Typography>
           <Typography variant="h6">{job.job_title}</Typography>
           <Typography variant="body1">
-            <Moment parse="YYYY-MM-DD">{job.start_date}</Moment>
-            {" - "}
-            <Moment parse="YYYY-MM-DD">{job.end_date}</Moment>
+            <Moment>{job.start_date}</Moment>
+            &ndash;
+            <Moment>{job.end_date}</Moment>
           </Typography>
           <Typography variant="body1">{job.location}</Typography>
         </Grid>

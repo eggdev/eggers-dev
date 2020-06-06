@@ -21,7 +21,9 @@ const Portfolio = () => {
   const isExact = routeMatch && routeMatch.isExact;
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }] = useFetch("projects");
-  const [filteredProjects, setFilteredProjects] = useState(data);
+  const [filteredProjects, setFilteredProjects] = useState(
+    data.sort((a, b) => (a.year_built < b.year_built ? 1 : -1))
+  );
   const filterArray = getFiltersArray("primary_technologies");
   const theme = useTheme();
   const matchDesktop = useMediaQuery(theme.breakpoints.up("md"));
