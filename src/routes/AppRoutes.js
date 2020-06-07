@@ -1,5 +1,5 @@
-import React, { Suspense, lazy } from "react";
-import { Route, Switch } from "react-router-dom";
+import React, { useEffect, Suspense, lazy } from "react";
+import { Route, Switch, useLocation } from "react-router-dom";
 import Container from "@material-ui/core/Container";
 import LoadingContainer from "../components/LoadingContainer/LoadingContainer";
 
@@ -24,6 +24,11 @@ const FourOhFour = lazy(() =>
 );
 
 const AppRoutes = () => {
+  const location = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location]);
+
   return (
     <Container>
       <Suspense fallback={<LoadingContainer />}>
