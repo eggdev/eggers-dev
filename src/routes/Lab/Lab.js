@@ -23,8 +23,6 @@ const useStyles = makeStyles((theme) => ({
 const Lab = () => {
   const { fullWidth } = useStyles();
   const [{ data: labs, isLoading }] = useFetch("lab");
-  const activeProjects = labs.filter((l) => l.github !== "");
-  const futureProjects = labs.filter((l) => l.github === "");
 
   return (
     <Fade in={true} timeout={500}>
@@ -48,36 +46,15 @@ const Lab = () => {
               <ListItem>
                 <Typography variant="h5">In Progress</Typography>
               </ListItem>
-              {activeProjects.map((proj, index) => (
+              {labs.map((proj, index) => (
                 <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
                   <ListItem
-                    button
                     onClick={() => window.open(`${proj.github}`)}
+                    {...(proj.github !== "" && { button: true })}
                   >
                     <ListItemAvatar>
                       <Avatar>
-                        <GitHub />
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={proj.title}
-                      secondary={proj.description}
-                    />
-                    <Divider />
-                  </ListItem>
-                </Grow>
-              ))}
-            </List>
-            <List className={fullWidth}>
-              <ListItem>
-                <Typography variant="h5">Future Projects</Typography>
-              </ListItem>
-              {futureProjects.map((proj, index) => (
-                <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
-                  <ListItem>
-                    <ListItemAvatar>
-                      <Avatar>
-                        <HighlightOff />
+                        {proj.github !== "" ? <GitHub /> : <HighlightOff />}
                       </Avatar>
                     </ListItemAvatar>
                     <ListItemText
