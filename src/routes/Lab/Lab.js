@@ -49,8 +49,10 @@ const Lab = () => {
               {labs.map((proj, index) => (
                 <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
                   <ListItem
-                    onClick={() => window.open(`${proj.github}`)}
-                    {...(proj.github !== "" && { button: true })}
+                    {...(proj.github !== "" && {
+                      button: true,
+                      onClick: () => window.open(`${proj.github}`),
+                    })}
                   >
                     <ListItemAvatar>
                       <Avatar>
