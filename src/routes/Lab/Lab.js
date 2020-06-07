@@ -13,7 +13,7 @@ import HighlightOff from "@material-ui/icons/HighlightOff";
 import Grow from "@material-ui/core/Grow";
 import useFetch from "../../hooks/useFetch";
 import { makeStyles } from "@material-ui/core/styles";
-
+import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
 const useStyles = makeStyles((theme) => ({
   fullWidth: {
     width: "100%",
@@ -22,7 +22,7 @@ const useStyles = makeStyles((theme) => ({
 
 const Lab = () => {
   const { fullWidth } = useStyles();
-  const [{ data: labs }] = useFetch("lab");
+  const [{ data: labs, isLoading }] = useFetch("lab");
   const activeProjects = labs.filter((l) => l.github !== "");
   const futureProjects = labs.filter((l) => l.github === "");
 
@@ -40,48 +40,57 @@ const Lab = () => {
         <Typography gutterBottom={true} variant="h3">
           Laboratory
         </Typography>
-        <List className={fullWidth}>
-          <ListItem>
-            <Typography variant="h5">In Progress</Typography>
-          </ListItem>
-          {activeProjects.map((proj, index) => (
-            <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
-              <ListItem button onClick={() => window.open(`${proj.github}`)}>
-                <ListItemAvatar>
-                  <Avatar>
-                    <GitHub />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={proj.title}
-                  secondary={proj.description}
-                />
-                <Divider />
-              </ListItem>
-            </Grow>
-          ))}
-        </List>
-        <List className={fullWidth}>
-          <ListItem>
-            <Typography variant="h5">Future Projects</Typography>
-          </ListItem>
-          {futureProjects.map((proj, index) => (
-            <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+        {isLoading ? (
+          <LoadingContainer />
+        ) : (
+          <>
+            <List className={fullWidth}>
               <ListItem>
-                <ListItemAvatar>
-                  <Avatar>
-                    <HighlightOff />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={proj.title}
-                  secondary={proj.description}
-                />
-                <Divider />
+                <Typography variant="h5">In Progress</Typography>
               </ListItem>
-            </Grow>
-          ))}
-        </List>
+              {activeProjects.map((proj, index) => (
+                <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+                  <ListItem
+                    button
+                    onClick={() => window.open(`${proj.github}`)}
+                  >
+                    <ListItemAvatar>
+                      <Avatar>
+                        <GitHub />
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={proj.title}
+                      secondary={proj.description}
+                    />
+                    <Divider />
+                  </ListItem>
+                </Grow>
+              ))}
+            </List>
+            <List className={fullWidth}>
+              <ListItem>
+                <Typography variant="h5">Future Projects</Typography>
+              </ListItem>
+              {futureProjects.map((proj, index) => (
+                <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+                  <ListItem>
+                    <ListItemAvatar>
+                      <Avatar>
+                        <HighlightOff />
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={proj.title}
+                      secondary={proj.description}
+                    />
+                    <Divider />
+                  </ListItem>
+                </Grow>
+              ))}
+            </List>
+          </>
+        )}
       </Grid>
     </Fade>
   );

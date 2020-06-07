@@ -22,16 +22,16 @@ const LoadingContainer = ({ isLoading }) => {
   return (
     <Grid container justify="center" alignItems="center">
       <Fade in={isLoadingLong} timeout={500}>
-        <Typography variant="h4">Fetching from Heroku</Typography>
+        <Typography variant="h5">Fetching from Heroku</Typography>
       </Fade>
       <Fade in={startFade} timeout={500}>
-        <Typography variant="h4">.</Typography>
+        <Typography variant="h5">.</Typography>
       </Fade>
       <Fade in={startFade} timeout={750}>
-        <Typography variant="h4">.</Typography>
+        <Typography variant="h5">.</Typography>
       </Fade>
       <Fade in={startFade} timeout={1000}>
-        <Typography variant="h4">.</Typography>
+        <Typography variant="h5">.</Typography>
       </Fade>
     </Grid>
   );

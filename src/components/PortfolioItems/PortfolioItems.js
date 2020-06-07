@@ -124,7 +124,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
   }, (index + 1) * 100);
 
   return (
-    <Grow in={true} timeout={(index + 1) * 400}>
+    <Grow in={true} timeout={desktopDevice ? (index + 1) * 400 : 0}>
       <Grid item xs={12} sm={6} lg={4}>
         <Card className={mobileCard}>
           {desktopDevice ? (

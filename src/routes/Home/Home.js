@@ -36,60 +36,33 @@ const Home = () => {
         justify="center"
         direction="column"
       >
-        {matches ? (
-          <>
-            <Typography variant="h5" gutterBottom>
-              Hey, I'm Brendan Eggers!
-            </Typography>
-            <Typography variant="h6">
-              I make cool stuff with React.js.
-            </Typography>
-            <Typography variant="body2">
-              Check out what I've built in my{" "}
-              <Link className={navlink} to="/portfolio" variant="link">
-                portfolio
-              </Link>
-              .
-            </Typography>
-            <Typography variant="body2">
-              Follow the direction of my{" "}
-              <Link className={navlink} to="/jobs" variant="link">
-                career
-              </Link>
-              .
-            </Typography>
-          </>
-        ) : (
-          <>
-            <Typography variant="h3" gutterBottom>
-              Hey, I'm Brendan Eggers!
-            </Typography>
-            <Typography variant="h4">
-              I make cool stuff with React.js.
-            </Typography>
-            <Typography variant="h5">
-              Check out what I've built in my{" "}
-              <Link className={navlink} to="/portfolio" variant="link">
-                portfolio
-              </Link>
-              .
-            </Typography>
-            <Typography variant="h5">
-              Follow the direction of my{" "}
-              <Link className={navlink} to="/jobs" variant="link">
-                career
-              </Link>
-              .
-            </Typography>
-            <Typography variant="h5" gutterBottom>
-              See what's growing in the{" "}
-              <Link className={navlink} to="/lab" variant="link">
-                lab
-              </Link>
-              .
-            </Typography>
-          </>
-        )}
+        <Typography variant={matches ? "h5" : "h3"} gutterBottom>
+          Hey, I'm Brendan Eggers!
+        </Typography>
+        <Typography variant={matches ? "h6" : "h4"}>
+          I make cool stuff with React.js.
+        </Typography>
+        <Typography variant={matches ? "body2" : "h5"}>
+          Check out what I've built in my{" "}
+          <Link className={navlink} to="/portfolio" variant="link">
+            portfolio
+          </Link>
+          .
+        </Typography>
+        <Typography variant={matches ? "body2" : "h5"}>
+          Follow the direction of my{" "}
+          <Link className={navlink} to="/jobs" variant="link">
+            career
+          </Link>
+          .
+        </Typography>
+        <Typography variant={matches ? "body2" : "h5"} gutterBottom>
+          See what's growing in the{" "}
+          <Link className={navlink} to="/lab" variant="link">
+            lab
+          </Link>
+          .
+        </Typography>
         <Grid container item xs={12} justify="center" alignItems="center">
           <SocialIcons />
         </Grid>
