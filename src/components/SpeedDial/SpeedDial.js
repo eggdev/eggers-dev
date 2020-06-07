@@ -21,15 +21,15 @@ const useStyles = makeStyles((theme) => ({
     display: "flex",
     flexDirection: "column-reverse",
     alignItems: "center",
+    "& #apps-fab": {
+      marginTop: theme.spacing(1),
+    },
   },
   actions: {
     display: "flex",
     flexDirection: "column-reverse",
     marginBottom: -dialRadius,
     paddingBottom: spacingActions + dialRadius,
-  },
-  actionsClosed: {
-    display: "none",
   },
 }));
 
@@ -46,32 +46,29 @@ const routes = [
 
 const SpeedDial = ({ isDarkMode, toggleDarkMode }) => {
   const [open, setOpen] = useState(false);
-  const { speedDialContainer, actions } = useStyles();
+  const { speedDialContainer } = useStyles();
   const handleClick = () => setOpen(!open);
 
   return (
     <ClickAwayListener onClickAway={() => setOpen(false)}>
       <div className={speedDialContainer}>
-        <Fab onClick={handleClick}>
+        <Fab onClick={handleClick} id="apps-fab">
           <AppsIcon fontSize="large" />
         </Fab>
-        {open && (
-          <div className={actions}>
-            {routes.map(({ icon: RouteIcon, to, name }, index) => (
-              <SpeedDialAction
-                key={name}
-                open={open}
-                isDarkMode={isDarkMode}
-                toggleDarkMode={toggleDarkMode}
-                handleClick={handleClick}
-                RouteIcon={RouteIcon}
-                index={index}
-                name={name}
-                to={to}
-              />
-            ))}
-          </div>
-        )}
+        {routes.map(({ icon: RouteIcon, to, name }, index) => (
+          <SpeedDialAction
+            key={name}
+            open={open}
+            isDarkMode={isDarkMode}
+            toggleDarkMode={toggleDarkMode}
+            dialLength={routes.length}
+            handleClick={handleClick}
+            RouteIcon={RouteIcon}
+            index={index}
+            name={name}
+            to={to}
+          />
+        ))}
       </div>
     </ClickAwayListener>
   );
