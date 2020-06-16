@@ -18,19 +18,14 @@ const Filters = ({ filters = [], selectedFilter, setSelectedFilter }) => {
 
   return (
     <Grid className={filterContainer} container spacing={1} justify="center">
-      <SingleFilter
-        key="clear"
-        value="All Projects"
-        selected={!selectedFilter}
-        handleClick={() => setSelectedFilter(null)}
-        className={filter}
-      />
       {filters.map((f) => (
         <SingleFilter
           key={f}
           value={f}
-          selected={f === selectedFilter}
-          handleClick={() => setSelectedFilter(f)}
+          selected={
+            f === "All Projects" ? !selectedFilter : f === selectedFilter
+          }
+          handleClick={() => setSelectedFilter(f === "All Projects" ? null : f)}
           className={filter}
         />
       ))}

@@ -25,6 +25,7 @@ export const getFiltersArray = (keyType) => {
   switch (keyType) {
     case "primary_technologies":
       return [
+        "All Projects",
         "React",
         "Redux",
         "React Testing Library",

@@ -14,9 +14,12 @@ import Grow from "@material-ui/core/Grow";
 import useFetch from "../../hooks/useFetch";
 import { makeStyles } from "@material-ui/core/styles";
 import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
+import SuggestionBox from "../../components/SuggestionBox/SuggestionBox";
+
 const useStyles = makeStyles((theme) => ({
   fullWidth: {
     width: "100%",
+    textAlign: "center",
   },
 }));
 
@@ -43,33 +46,42 @@ const Lab = () => {
         ) : (
           <>
             <List className={fullWidth}>
-              <ListItem>
-                <Typography variant="h5">In Progress</Typography>
-              </ListItem>
-              {labs.map((proj, index) => (
-                <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
-                  <ListItem
-                    {...(proj.github !== "" && {
-                      button: true,
-                      onClick: () => window.open(`${proj.github}`),
-                    })}
-                  >
-                    <ListItemAvatar>
-                      <Avatar>
-                        {proj.github !== "" ? <GitHub /> : <HighlightOff />}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={proj.title}
-                      secondary={proj.description}
-                    />
-                    <Divider />
+              {labs.length > 0 ? (
+                <>
+                  <ListItem>
+                    <Typography variant="h5">In Progress</Typography>
                   </ListItem>
-                </Grow>
-              ))}
+                  {labs.map((proj, index) => (
+                    <Grow key={proj._id} in={true} timeout={(index + 1) * 500}>
+                      <ListItem
+                        {...(proj.github !== "" && {
+                          button: true,
+                          onClick: () => window.open(`${proj.github}`),
+                        })}
+                      >
+                        <ListItemAvatar>
+                          <Avatar>
+                            {proj.github !== "" ? <GitHub /> : <HighlightOff />}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={proj.title}
+                          secondary={proj.description}
+                        />
+                        <Divider />
+                      </ListItem>
+                    </Grow>
+                  ))}
+                </>
+              ) : (
+                <Typography variant="h4">
+                  No projects currently in queue
+                </Typography>
+              )}
             </List>
           </>
         )}
+        <SuggestionBox />
       </Grid>
     </Fade>
   );
