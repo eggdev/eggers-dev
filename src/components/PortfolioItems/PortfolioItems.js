@@ -4,6 +4,7 @@ import Card from "@material-ui/core/Card";
 import Grid from "@material-ui/core/Grid";
 import CardHeader from "@material-ui/core/CardHeader";
 import CardMedia from "@material-ui/core/CardMedia";
+import CardContent from "@material-ui/core/CardContent";
 import CardActions from "@material-ui/core/CardActions";
 import Button from "@material-ui/core/Button";
 import IconButton from "@material-ui/core/IconButton";
@@ -12,6 +13,7 @@ import useMediaQuery from "@material-ui/core/useMediaQuery";
 import Language from "@material-ui/icons/Language";
 import GitHub from "@material-ui/icons/GitHub";
 import Battery80Icon from "@material-ui/icons/Battery80";
+import WarningIcon from "@material-ui/icons/Warning";
 import Info from "@material-ui/icons/Info";
 import Grow from "@material-ui/core/Grow";
 import Fade from "@material-ui/core/Fade";
@@ -79,6 +81,20 @@ const useStyles = makeStyles((theme) => ({
       height: 400,
     },
   },
+  cardContent: {
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    background: theme.palette.grey[900],
+    "& svg": {
+      height: "3em",
+      width: "3em",
+    },
+    "& h5": {
+      textAlign: "center",
+    },
+  },
   cardButton: {
     marginLeft: theme.spacing(1),
   },
@@ -95,6 +111,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
   const {
     cardHeader,
     cardMedia,
+    cardContent,
     avatar,
     action,
     content,
@@ -165,13 +182,20 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
             />
           )}
           <Fade in={imageRender} timeout={500}>
-            <CardMedia
-              component={"img"}
-              className={cardMedia}
-              title={title}
-              alt={title}
-              image={imgUrl}
-            />
+            {imgUrl ? (
+              <CardMedia
+                component={"img"}
+                className={cardMedia}
+                title={title}
+                alt={title}
+                image={imgUrl}
+              />
+            ) : (
+              <CardContent className={[cardMedia, cardContent].join(" ")}>
+                <WarningIcon />
+                <Typography variant="h5">UNDER CONSTRUCTION</Typography>
+              </CardContent>
+            )}
           </Fade>
           <CardActions disableSpacing>
             {web_url && (
