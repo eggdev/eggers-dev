@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useRouteMatch, useHistory } from "react-router-dom";
+// import { useRouteMatch, useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
-import useFetch from "../../hooks/useFetch";
+import useFetch from "../hooks/useFetch";
 import Language from "@material-ui/icons/Language";
 import GitHub from "@material-ui/icons/GitHub";
 import Button from "@material-ui/core/Button";
@@ -12,7 +12,7 @@ import DialogContent from "@material-ui/core/DialogContent";
 import Typography from "@material-ui/core/Typography";
 import Slide from "@material-ui/core/Slide";
 
-import Technologies from "../../components/Technologies/Technologies";
+import Technologies from "../components/Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
   dialogContainer: {
@@ -33,9 +33,10 @@ const Transition = React.forwardRef(function Transition(props, ref) {
 
 const Project = () => {
   const { cardContent, dialogContainer } = useStyles();
-  const routeMatch = useRouteMatch("/portfolio/:id");
-  const history = useHistory();
-  const [projectId, setProjectId] = useState(routeMatch.params.id);
+  // const routeMatch = useRouteMatch("/portfolio/:id");
+  // const history = useHistory();
+  // const [projectId, setProjectId] = useState(routeMatch.params.id);
+  const [projectId, setProjectId] = useState("");
 
   const [{ data: project }] = useFetch(`projects/${projectId}`);
 
@@ -49,12 +50,12 @@ const Project = () => {
   } = project;
 
   const closeProjectDialog = () => {
-    history.push(`/portfolio`);
+    // history.push(`/portfolio`);
   };
 
-  useEffect(() => {
-    setProjectId(routeMatch ? routeMatch.params.id : "");
-  }, [routeMatch]);
+  // useEffect(() => {
+  //   setProjectId(routeMatch ? routeMatch.params.id : "");
+  // }, [routeMatch]);
 
   return (
     <Dialog

@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from "react";
-import { useHistory, useRouteMatch } from "react-router-dom";
-import Project from "../Project/Project";
+// import { useHistory, useRouteMatch } from "react-router-dom";
+import Project from "./project";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import { useTheme } from "@material-ui/core/styles";
 import useMediaQuery from "@material-ui/core/useMediaQuery";
 
-import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
-import PortfolioItems from "../../components/PortfolioItems/PortfolioItems";
-import ErrorComponent from "../../components/ErrorComponent/ErrorComponent";
-import Filters from "../../components/Filters/Filters";
-import useFetch from "../../hooks/useFetch";
+import LoadingContainer from "../components/LoadingContainer/LoadingContainer";
+import PortfolioItems from "../components/PortfolioItems/PortfolioItems";
+import ErrorComponent from "../components/ErrorComponent/ErrorComponent";
+import Filters from "../components/Filters/Filters";
+import useFetch from "../hooks/useFetch";
 
-import { getFiltersArray } from "../../utils/helpers";
+import { getFiltersArray } from "../utils/helpers";
 
 const Portfolio = () => {
-  const history = useHistory();
-  const routeMatch = useRouteMatch("/portfolio/:id");
-  const isExact = routeMatch && routeMatch.isExact;
+  // const history = useHistory();
+  // const routeMatch = useRouteMatch("/portfolio/:id");
+  // const isExact = routeMatch && routeMatch.isExact;
+  const isExact = false;
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }] = useFetch("projects");
   const [filteredProjects, setFilteredProjects] = useState(data);
@@ -44,7 +45,7 @@ const Portfolio = () => {
   }, [data, selectedFilter]);
 
   const openProjectDialog = (projectInfo) => {
-    history.push(`/portfolio/${projectInfo._id}`);
+    // history.push(`/portfolio/${projectInfo._id}`);
   };
 
   return (

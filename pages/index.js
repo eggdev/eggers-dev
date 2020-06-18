@@ -1,11 +1,12 @@
 import React from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
-import Link from "../../components/Link/Link";
-import SocialIcons from "../../components/SocialIcons/SocialIcons";
+import CustomLink from "../components/CustomLink/CustomLink";
+import SocialIcons from "../components/SocialIcons/SocialIcons";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import Fade from "@material-ui/core/Fade";
 import useMediaQuery from "@material-ui/core/useMediaQuery";
+
 const useStyles = makeStyles((theme) => ({
   fullHeight: {
     minHeight: "85vh",
@@ -44,23 +45,23 @@ const Home = () => {
         </Typography>
         <Typography variant={matches ? "body2" : "h5"}>
           Check out what I've built in my{" "}
-          <Link className={navlink} to="/portfolio" variant="link">
+          <CustomLink className={navlink} to="/portfolio" variant="link">
             portfolio
-          </Link>
+          </CustomLink>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"}>
           Follow the direction of my{" "}
-          <Link className={navlink} to="/jobs" variant="link">
+          <CustomLink className={navlink} to="/jobs" variant="link">
             career
-          </Link>
+          </CustomLink>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"} gutterBottom>
           See what's growing in the{" "}
-          <Link className={navlink} to="/lab" variant="link">
+          <CustomLink className={navlink} to="/lab" variant="link">
             lab
-          </Link>
+          </CustomLink>
           .
         </Typography>
         <Grid container item xs={12} justify="center" alignItems="center">

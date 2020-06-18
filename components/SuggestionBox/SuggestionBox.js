@@ -4,7 +4,7 @@ import Typography from "@material-ui/core/Typography";
 import Filters from "../Filters/Filters";
 import TextField from "@material-ui/core/TextField";
 import Button from "@material-ui/core/Button";
-const API_URL = window.API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const SuggestionBox = () => {
   const [thanks, setThanks] = useState(false);

@@ -1,7 +1,6 @@
 //https://github.com/the-road-to-learn-react/use-data-api/blob/master/src/index.js
 import { useState, useEffect, useReducer } from "react";
-const API = window.API_URL;
-// const API = "http://localhost:8080";
+const API = process.env.NEXT_PUBLIC_API_URL;
 
 const fetchReducer = (state, action) => {
   switch (action.type) {

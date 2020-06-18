@@ -11,10 +11,10 @@ import Divider from "@material-ui/core/Divider";
 import GitHub from "@material-ui/icons/GitHub";
 import HighlightOff from "@material-ui/icons/HighlightOff";
 import Grow from "@material-ui/core/Grow";
-import useFetch from "../../hooks/useFetch";
+import useFetch from "../hooks/useFetch";
 import { makeStyles } from "@material-ui/core/styles";
-import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
-import SuggestionBox from "../../components/SuggestionBox/SuggestionBox";
+import LoadingContainer from "../components/LoadingContainer/LoadingContainer";
+import SuggestionBox from "../components/SuggestionBox/SuggestionBox";
 
 const useStyles = makeStyles((theme) => ({
   fullWidth: {

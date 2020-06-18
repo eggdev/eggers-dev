@@ -3,10 +3,10 @@ import Container from "@material-ui/core/Container";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import Fade from "@material-ui/core/Fade";
-import JobListing from "../../components/JobListing/JobListing";
-import LoadingContainer from "../../components/LoadingContainer/LoadingContainer";
-import ErrorComponent from "../../components/ErrorComponent/ErrorComponent";
-import useFetch from "../../hooks/useFetch";
+import JobListing from "../components/JobListing/JobListing";
+import LoadingContainer from "../components/LoadingContainer/LoadingContainer";
+import ErrorComponent from "../components/ErrorComponent/ErrorComponent";
+import useFetch from "../hooks/useFetch";
 
 const Jobs = () => {
   const [{ data, isLoading, isError, errorData }] = useFetch("jobs");
