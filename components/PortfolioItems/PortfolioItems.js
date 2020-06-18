@@ -18,7 +18,7 @@ import Info from "@material-ui/icons/Info";
 import Grow from "@material-ui/core/Grow";
 import Fade from "@material-ui/core/Fade";
 import BrowserButtons from "../BrowserButtons/BrowserButtons";
-// import Moment from "react-moment";
+import Moment from "react-moment";
 
 const useStyles = makeStyles((theme) => ({
   mobileCard: {
@@ -150,7 +150,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
               avatar={<BrowserButtons />}
               action={
                 <Typography variant="body2">
-                  {/* <Moment format="YYYY">{year_built}</Moment> */}
+                  <Moment format="YYYY">{year_built}</Moment>
                 </Typography>
               }
               classes={{
@@ -166,7 +166,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
             <CardHeader
               avatar={
                 <Typography variant="body2">
-                  {/* <Moment format="YYYY">{year_built}</Moment> */}
+                  <Moment format="YYYY">{year_built}</Moment>
                 </Typography>
               }
               action={

@@ -4,6 +4,7 @@ import Box from "@material-ui/core/Box";
 import CssBaseline from "@material-ui/core/CssBaseline";
 import useDarkMode from "../hooks/useDarkMode";
 import SpeedDial from "../components/SpeedDial/SpeedDial";
+import Container from "@material-ui/core/Container";
 
 const useStyles = makeStyles((theme) => ({
   applicationContainer: {
@@ -33,7 +34,9 @@ export default function MyApp({ Component, pageProps }) {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <Box className={applicationContainer}>
-          <Component {...pageProps} />
+          <Container>
+            <Component {...pageProps} />
+          </Container>
           <SpeedDial isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
         </Box>
       </ThemeProvider>

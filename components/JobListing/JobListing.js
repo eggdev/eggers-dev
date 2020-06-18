@@ -2,7 +2,7 @@ import React from "react";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import Grow from "@material-ui/core/Grow";
-// import Moment from "react-moment";
+import Moment from "react-moment";
 
 const JobListing = ({ jobData: job, index }) => {
   const companySplit = job.company.split("&").join("\n");
@@ -19,9 +19,9 @@ const JobListing = ({ jobData: job, index }) => {
           </Typography>
           <Typography variant="h6">{job.job_title}</Typography>
           <Typography variant="body1">
-            {/* <Moment format="MMM YYYY">{job.start_date}</Moment> */}
+            <Moment format="MMM YYYY">{job.start_date}</Moment>
             &ndash;
-            {/* <Moment format="MMM YYYY">{job.end_date}</Moment> */}
+            <Moment format="MMM YYYY">{job.end_date}</Moment>
           </Typography>
           <Typography variant="body1">{job.location}</Typography>
         </Grid>
