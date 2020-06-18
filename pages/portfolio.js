@@ -15,10 +15,7 @@ import useFetch from "../hooks/useFetch";
 import { getFiltersArray } from "../utils/helpers";
 
 const Portfolio = () => {
-  // const history = useHistory();
-  // const routeMatch = useRouteMatch("/portfolio/:id");
-  // const isExact = routeMatch && routeMatch.isExact;
-  const isExact = false;
+  const [projectInfo, setProjectInfo] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [{ data, isLoading, isError, errorData }] = useFetch("projects");
   const [filteredProjects, setFilteredProjects] = useState(data);
@@ -44,8 +41,8 @@ const Portfolio = () => {
     }, 250);
   }, [data, selectedFilter]);
 
-  const openProjectDialog = (projectInfo) => {
-    // history.push(`/portfolio/${projectInfo._id}`);
+  const openProjectDialog = (project_data) => {
+    setProjectInfo(project_data);
   };
 
   return (
@@ -81,7 +78,9 @@ const Portfolio = () => {
           </Grid>
         </>
       )}
-      {isExact && <Project />}
+      {Boolean(projectInfo) && (
+        <Project projectData={projectInfo} setProjectData={setProjectInfo} />
+      )}
     </Grid>
   );
 };

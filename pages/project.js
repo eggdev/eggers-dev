@@ -31,31 +31,22 @@ const Transition = React.forwardRef(function Transition(props, ref) {
   );
 });
 
-const Project = () => {
+const Project = ({ projectData, setProjectData }) => {
   const { cardContent, dialogContainer } = useStyles();
-  // const routeMatch = useRouteMatch("/portfolio/:id");
-  // const history = useHistory();
-  // const [projectId, setProjectId] = useState(routeMatch.params.id);
-  const [projectId, setProjectId] = useState("");
 
-  const [{ data: project }] = useFetch(`projects/${projectId}`);
+  const closeProjectDialog = () => {
+    setProjectData(null);
+  };
 
   const {
+    _id: projectId,
     title,
     description,
     web_url,
     github,
     primary_technologies,
     secondary_technologies,
-  } = project;
-
-  const closeProjectDialog = () => {
-    // history.push(`/portfolio`);
-  };
-
-  // useEffect(() => {
-  //   setProjectId(routeMatch ? routeMatch.params.id : "");
-  // }, [routeMatch]);
+  } = projectData;
 
   return (
     <Dialog

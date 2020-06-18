@@ -1,6 +1,6 @@
 import React from "react";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
-import CustomLink from "../components/CustomLink/CustomLink";
+import Link from "../components/Link/Link";
 import SocialIcons from "../components/SocialIcons/SocialIcons";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
@@ -45,23 +45,23 @@ const Home = () => {
         </Typography>
         <Typography variant={matches ? "body2" : "h5"}>
           Check out what I've built in my{" "}
-          <CustomLink className={navlink} to="/portfolio" variant="link">
-            portfolio
-          </CustomLink>
+          <Link className={navlink} to="/portfolio" variant="link">
+            <a>portfolio</a>
+          </Link>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"}>
           Follow the direction of my{" "}
-          <CustomLink className={navlink} to="/jobs" variant="link">
-            career
-          </CustomLink>
+          <Link className={navlink} to="/jobs" variant="link">
+            <a>career</a>
+          </Link>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"} gutterBottom>
           See what's growing in the{" "}
-          <CustomLink className={navlink} to="/lab" variant="link">
-            lab
-          </CustomLink>
+          <Link className={navlink} to="/lab" variant="link">
+            <a>lab</a>
+          </Link>
           .
         </Typography>
         <Grid container item xs={12} justify="center" alignItems="center">

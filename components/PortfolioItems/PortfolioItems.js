@@ -134,6 +134,7 @@ const PortfolioItem = ({ data, openProjectDialog, index }) => {
   const handleOpenProject = () => {
     openProjectDialog(data);
   };
+
   const imgUrl = desktopDevice ? desktop_image : mobile_image;
 
   setTimeout(() => {
