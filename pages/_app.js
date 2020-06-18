@@ -19,7 +19,6 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 export default function MyApp({ Component, pageProps }) {
-  window.scrollTo(0, 0);
   useEffect(() => {
     const jssStyles = document.getElementById("jss-server-side");
     if (jssStyles) {

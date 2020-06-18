@@ -1,7 +1,5 @@
-import React, { useEffect, useState } from "react";
-// import { useRouteMatch, useHistory } from "react-router-dom";
+import React from "react";
 import { makeStyles } from "@material-ui/core/styles";
-import useFetch from "../hooks/useFetch";
 import Language from "@material-ui/icons/Language";
 import GitHub from "@material-ui/icons/GitHub";
 import Button from "@material-ui/core/Button";
@@ -12,7 +10,7 @@ import DialogContent from "@material-ui/core/DialogContent";
 import Typography from "@material-ui/core/Typography";
 import Slide from "@material-ui/core/Slide";
 
-import Technologies from "../components/Technologies/Technologies";
+import Technologies from "../Technologies/Technologies";
 
 const useStyles = makeStyles((theme) => ({
   dialogContainer: {

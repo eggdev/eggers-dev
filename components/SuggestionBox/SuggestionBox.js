@@ -1,12 +1,20 @@
 import React, { useState } from "react";
+import { makeStyles } from "@material-ui/core/styles";
 import Grid from "@material-ui/core/Grid";
 import Typography from "@material-ui/core/Typography";
 import Filters from "../Filters/Filters";
 import TextField from "@material-ui/core/TextField";
 import Button from "@material-ui/core/Button";
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+const useStyles = makeStyles((theme) => ({
+  suggestionBoxWrapper: {
+    padding: theme.spacing(2),
+    margin: `${theme.spacing(2)}px 0`,
+  },
+}));
 
 const SuggestionBox = () => {
+  const { suggestionBoxWrapper } = useStyles();
   const [thanks, setThanks] = useState(false);
   const [error, setError] = useState(false);
   const [inputVal, setInputVal] = useState("");
@@ -40,7 +48,7 @@ const SuggestionBox = () => {
       return;
     }
 
-    const req = await fetch(`${API_URL}/twilio`, {
+    const req = await fetch(`api/twilio`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -55,11 +63,17 @@ const SuggestionBox = () => {
   };
 
   return (
-    <Grid container direction="column" alignItems="center" justify="center">
+    <Grid
+      container
+      direction="column"
+      alignItems="center"
+      justify="center"
+      className={suggestionBoxWrapper}
+    >
       {!thanks ? (
         <>
-          <Typography variant="h5" gutterBottom>
-            What would you like me to build next?
+          <Typography variant="h4" gutterBottom>
+            What should I learn next?
           </Typography>
           {error && <Typography color="error">Please add some info</Typography>}
           <Filters
@@ -81,7 +95,7 @@ const SuggestionBox = () => {
           </Button>
         </>
       ) : (
-        <Typography variant="h3">Thanks for your input!</Typography>
+        <Typography variant="h4">Thanks for your input!</Typography>
       )}
     </Grid>
   );
