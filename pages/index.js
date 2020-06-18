@@ -11,6 +11,14 @@ const useStyles = makeStyles((theme) => ({
   fullHeight: {
     minHeight: "85vh",
   },
+  navlink: {
+    color: theme.palette.primary.main,
+    textDecoration: "none",
+    cursor: "pointer",
+    "&:hover": {
+      textDecoration: "underline",
+    },
+  },
 }));
 
 const Home = () => {
@@ -38,21 +46,21 @@ const Home = () => {
         <Typography variant={matches ? "body2" : "h5"}>
           Check out what I've built in my{" "}
           <Link to="/portfolio" variant="link">
-            <a>portfolio</a>
+            <a className={navlink}>portfolio</a>
           </Link>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"}>
           Follow the direction of my{" "}
           <Link to="/jobs" variant="link">
-            <a>career</a>
+            <a className={navlink}>career</a>
           </Link>
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"} gutterBottom>
           See what's growing in the{" "}
           <Link to="/lab" variant="link">
-            <a>lab</a>
+            <a className={navlink}>lab</a>
           </Link>
           .
         </Typography>
