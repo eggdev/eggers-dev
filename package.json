@@ -1,6 +1,6 @@
 {
-  "name": "portfolio-frontend",
-  "version": "0.1.0",
+  "name": "ssr-portfolio",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,8 +8,13 @@
     "start": "next start"
   },
   "dependencies": {
+    "@material-ui/core": "^4.10.2",
+    "@material-ui/icons": "^4.9.1",
+    "clsx": "^1.1.1",
+    "color": "^3.1.2",
     "next": "9.4.4",
     "react": "16.13.1",
-    "react-dom": "16.13.1"
+    "react-dom": "16.13.1",
+    "react-moment": "^0.9.7"
   }
 }
