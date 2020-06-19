@@ -20,21 +20,19 @@ const Portfolio = ({ data }) => {
 
   useEffect(() => {
     setFilteredProjects([]);
-    if (data.length > 0) {
-      setTimeout(() => {
-        setFilteredProjects(
-          selectedFilter
-            ? [
-                ...data.filter(
-                  (a) =>
-                    a.primary_technologies.includes(selectedFilter) ||
-                    a.secondary_technologies.includes(selectedFilter)
-                ),
-              ]
-            : [...data]
-        );
-      }, 100);
-    }
+    setTimeout(() => {
+      setFilteredProjects(
+        selectedFilter
+          ? [
+              ...data.filter(
+                (a) =>
+                  a.primary_technologies.includes(selectedFilter) ||
+                  a.secondary_technologies.includes(selectedFilter)
+              ),
+            ]
+          : [...data]
+      );
+    }, 100);
   }, [data, selectedFilter]);
 
   const openProjectDialog = (project_data) => {
