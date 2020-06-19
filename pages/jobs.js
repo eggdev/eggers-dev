@@ -25,14 +25,14 @@ const Jobs = ({ data }) => {
   );
 };
 
-Jobs.getInitialProps = async (csx) => {
-  let res;
-  if (csx.req) res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/jobs`);
-  else res = await fetch("/api/jobs");
+export async function getStaticProps() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/jobs`);
   const json = await res.json();
   return {
-    data: json,
+    props: {
+      data: json,
+    },
   };
-};
+}
 
 export default Jobs;

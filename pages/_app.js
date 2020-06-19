@@ -30,16 +30,14 @@ export default function MyApp({ Component, pageProps }) {
   const { muiTheme, isDarkMode, toggleDarkMode } = useDarkMode();
 
   return (
-    <>
-      <ThemeProvider theme={muiTheme}>
-        <CssBaseline />
-        <Box className={applicationContainer}>
-          <Container>
-            <Component {...pageProps} />
-          </Container>
-          <SpeedDial isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
-        </Box>
-      </ThemeProvider>
-    </>
+    <ThemeProvider theme={muiTheme}>
+      <CssBaseline />
+      <Box className={applicationContainer}>
+        <Container>
+          <Component {...pageProps} />
+        </Container>
+        <SpeedDial isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} />
+      </Box>
+    </ThemeProvider>
   );
 }

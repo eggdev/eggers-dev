@@ -10,7 +10,7 @@ import fetch from "isomorphic-unfetch";
 
 import { getFiltersArray } from "../utils/helpers";
 
-const Portfolio = ({ data = [] }) => {
+const Portfolio = ({ data }) => {
   const [projectInfo, setProjectInfo] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState(null);
   const [filteredProjects, setFilteredProjects] = useState(data);
@@ -74,15 +74,14 @@ const Portfolio = ({ data = [] }) => {
   );
 };
 
-Portfolio.getInitialProps = async (csx) => {
-  let res;
-  if (csx.req)
-    res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects`);
-  else res = await fetch("/api/projects");
+export async function getStaticProps() {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects`);
   const json = await res.json();
   return {
-    data: json,
+    props: {
+      data: json,
+    },
   };
-};
+}
 
 export default Portfolio;
