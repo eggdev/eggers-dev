@@ -58,7 +58,7 @@ const Home = () => {
           .
         </Typography>
         <Typography variant={matches ? "body2" : "h5"} gutterBottom>
-          See what's growing in the{" "}
+          Send me project ideas in the{" "}
           <Link to="/lab" variant="link">
             <a className={navlink}>lab</a>
           </Link>
