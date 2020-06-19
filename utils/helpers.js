@@ -30,7 +30,6 @@ export const getFiltersArray = (keyType) => {
         "Redux",
         "React Testing Library",
         "Material UI",
-        "Express",
         "Angular",
         "Vue",
       ];
