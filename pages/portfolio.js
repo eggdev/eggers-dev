@@ -6,15 +6,13 @@ import { useTheme } from "@material-ui/core/styles";
 import useMediaQuery from "@material-ui/core/useMediaQuery";
 import PortfolioItems from "../components/PortfolioItems/PortfolioItems";
 import Filters from "../components/Filters/Filters";
-import LoadingContainer from "../components/LoadingContainer/LoadingContainer";
-import useFetch from "../hooks/useFetch";
+import fetch from "isomorphic-unfetch";
 
 import { getFiltersArray } from "../utils/helpers";
 
-const Portfolio = () => {
+const Portfolio = ({ data = [] }) => {
   const [projectInfo, setProjectInfo] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState(null);
-  const [{ data, isLoading }] = useFetch("api/projects");
   const [filteredProjects, setFilteredProjects] = useState(data);
   const filterArray = getFiltersArray("primary_technologies");
   const theme = useTheme();
@@ -22,19 +20,21 @@ const Portfolio = () => {
 
   useEffect(() => {
     setFilteredProjects([]);
-    setTimeout(() => {
-      setFilteredProjects(
-        selectedFilter
-          ? [
-              ...data.filter(
-                (a) =>
-                  a.primary_technologies.includes(selectedFilter) ||
-                  a.secondary_technologies.includes(selectedFilter)
-              ),
-            ]
-          : [...data]
-      );
-    }, 100);
+    if (data.length > 0) {
+      setTimeout(() => {
+        setFilteredProjects(
+          selectedFilter
+            ? [
+                ...data.filter(
+                  (a) =>
+                    a.primary_technologies.includes(selectedFilter) ||
+                    a.secondary_technologies.includes(selectedFilter)
+                ),
+              ]
+            : [...data]
+        );
+      }, 100);
+    }
   }, [data, selectedFilter]);
 
   const openProjectDialog = (project_data) => {
@@ -53,11 +53,9 @@ const Portfolio = () => {
           filters={filterArray}
         />
       )}
-      {isLoading ? (
-        <LoadingContainer />
-      ) : (
-        <Grid container spacing={2} justify="flex-start">
-          {filteredProjects.map(
+      <Grid container spacing={2} justify="flex-start">
+        {filteredProjects.length > 0 &&
+          filteredProjects.map(
             (project, index) =>
               project.active && (
                 <PortfolioItems
@@ -68,13 +66,23 @@ const Portfolio = () => {
                 />
               )
           )}
-        </Grid>
-      )}
+      </Grid>
       {Boolean(projectInfo) && (
         <Project projectData={projectInfo} setProjectData={setProjectInfo} />
       )}
     </Grid>
   );
+};
+
+Portfolio.getInitialProps = async (csx) => {
+  let res;
+  if (csx.req)
+    res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects`);
+  else res = await fetch("/api/projects");
+  const json = await res.json();
+  return {
+    data: json,
+  };
 };
 
 export default Portfolio;
