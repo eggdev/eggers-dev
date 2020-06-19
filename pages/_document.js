@@ -7,7 +7,7 @@ export default class MyDocument extends Document {
     return (
       <Html lang="en">
         <Head>
-          {/* PWA primary color */}
+          <title>Brendan Eggers | Cool Guy</title>
           <link
             href="https://fonts.googleapis.com/css2?family=Maven+Pro&display=swap"
             rel="stylesheet"
