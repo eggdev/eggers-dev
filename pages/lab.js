@@ -8,6 +8,7 @@ import ListItem from "@material-ui/core/ListItem";
 import ListItemText from "@material-ui/core/ListItemText";
 import Typography from "@material-ui/core/Typography";
 import LinearProgress from "@material-ui/core/LinearProgress";
+import fetch from "isomorphic-unfetch";
 
 const BorderLinearProgress = withStyles((theme) => ({
   root: {
@@ -26,45 +27,7 @@ const BorderLinearProgress = withStyles((theme) => ({
   },
 }))(LinearProgress);
 
-const Lab = () => {
-  const learningList = [
-    {
-      name: "React",
-      progress: 90,
-    },
-    {
-      name: "Redux",
-      progress: 90,
-    },
-    {
-      name: "Next.js",
-      progress: 70,
-    },
-    {
-      name: "MongoDB",
-      progress: 70,
-    },
-    {
-      name: "Flask",
-      progress: 55,
-    },
-    {
-      name: "Docker",
-      progress: 25,
-    },
-    {
-      name: "Redwood.js",
-      progress: 10,
-    },
-    {
-      name: "GraphQL",
-      progress: 10,
-    },
-    {
-      name: "Redis",
-      progress: 0,
-    },
-  ];
+const Lab = ({ data }) => {
   return (
     <Fade in={true} timeout={250}>
       <Grid container alignItems="center" justify="center">
@@ -81,7 +44,7 @@ const Lab = () => {
         >
           <Typography variant="h6">How I'm Growing</Typography>
           <List>
-            {learningList.map((tech) => (
+            {/* {data.map((tech) => (
               <ListItem key={tech.name.toLowerCase()}>
                 <ListItemText primary={tech.name} />
                 <BorderLinearProgress
@@ -89,7 +52,7 @@ const Lab = () => {
                   value={tech.progress}
                 />
               </ListItem>
-            ))}
+            ))} */}
           </List>
         </Grid>
       </Grid>
@@ -98,3 +61,14 @@ const Lab = () => {
 };
 
 export default Lab;
+
+export async function getStaticProps() {
+  // const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/learning`);
+  // const json = await res.json();
+  const json = [{}];
+  return {
+    props: {
+      data: json,
+    },
+  };
+}
