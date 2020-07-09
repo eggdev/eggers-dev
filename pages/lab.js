@@ -44,7 +44,7 @@ const Lab = ({ data }) => {
         >
           <Typography variant="h6">How I'm Growing</Typography>
           <List>
-            {/* {data.map((tech) => (
+            {data.map((tech) => (
               <ListItem key={tech.name.toLowerCase()}>
                 <ListItemText primary={tech.name} />
                 <BorderLinearProgress
@@ -52,7 +52,7 @@ const Lab = ({ data }) => {
                   value={tech.progress}
                 />
               </ListItem>
-            ))} */}
+            ))}
           </List>
         </Grid>
       </Grid>
@@ -63,9 +63,8 @@ const Lab = ({ data }) => {
 export default Lab;
 
 export async function getStaticProps() {
-  // const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/learning`);
-  // const json = await res.json();
-  const json = [{}];
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/learning`);
+  const json = await res.json();
   return {
     props: {
       data: json,
