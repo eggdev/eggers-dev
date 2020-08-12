@@ -7,7 +7,7 @@ import LinkedInIcon from "@material-ui/icons/LinkedIn";
 const SocialIcons = () => {
   return (
     <>
-      <IconButton href="https://github.com/beggers23">
+      <IconButton href="https://github.com/eggdev">
         <GitHubIcon fontSize="large" />
       </IconButton>
       <IconButton href="mailto:eggers.brendan@gmail.com">
