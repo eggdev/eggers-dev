@@ -38,6 +38,6 @@
       "@semantic-release/changelog",
       "@semantic-release/git"
     ],
-    "branch": "semantic-release"
+    "branch": "master"
   }
 }
