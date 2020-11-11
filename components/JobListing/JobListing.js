@@ -32,7 +32,11 @@ const JobListing = ({ jobData: job, index }) => {
           <Typography variant="body1">
             <Moment format="MMM YYYY">{job.start_date}</Moment>
             &ndash;
-            <Moment format="MMM YYYY">{job.end_date}</Moment>
+            {(job.end_date) ? (
+              <Moment format="MMM YYYY">{job.end_date}</Moment>
+            ) : (
+              <Typography variant="span">Present</Typography>
+            )}
           </Typography>
           <Typography variant="body1">{job.location}</Typography>
         </Grid>
