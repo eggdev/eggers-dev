@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 django = "*"
 djangorestframework = "*"
+django-extensions = "*"
+django-model-utils = "*"
 
 [dev-packages]
 
