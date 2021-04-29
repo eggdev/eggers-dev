@@ -2,7 +2,7 @@ from portfolio.models import Project
 from rest_framework import serializers
 
 
-class ProjectSerializer(serializers.HyperlinkedModelSerializer):
+class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
-        fields = ["title"]
+        fields = ["title", "created_date"]
