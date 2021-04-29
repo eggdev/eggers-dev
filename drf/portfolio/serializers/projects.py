@@ -1,4 +1,4 @@
-from app.portfolio.models import projects
+from portfolio.models import projects
 from rest_framework import serializers
 
 

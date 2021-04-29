@@ -16,7 +16,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
-from app.portfolio.views import users, projects
+from portfolio.views import users, projects
 
 router = routers.DefaultRouter()
 router.register(r"users", users.UserViewSet)
