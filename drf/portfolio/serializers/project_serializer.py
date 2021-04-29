@@ -1,8 +1,8 @@
-from portfolio.models import projects
+from portfolio.models import Project
 from rest_framework import serializers
 
 
 class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
-        model = projects.Project
+        model = Project
         fields = ["title"]
