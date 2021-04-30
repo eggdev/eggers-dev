@@ -14,6 +14,7 @@ class Job(models.Model):
         (freelance, "Free Lance"),
         (contract, "Contract"),
     )
+    accomplishments = models.JSONField(default=[])
     employment_type = models.CharField(
         max_length=100, choices=EMPLOYMENT_CHOICES, default=fulltime
     )

@@ -8,5 +8,8 @@ class Project(models.Model):
     technologies = models.JSONField(default=["react"])
     title = models.CharField(max_length=100, default="")
 
+    def __str__(self):
+        return f"{self.title}"
+
     class Meta:
         ordering = ["title"]
