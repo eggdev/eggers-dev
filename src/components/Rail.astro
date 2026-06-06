@@ -104,6 +104,9 @@ const socials = [
   .rail__dot {
     color: var(--accent);
   }
+  .rail__word {
+    display: none; /* mark-only on the mobile bar so all nav items (incl. Contact) fit */
+  }
   .rail__title {
     display: none;
   }
@@ -130,7 +133,7 @@ const socials = [
     text-decoration: none;
     font-weight: var(--w-medium);
     white-space: nowrap;
-    padding-block: 0.4rem;
+    padding-block: 0.7rem;
     transition: color var(--dur-fast) var(--ease-out-quart);
   }
   .rail__nav a:hover,
@@ -175,6 +178,9 @@ const socials = [
     }
     .rail__brand {
       font-size: 1.15rem;
+    }
+    .rail__word {
+      display: inline;
     }
     .rail__title {
       display: block;

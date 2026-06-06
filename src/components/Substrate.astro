@@ -29,11 +29,13 @@
     const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
     const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
 
-    const GAP = 28
     const RADIUS = 1.6
     const ACCENT = 0.04
     const TAU = Math.PI * 2
     const BLOOM = 150
+    // cursor-bloom only matters on real pointers; on touch it never fires and
+    // a full-viewport rAF field is just battery cost — gate it.
+    const fine = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 
     let w = 0,
       h = 0,
@@ -69,22 +71,23 @@
     function draw(t: number) {
       if (!ctx) return
       ctx.clearRect(0, 0, w, h)
-      const cols = Math.ceil(w / GAP) + 1
-      const rows = Math.ceil(h / GAP) + 1
-      const offX = (w - (cols - 1) * GAP) / 2
-      const offY = (h - (rows - 1) * GAP) / 2
+      const gap = w < 640 ? 36 : 28 // coarser, cheaper field on phones
+      const cols = Math.ceil(w / gap) + 1
+      const rows = Math.ceil(h / gap) + 1
+      const offX = (w - (cols - 1) * gap) / 2
+      const offY = (h - (rows - 1) * gap) / 2
       const time = t * 0.00045
       const moving = !reduce
 
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < cols; i++) {
-          const x = offX + i * GAP
-          const y = offY + j * GAP
+          const x = offX + i * gap
+          const y = offY + j * gap
           const wave = moving ? Math.sin((x + y) * 0.011 - time * TAU) : 0
           let scale = 0.6 + (moving ? 0.32 * ((wave + 1) / 2) : 0.32)
           let alpha = 0.1 + (moving ? 0.14 * ((wave + 1) / 2) : 0.1)
 
-          if (ptr.on && moving) {
+          if (fine && ptr.on && moving) {
             const d = Math.hypot(x - ptr.x, y - ptr.y)
             if (d < BLOOM) {
               const k = 1 - d / BLOOM
@@ -125,18 +128,20 @@
       resize()
       if (reduce || !visible) draw(0)
     })
-    window.addEventListener(
-      'pointermove',
-      (e) => {
-        ptr.x = e.clientX
-        ptr.y = e.clientY
-        ptr.on = true
-      },
-      { passive: true }
-    )
-    window.addEventListener('pointerout', () => {
-      ptr.on = false
-    })
+    if (fine) {
+      window.addEventListener(
+        'pointermove',
+        (e) => {
+          ptr.x = e.clientX
+          ptr.y = e.clientY
+          ptr.on = true
+        },
+        { passive: true }
+      )
+      window.addEventListener('pointerout', () => {
+        ptr.on = false
+      })
+    }
     document.addEventListener('visibilitychange', () => {
       visible = !document.hidden
       start()
