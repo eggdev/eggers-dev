@@ -1,9 +1,10 @@
 ---
 /**
- * NightShift — the harness rendered as a live system. PRs (dots) flow from the
- * agent, through cross-model review, into the merge gate; most pass (turn
- * cobalt) and merge, a few fail and fade. Canvas 2D, offscreen-paused, static
- * under reduced motion. The labels below are the accessible description.
+ * NightShift — the harness as a live funnel. Pull requests enter wide on the
+ * left, converge through review, and hit the merge gate: most pass through the
+ * aperture and stream out as merged (cobalt), a few are rejected and fall away.
+ * The converging walls make the funnel legible even at a glance. Canvas 2D,
+ * offscreen-paused, static under reduced motion.
  */
 const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged']
 ---
@@ -23,9 +24,9 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
     position: relative;
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
-    background: color-mix(in oklch, var(--surface-raised) 60%, transparent);
+    background: color-mix(in oklch, var(--surface-raised) 55%, transparent);
     overflow: hidden;
-    height: clamp(180px, 22vw, 240px);
+    height: clamp(210px, 24vw, 290px);
   }
   .nightshift__frame canvas {
     width: 100%;
@@ -64,181 +65,213 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
 </style>
 
 <script>
-  const canvas = document.querySelector<HTMLCanvasElement>('[data-nightshift]')
-  const ctx = canvas?.getContext('2d')
-  if (canvas && ctx) {
-    const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
-    const TAU = Math.PI * 2
+  const el = document.querySelector('[data-nightshift]')
+  if (el instanceof HTMLCanvasElement) {
+    const canvas: HTMLCanvasElement = el
+    const ctx0 = canvas.getContext('2d')
+    if (ctx0) {
+      const ctx: CanvasRenderingContext2D = ctx0
+      const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
+      const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
+      const TAU = Math.PI * 2
+      // x positions as fractions of width: intake, gate, merged-out
+      const X0 = 0.07,
+        XG = 0.6,
+        X1 = 0.95
 
-    // stage x-fractions: author, review, gate, merged
-    const STAGE = [0.08, 0.4, 0.66, 0.93]
-    let w = 0,
-      h = 0,
-      dpr = 1
-    let dot = 'gray',
-      accent = 'blue',
-      muted = 'gray',
-      hair = 'gray'
-    let raf = 0,
-      visible = false,
-      reduce = reduceMQ.matches
-    let last = 0,
-      spawnAcc = 0
-
-    type P = { p: number; lane: number; speed: number; pass: boolean; decided: boolean; alpha: number }
-    let parts: P[] = []
-
-    function colors() {
-      const cs = getComputedStyle(document.documentElement)
-      dot = cs.getPropertyValue('--dot').trim() || 'gray'
-      accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
-      muted = cs.getPropertyValue('--muted').trim() || 'gray'
-      hair = cs.getPropertyValue('--hairline-strong').trim() || 'gray'
-    }
-    function resize() {
-      if (!ctx || !canvas) return
-      const r = canvas.getBoundingClientRect()
-      w = Math.max(1, r.width)
-      h = Math.max(1, r.height)
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
-      canvas.width = Math.round(w * dpr)
-      canvas.height = Math.round(h * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    }
-    function spawn() {
-      parts.push({
-        p: STAGE[0],
-        lane: (Math.random() - 0.5) * 0.6,
-        speed: 0.055 + Math.random() * 0.03,
-        pass: Math.random() > 0.16,
-        decided: false,
-        alpha: 0,
-      })
-    }
-    function laneY(lane: number) {
-      return h / 2 + lane * h * 0.42
-    }
-    function scaffold() {
-      if (!ctx) return
-      // connecting line
-      ctx.strokeStyle = hair
-      ctx.globalAlpha = 0.5
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(STAGE[0] * w, h / 2)
-      ctx.lineTo(STAGE[3] * w, h / 2)
-      ctx.stroke()
-      // gate marker
-      const gx = STAGE[2] * w
-      ctx.globalAlpha = 0.9
-      ctx.strokeStyle = accent
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.moveTo(gx, h / 2 - h * 0.22)
-      ctx.lineTo(gx, h / 2 + h * 0.22)
-      ctx.stroke()
-      ctx.globalAlpha = 1
-    }
-    function drawDot(p: P) {
-      if (!ctx) return
-      const x = p.p * w
-      // lane converges toward center by the gate, fans slightly after
-      const conv = p.p < STAGE[2] ? 1 - (p.p - STAGE[0]) / (STAGE[2] - STAGE[0]) : 0
-      const y = laneY(p.lane * Math.max(0.08, conv))
-      const passed = p.decided && p.p > STAGE[2]
-      ctx.globalAlpha = Math.min(1, p.alpha) * (p.decided && !p.pass ? 1 : 1)
-      ctx.fillStyle = passed ? (p.pass ? accent : muted) : dot
-      ctx.beginPath()
-      ctx.arc(x, y, p.pass ? 2.6 : 2.2, 0, TAU)
-      ctx.fill()
-    }
-    function step(dt: number) {
-      spawnAcc += dt
-      const interval = 0.42
-      if (spawnAcc > interval && parts.length < 26) {
+      let w = 0,
+        h = 0,
+        dpr = 1
+      let dot = 'gray',
+        accent = 'blue',
+        muted = 'gray',
+        hair = 'gray'
+      let raf = 0,
+        visible = false,
+        reduce = reduceMQ.matches,
+        last = 0,
         spawnAcc = 0
-        spawn()
-      }
-      for (const p of parts) {
-        p.alpha = Math.min(1, p.alpha + dt * 3)
-        p.p += p.speed * dt
-        if (!p.decided && p.p >= STAGE[2]) p.decided = true
-        if (p.decided && !p.pass && p.p > STAGE[2]) {
-          p.lane += dt * 1.2 // failed ones drift off
-          p.alpha -= dt * 1.4
-        }
-      }
-      parts = parts.filter((p) => p.p < 1.02 && p.alpha > 0.02)
-    }
-    function frame(t: number) {
-      if (!ctx) return
-      const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016
-      last = t
-      ctx.clearRect(0, 0, w, h)
-      scaffold()
-      step(dt)
-      for (const p of parts) drawDot(p)
-      ctx.globalAlpha = 1
-      raf = requestAnimationFrame(frame)
-    }
-    function staticFrame() {
-      if (!ctx) return
-      ctx.clearRect(0, 0, w, h)
-      scaffold()
-      // a representative settled state
-      const sample = [0.2, 0.32, 0.5, 0.78, 0.86, 0.95]
-      for (let i = 0; i < sample.length; i++) {
-        const pass = i !== 2
-        const p: P = { p: sample[i], lane: (i % 2 ? 0.4 : -0.4), speed: 0, pass, decided: sample[i] > STAGE[2], alpha: 1 }
-        drawDot(p)
-      }
-      ctx.globalAlpha = 1
-    }
-    function start() {
-      cancelAnimationFrame(raf)
-      last = 0
-      if (reduce || !visible) {
-        staticFrame()
-        return
-      }
-      raf = requestAnimationFrame(frame)
-    }
 
-    colors()
-    resize()
-    // pre-seed so the pipeline reads as alive the instant it scrolls in
-    if (!reduce) {
-      for (let i = 0; i < 14; i++) {
-        const p = STAGE[0] + Math.random() * (1 - STAGE[0])
+      type P = {
+        x: number
+        ty: number
+        speed: number
+        pass: boolean
+        decided: boolean
+        fall: number
+        alpha: number
+      }
+      let parts: P[] = []
+
+      // half-height of the funnel envelope at a given x (px)
+      function band(x: number) {
+        const H0 = h * 0.4
+        const HG = h * 0.045
+        const out = h * 0.07
+        if (x <= XG * w) {
+          const t = Math.min(1, Math.max(0, (x - X0 * w) / ((XG - X0) * w)))
+          return H0 + (HG - H0) * t
+        }
+        const t = Math.min(1, (x - XG * w) / ((X1 - XG) * w))
+        return HG + (out - HG) * t
+      }
+
+      function colors() {
+        const cs = getComputedStyle(document.documentElement)
+        dot = cs.getPropertyValue('--dot').trim() || 'gray'
+        accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
+        muted = cs.getPropertyValue('--muted').trim() || 'gray'
+        hair = cs.getPropertyValue('--hairline-strong').trim() || 'gray'
+      }
+
+      function resize() {
+        const r = canvas.getBoundingClientRect()
+        w = Math.max(1, r.width)
+        h = Math.max(1, r.height)
+        dpr = Math.min(window.devicePixelRatio || 1, 2)
+        canvas.width = Math.round(w * dpr)
+        canvas.height = Math.round(h * dpr)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      }
+
+      function spawn(initial = false) {
         parts.push({
-          p,
-          lane: (Math.random() - 0.5) * 0.6,
-          speed: 0.055 + Math.random() * 0.03,
-          pass: Math.random() > 0.16,
-          decided: p > STAGE[2],
-          alpha: 1,
+          x: initial ? X0 * w + Math.random() * (X1 - X0) * w : X0 * w,
+          ty: Math.random() * 2 - 1,
+          speed: 0.1 + Math.random() * 0.06,
+          pass: Math.random() > 0.2,
+          decided: false,
+          fall: 0,
+          alpha: initial ? 1 : 0,
         })
       }
-    }
-    new ResizeObserver(() => {
-      resize()
-      if (reduce || !visible) staticFrame()
-    }).observe(canvas)
-    new IntersectionObserver(
-      (e) => {
-        visible = e[0].isIntersecting
-        start()
-      },
-      { rootMargin: '80px' }
-    ).observe(canvas)
-    reduceMQ.addEventListener('change', () => {
-      reduce = reduceMQ.matches
-      start()
-    })
-    darkMQ.addEventListener('change', () => {
+
+      function envelope() {
+        const mid = h / 2
+        const x0 = X0 * w
+        const xg = XG * w
+        const x1 = X1 * w
+        const H0 = h * 0.4
+        const HG = h * 0.045
+        const out = h * 0.07
+        ctx.strokeStyle = hair
+        ctx.globalAlpha = 0.5
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(x0, mid - H0)
+        ctx.lineTo(xg, mid - HG)
+        ctx.lineTo(x1, mid - out)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(x0, mid + H0)
+        ctx.lineTo(xg, mid + HG)
+        ctx.lineTo(x1, mid + out)
+        ctx.stroke()
+        // gate aperture
+        ctx.globalAlpha = 0.85
+        ctx.strokeStyle = accent
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(xg, mid - HG * 2.4)
+        ctx.lineTo(xg, mid + HG * 2.4)
+        ctx.stroke()
+        ctx.globalAlpha = 1
+      }
+
+      function drawP(p: P) {
+        const y = h / 2 + p.ty * band(p.x) + p.fall
+        const passedGate = p.x > XG * w
+        ctx.globalAlpha = Math.min(1, p.alpha)
+        ctx.fillStyle = p.decided ? (p.pass ? accent : muted) : dot
+        ctx.beginPath()
+        ctx.arc(p.x, y, p.pass && passedGate ? 2.9 : 2.2, 0, TAU)
+        ctx.fill()
+      }
+
+      function step(dt: number) {
+        spawnAcc += dt
+        if (spawnAcc > 0.16 && parts.length < 44) {
+          spawnAcc = 0
+          spawn()
+        }
+        const xg = XG * w
+        for (const p of parts) {
+          p.alpha = Math.min(1, p.alpha + dt * 3)
+          if (!p.decided) {
+            p.x += p.speed * w * dt
+            if (p.x >= xg) p.decided = true
+          } else if (p.pass) {
+            p.x += p.speed * w * dt
+          } else {
+            // rejected at the gate: peel off, fall, fade
+            p.fall += dt * h * 0.55
+            p.alpha -= dt * 1.1
+            p.x += p.speed * w * dt * 0.25
+          }
+        }
+        parts = parts.filter((p) => p.x < X1 * w * 1.05 && p.alpha > 0.03)
+      }
+
+      function frame(t: number) {
+        const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016
+        last = t
+        ctx.clearRect(0, 0, w, h)
+        envelope()
+        step(dt)
+        for (const p of parts) drawP(p)
+        ctx.globalAlpha = 1
+        raf = requestAnimationFrame(frame)
+      }
+
+      function staticFrame() {
+        ctx.clearRect(0, 0, w, h)
+        envelope()
+        const sample: P[] = [
+          { x: 0.16 * w, ty: 0.7, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
+          { x: 0.22 * w, ty: -0.5, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
+          { x: 0.4 * w, ty: 0.3, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
+          { x: 0.5 * w, ty: -0.2, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
+          { x: 0.6 * w, ty: 0.4, speed: 0, pass: false, decided: true, fall: h * 0.12, alpha: 0.6 },
+          { x: 0.74 * w, ty: 0.2, speed: 0, pass: true, decided: true, fall: 0, alpha: 1 },
+          { x: 0.88 * w, ty: -0.3, speed: 0, pass: true, decided: true, fall: 0, alpha: 1 },
+        ]
+        for (const p of sample) drawP(p)
+        ctx.globalAlpha = 1
+      }
+
+      function start() {
+        cancelAnimationFrame(raf)
+        last = 0
+        if (reduce || !visible) {
+          staticFrame()
+          return
+        }
+        raf = requestAnimationFrame(frame)
+      }
+
       colors()
-      if (reduce || !visible) staticFrame()
-    })
+      resize()
+      if (!reduce) for (let i = 0; i < 22; i++) spawn(true)
+
+      new ResizeObserver(() => {
+        resize()
+        if (reduce || !visible) staticFrame()
+      }).observe(canvas)
+      new IntersectionObserver(
+        (e) => {
+          visible = e[0].isIntersecting
+          start()
+        },
+        { rootMargin: '80px' }
+      ).observe(canvas)
+      reduceMQ.addEventListener('change', () => {
+        reduce = reduceMQ.matches
+        start()
+      })
+      darkMQ.addEventListener('change', () => {
+        colors()
+        if (reduce || !visible) staticFrame()
+      })
+    }
   }
 </script>
