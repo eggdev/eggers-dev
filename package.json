@@ -9,14 +9,17 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview",
+    "preview": "bun run build && wrangler dev",
     "check": "astro check",
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "generate-types": "wrangler types",
+    "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^13.6.1",
     "@fontsource-variable/mona-sans": "^5.2.8",
     "astro": "^6.4.4"
   },
@@ -24,6 +27,10 @@
     "@astrojs/check": "^0.9.9",
     "@biomejs/biome": "^2.4.16",
     "lefthook": "^2.1.9",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "^4.98.0"
+  },
+  "overrides": {
+    "vite": "^7"
   }
 }
