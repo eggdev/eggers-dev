@@ -1,22 +1,24 @@
 ---
 /**
- * NightShift — the harness as a live funnel. Pull requests enter wide on the
- * left, converge through review, and hit the merge gate: most pass through the
- * aperture and stream out as merged (cobalt), a few are rejected and fall away.
- * The converging walls make the funnel legible even at a glance. Canvas 2D,
- * offscreen-paused, static under reduced motion.
+ * NightShift — the harness as a live funnel. An agent opens pull requests (dots)
+ * that enter wide on the left and converge through review to the merge gate. Most
+ * pass through the aperture with an "approved" pulse and stream out as merged
+ * (cobalt); rejected PRs hit the gate and fall away. Inline labels anchor the
+ * three moments. Canvas 2D, offscreen-paused, static under reduced motion.
  */
-const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged']
 ---
 
 <figure class="nightshift">
   <div class="nightshift__frame">
     <canvas data-nightshift aria-hidden="true"></canvas>
+    <span class="ns-label ns-label--in">Agent PRs</span>
+    <span class="ns-label ns-label--gate">Merge gate</span>
+    <span class="ns-label ns-label--out">Merged</span>
   </div>
-  <ol class="nightshift__stages" aria-label="The autonomous night-shift pipeline">
-    {stages.map((s, i) => <li><span class="nightshift__num tabular">{`0${i + 1}`}</span>{s}</li>)}
-  </ol>
-  <figcaption>The night shift, running. Most pull requests earn the merge; a few don't.</figcaption>
+  <figcaption>
+    Live: an agent opens each pull request, cross-model review and the merge gate
+    decide, and the ones that earn it merge. A few don't.
+  </figcaption>
 </figure>
 
 <style>
@@ -33,34 +35,32 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
     height: 100%;
     display: block;
   }
-  .nightshift__stages {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem 1.25rem;
-    margin-top: var(--space-4);
-  }
-  @media (min-width: 40rem) {
-    .nightshift__stages {
-      grid-template-columns: repeat(4, 1fr);
-    }
-  }
-  .nightshift__stages li {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    font-size: var(--text-sm);
-    font-weight: var(--w-medium);
-    color: var(--ink);
-  }
-  .nightshift__num {
-    color: var(--accent);
-    font-weight: var(--w-semibold);
+  .ns-label {
+    position: absolute;
+    top: 0.85rem;
     font-size: var(--text-xs);
+    font-weight: var(--w-semibold);
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .ns-label--in {
+    left: 7%;
+  }
+  .ns-label--gate {
+    left: 60%;
+    transform: translateX(-50%);
+    color: var(--accent);
+  }
+  .ns-label--out {
+    right: 5%;
+    color: var(--accent);
   }
   .nightshift figcaption {
-    margin-top: var(--space-3);
+    margin-top: var(--space-4);
     font-size: var(--text-sm);
     color: var(--muted);
+    max-width: 58ch;
   }
 </style>
 
@@ -74,7 +74,6 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
       const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
       const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
       const TAU = Math.PI * 2
-      // x positions as fractions of width: intake, gate, merged-out
       const X0 = 0.07,
         XG = 0.6,
         X1 = 0.95
@@ -99,11 +98,12 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
         pass: boolean
         decided: boolean
         fall: number
+        vy: number
         alpha: number
+        pop: number
       }
       let parts: P[] = []
 
-      // half-height of the funnel envelope at a given x (px)
       function band(x: number) {
         const H0 = h * 0.4
         const HG = h * 0.045
@@ -134,19 +134,21 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       }
 
-      function spawn(initial = false) {
-        parts.push({
+      function make(initial = false): P {
+        return {
           x: initial ? X0 * w + Math.random() * (X1 - X0) * w : X0 * w,
           ty: Math.random() * 2 - 1,
           speed: 0.1 + Math.random() * 0.06,
-          pass: Math.random() > 0.2,
+          pass: Math.random() > 0.22,
           decided: false,
           fall: 0,
+          vy: 0,
           alpha: initial ? 1 : 0,
-        })
+          pop: 0,
+        }
       }
 
-      function envelope() {
+      function envelope(t: number) {
         const mid = h / 2
         const x0 = X0 * w
         const xg = XG * w
@@ -167,24 +169,32 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
         ctx.lineTo(xg, mid + HG)
         ctx.lineTo(x1, mid + out)
         ctx.stroke()
-        // gate aperture
-        ctx.globalAlpha = 0.85
+        // gate: a soft glow plus a crisp line, gently pulsing
+        const pulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * 0.003))
         ctx.strokeStyle = accent
+        ctx.globalAlpha = 0.18 * pulse
+        ctx.lineWidth = 7
+        ctx.beginPath()
+        ctx.moveTo(xg, mid - HG * 2.6)
+        ctx.lineTo(xg, mid + HG * 2.6)
+        ctx.stroke()
+        ctx.globalAlpha = 0.9
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(xg, mid - HG * 2.4)
-        ctx.lineTo(xg, mid + HG * 2.4)
+        ctx.moveTo(xg, mid - HG * 2.6)
+        ctx.lineTo(xg, mid + HG * 2.6)
         ctx.stroke()
         ctx.globalAlpha = 1
       }
 
       function drawP(p: P) {
-        const y = h / 2 + p.ty * band(p.x) + p.fall
         const passedGate = p.x > XG * w
+        const y = h / 2 + p.ty * band(p.x) + p.fall
+        const base = p.pass && passedGate ? 2.9 : 2.2
         ctx.globalAlpha = Math.min(1, p.alpha)
         ctx.fillStyle = p.decided ? (p.pass ? accent : muted) : dot
         ctx.beginPath()
-        ctx.arc(p.x, y, p.pass && passedGate ? 2.9 : 2.2, 0, TAU)
+        ctx.arc(p.x, y, base * (1 + p.pop * 0.8), 0, TAU)
         ctx.fill()
       }
 
@@ -192,31 +202,38 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
         spawnAcc += dt
         if (spawnAcc > 0.16 && parts.length < 44) {
           spawnAcc = 0
-          spawn()
+          parts.push(make())
         }
         const xg = XG * w
         for (const p of parts) {
           p.alpha = Math.min(1, p.alpha + dt * 3)
+          p.pop = Math.max(0, p.pop - dt * 3.5)
           if (!p.decided) {
             p.x += p.speed * w * dt
-            if (p.x >= xg) p.decided = true
+            if (p.x >= xg) {
+              p.decided = true
+              if (p.pass) p.pop = 1 // approved pulse
+            }
           } else if (p.pass) {
             p.x += p.speed * w * dt
           } else {
-            // rejected at the gate: peel off, fall, fade
-            p.fall += dt * h * 0.55
-            p.alpha -= dt * 1.1
-            p.x += p.speed * w * dt * 0.25
+            // rejected: blocked at the gate, deflects down and out
+            p.x = Math.min(p.x, xg) - dt * w * 0.02
+            p.vy += dt * h * 2.2
+            p.fall += p.vy * dt
+            p.alpha -= dt * 0.9
           }
         }
-        parts = parts.filter((p) => p.x < X1 * w * 1.05 && p.alpha > 0.03)
+        parts = parts.filter(
+          (p) => p.x < X1 * w * 1.05 && p.alpha > 0.03 && p.fall < h * 0.6
+        )
       }
 
       function frame(t: number) {
         const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016
         last = t
         ctx.clearRect(0, 0, w, h)
-        envelope()
+        envelope(t)
         step(dt)
         for (const p of parts) drawP(p)
         ctx.globalAlpha = 1
@@ -225,17 +242,17 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
 
       function staticFrame() {
         ctx.clearRect(0, 0, w, h)
-        envelope()
-        const sample: P[] = [
-          { x: 0.16 * w, ty: 0.7, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
-          { x: 0.22 * w, ty: -0.5, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
-          { x: 0.4 * w, ty: 0.3, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
-          { x: 0.5 * w, ty: -0.2, speed: 0, pass: true, decided: false, fall: 0, alpha: 1 },
-          { x: 0.6 * w, ty: 0.4, speed: 0, pass: false, decided: true, fall: h * 0.12, alpha: 0.6 },
-          { x: 0.74 * w, ty: 0.2, speed: 0, pass: true, decided: true, fall: 0, alpha: 1 },
-          { x: 0.88 * w, ty: -0.3, speed: 0, pass: true, decided: true, fall: 0, alpha: 1 },
-        ]
-        for (const p of sample) drawP(p)
+        envelope(0)
+        const s: P[] = [
+          { x: 0.16, ty: 0.7, pass: true, decided: false, fall: 0 },
+          { x: 0.24, ty: -0.5, pass: true, decided: false, fall: 0 },
+          { x: 0.42, ty: 0.3, pass: true, decided: false, fall: 0 },
+          { x: 0.52, ty: -0.2, pass: true, decided: false, fall: 0 },
+          { x: 0.6, ty: 0.5, pass: false, decided: true, fall: h * 0.16 },
+          { x: 0.76, ty: 0.2, pass: true, decided: true, fall: 0 },
+          { x: 0.9, ty: -0.3, pass: true, decided: true, fall: 0 },
+        ].map((o) => ({ ...o, x: o.x * w, speed: 0, vy: 0, alpha: 1, pop: 0 }))
+        for (const p of s) drawP(p)
         ctx.globalAlpha = 1
       }
 
@@ -251,7 +268,7 @@ const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged'
 
       colors()
       resize()
-      if (!reduce) for (let i = 0; i < 22; i++) spawn(true)
+      if (!reduce) for (let i = 0; i < 22; i++) parts.push(make(true))
 
       new ResizeObserver(() => {
         resize()
