@@ -1,23 +1,20 @@
 ---
 /**
- * NightShift — the harness as a live funnel. An agent opens pull requests (dots)
- * that enter wide on the left and converge through review to the merge gate. Most
- * pass through the aperture with an "approved" pulse and stream out as merged
- * (cobalt); rejected PRs hit the gate and fall away. Inline labels anchor the
- * three moments. Canvas 2D, offscreen-paused, static under reduced motion.
+ * NightShift — the harness drawn as the loop it actually runs. A token traverses
+ * a workflow each night: Plan → Review (loops back to improve) → Build → Test
+ * (loops back to improve) → Ship, then the next night begins. Nodes pulse as the
+ * token arrives; the two "improve" arcs are the review gates sending work back.
+ * Canvas 2D, offscreen-paused, static (full diagram) under reduced motion.
  */
 ---
 
 <figure class="nightshift">
   <div class="nightshift__frame">
     <canvas data-nightshift aria-hidden="true"></canvas>
-    <span class="ns-label ns-label--in">Agent PRs</span>
-    <span class="ns-label ns-label--gate">Merge gate</span>
-    <span class="ns-label ns-label--out">Merged</span>
   </div>
   <figcaption>
-    Live: an agent opens each pull request, cross-model review and the merge gate
-    decide, and the ones that earn it merge. A few don't.
+    Every night the harness runs the loop on its own: plan, review, build, test,
+    each gate looping back to improve until the work earns the ship.
   </figcaption>
 </figure>
 
@@ -28,39 +25,18 @@
     border-radius: var(--radius-md);
     background: color-mix(in oklch, var(--surface-raised) 55%, transparent);
     overflow: hidden;
-    height: clamp(210px, 24vw, 290px);
+    height: clamp(220px, 25vw, 300px);
   }
   .nightshift__frame canvas {
     width: 100%;
     height: 100%;
     display: block;
   }
-  .ns-label {
-    position: absolute;
-    top: 0.85rem;
-    font-size: var(--text-xs);
-    font-weight: var(--w-semibold);
-    letter-spacing: 0.02em;
-    color: var(--muted);
-    pointer-events: none;
-  }
-  .ns-label--in {
-    left: 7%;
-  }
-  .ns-label--gate {
-    left: 60%;
-    transform: translateX(-50%);
-    color: var(--accent);
-  }
-  .ns-label--out {
-    right: 5%;
-    color: var(--accent);
-  }
   .nightshift figcaption {
     margin-top: var(--space-4);
     font-size: var(--text-sm);
     color: var(--muted);
-    max-width: 58ch;
+    max-width: 60ch;
   }
 </style>
 
@@ -74,56 +50,64 @@
       const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
       const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
       const TAU = Math.PI * 2
-      const X0 = 0.07,
-        XG = 0.6,
-        X1 = 0.95
+      const FONT = 'ui-sans-serif, system-ui, sans-serif'
+
+      // workflow nodes, x as fraction of width
+      const nodes = [
+        { label: 'Night', x: 0.07 },
+        { label: 'Plan', x: 0.25 },
+        { label: 'Review', x: 0.43 },
+        { label: 'Build', x: 0.61 },
+        { label: 'Test', x: 0.79 },
+        { label: 'Ship', x: 0.93 },
+      ]
+      // one full nightly cycle as a list of moves (arc = the "improve" loop-back)
+      const PLAN = () => [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 1, arc: true },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+        { from: 4, to: 3, arc: true },
+        { from: 3, to: 4 },
+        { from: 4, to: 5 },
+      ]
 
       let w = 0,
         h = 0,
         dpr = 1
-      let dot = 'gray',
-        accent = 'blue',
+      let ink = '#000',
         muted = 'gray',
-        hair = 'gray'
+        accent = 'blue',
+        hair = 'gray',
+        surface = '#fff'
       let raf = 0,
         visible = false,
         reduce = reduceMQ.matches,
-        last = 0,
-        spawnAcc = 0
+        last = 0
 
-      type P = {
-        x: number
-        ty: number
-        speed: number
-        pass: boolean
-        decided: boolean
-        fall: number
-        vy: number
-        alpha: number
-        pop: number
-      }
-      let parts: P[] = []
+      type Move = { from: number; to: number; arc?: boolean }
+      let queue: Move[] = PLAN()
+      let mi = 0
+      let t = 0
+      let phase: 'move' | 'pause' | 'ship' | 'restart' = 'move'
+      let timer = 0
+      let active = 0
+      let tokenAlpha = 1
+      const pulse = nodes.map(() => 0)
 
-      function band(x: number) {
-        const H0 = h * 0.4
-        const HG = h * 0.045
-        const out = h * 0.07
-        if (x <= XG * w) {
-          const t = Math.min(1, Math.max(0, (x - X0 * w) / ((XG - X0) * w)))
-          return H0 + (HG - H0) * t
-        }
-        const t = Math.min(1, (x - XG * w) / ((X1 - XG) * w))
-        return HG + (out - HG) * t
-      }
+      const PAUSE = 0.22
+      const ease = (x: number) => x * x * (3 - 2 * x)
 
       function colors() {
         const cs = getComputedStyle(document.documentElement)
-        dot = cs.getPropertyValue('--dot').trim() || 'gray'
-        accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
+        ink = cs.getPropertyValue('--ink').trim() || '#000'
         muted = cs.getPropertyValue('--muted').trim() || 'gray'
+        accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
         hair = cs.getPropertyValue('--hairline-strong').trim() || 'gray'
+        surface = cs.getPropertyValue('--surface-raised').trim() || '#fff'
       }
-
       function resize() {
         const r = canvas.getBoundingClientRect()
         w = Math.max(1, r.width)
@@ -134,128 +118,196 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       }
 
-      function make(initial = false): P {
+      const baseY = () => h * 0.44
+      const nodeX = (i: number) => nodes[i].x * w
+      function arcPoint(a: number, b: number, tt: number) {
+        const ax = nodeX(a),
+          bx = nodeX(b),
+          y = baseY()
+        const cx = (ax + bx) / 2
+        const cy = y + h * 0.32
+        const u = 1 - tt
         return {
-          x: initial ? X0 * w + Math.random() * (X1 - X0) * w : X0 * w,
-          ty: Math.random() * 2 - 1,
-          speed: 0.1 + Math.random() * 0.06,
-          pass: Math.random() > 0.22,
-          decided: false,
-          fall: 0,
-          vy: 0,
-          alpha: initial ? 1 : 0,
-          pop: 0,
+          x: u * u * ax + 2 * u * tt * cx + tt * tt * bx,
+          y: u * u * y + 2 * u * tt * cy + tt * tt * y,
+        }
+      }
+      function tokenPos() {
+        if (phase === 'restart') return { x: nodeX(0), y: baseY() }
+        const m = queue[mi]
+        if (!m || phase === 'pause' || phase === 'ship') return { x: nodeX(active), y: baseY() }
+        const e = ease(t)
+        if (m.arc) return arcPoint(m.from, m.to, e)
+        return { x: nodeX(m.from) + (nodeX(m.to) - nodeX(m.from)) * e, y: baseY() }
+      }
+
+      function update(dt: number) {
+        for (let i = 0; i < pulse.length; i++) pulse[i] = Math.max(0, pulse[i] - dt * 2.2)
+        if (phase === 'move') {
+          const m = queue[mi]
+          const dur = m.arc ? 0.85 : 0.7
+          t += dt / dur
+          if (t >= 1) {
+            t = 0
+            active = m.to
+            pulse[m.to] = 1
+            if (m.to === 5) {
+              phase = 'ship'
+              timer = 0
+            } else {
+              phase = 'pause'
+              timer = PAUSE
+            }
+          }
+        } else if (phase === 'pause') {
+          timer -= dt
+          if (timer <= 0) {
+            mi++
+            phase = 'move'
+            t = 0
+          }
+        } else if (phase === 'ship') {
+          timer += dt
+          if (timer >= 0.8) {
+            phase = 'restart'
+            timer = 0
+          }
+        } else {
+          timer += dt
+          tokenAlpha = timer < 0.4 ? 1 - timer / 0.4 : (timer - 0.4) / 0.4
+          if (timer >= 0.8) {
+            queue = PLAN()
+            mi = 0
+            t = 0
+            active = 0
+            phase = 'move'
+            tokenAlpha = 1
+            pulse[0] = 1
+          }
         }
       }
 
-      function envelope(t: number) {
-        const mid = h / 2
-        const x0 = X0 * w
-        const xg = XG * w
-        const x1 = X1 * w
-        const H0 = h * 0.4
-        const HG = h * 0.045
-        const out = h * 0.07
-        ctx.strokeStyle = hair
-        ctx.globalAlpha = 0.5
-        ctx.lineWidth = 1
+      function arrowhead(x: number, y: number, ang: number, size: number, color: string) {
+        ctx.fillStyle = color
         ctx.beginPath()
-        ctx.moveTo(x0, mid - H0)
-        ctx.lineTo(xg, mid - HG)
-        ctx.lineTo(x1, mid - out)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(x0, mid + H0)
-        ctx.lineTo(xg, mid + HG)
-        ctx.lineTo(x1, mid + out)
-        ctx.stroke()
-        // gate: a soft glow plus a crisp line, gently pulsing
-        const pulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * 0.003))
-        ctx.strokeStyle = accent
-        ctx.globalAlpha = 0.18 * pulse
-        ctx.lineWidth = 7
-        ctx.beginPath()
-        ctx.moveTo(xg, mid - HG * 2.6)
-        ctx.lineTo(xg, mid + HG * 2.6)
-        ctx.stroke()
-        ctx.globalAlpha = 0.9
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(xg, mid - HG * 2.6)
-        ctx.lineTo(xg, mid + HG * 2.6)
-        ctx.stroke()
-        ctx.globalAlpha = 1
-      }
-
-      function drawP(p: P) {
-        const passedGate = p.x > XG * w
-        const y = h / 2 + p.ty * band(p.x) + p.fall
-        const base = p.pass && passedGate ? 2.9 : 2.2
-        ctx.globalAlpha = Math.min(1, p.alpha)
-        ctx.fillStyle = p.decided ? (p.pass ? accent : muted) : dot
-        ctx.beginPath()
-        ctx.arc(p.x, y, base * (1 + p.pop * 0.8), 0, TAU)
+        ctx.moveTo(x, y)
+        ctx.lineTo(x - size * Math.cos(ang - 0.4), y - size * Math.sin(ang - 0.4))
+        ctx.lineTo(x - size * Math.cos(ang + 0.4), y - size * Math.sin(ang + 0.4))
+        ctx.closePath()
         ctx.fill()
       }
 
-      function step(dt: number) {
-        spawnAcc += dt
-        if (spawnAcc > 0.16 && parts.length < 44) {
-          spawnAcc = 0
-          parts.push(make())
+      function render(shipT: number) {
+        ctx.clearRect(0, 0, w, h)
+        const y = baseY()
+        const lf = Math.max(9, Math.min(12, Math.round(w / 58)))
+        const r = 5
+
+        // forward edges
+        ctx.strokeStyle = hair
+        ctx.lineWidth = 1.2
+        ctx.globalAlpha = 0.7
+        for (let i = 0; i < nodes.length - 1; i++) {
+          ctx.beginPath()
+          ctx.moveTo(nodeX(i) + r, y)
+          ctx.lineTo(nodeX(i + 1) - r, y)
+          ctx.stroke()
+          arrowhead(nodeX(i + 1) - r - 1, y, 0, 5, hair)
         }
-        const xg = XG * w
-        for (const p of parts) {
-          p.alpha = Math.min(1, p.alpha + dt * 3)
-          p.pop = Math.max(0, p.pop - dt * 3.5)
-          if (!p.decided) {
-            p.x += p.speed * w * dt
-            if (p.x >= xg) {
-              p.decided = true
-              if (p.pass) p.pop = 1 // approved pulse
-            }
-          } else if (p.pass) {
-            p.x += p.speed * w * dt
-          } else {
-            // rejected: blocked at the gate, deflects down and out
-            p.x = Math.min(p.x, xg) - dt * w * 0.02
-            p.vy += dt * h * 2.2
-            p.fall += p.vy * dt
-            p.alpha -= dt * 0.9
+
+        // improve loop arcs: review->plan, test->build
+        ctx.globalAlpha = 0.6
+        for (const [a, b] of [
+          [2, 1],
+          [4, 3],
+        ]) {
+          ctx.strokeStyle = accent
+          ctx.lineWidth = 1.2
+          ctx.beginPath()
+          for (let s = 0; s <= 1.001; s += 0.05) {
+            const p = arcPoint(a, b, s)
+            s === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)
           }
+          ctx.stroke()
+          const tip = arcPoint(a, b, 0.96)
+          const pre = arcPoint(a, b, 0.9)
+          arrowhead(tip.x, tip.y, Math.atan2(tip.y - pre.y, tip.x - pre.x), 5, accent)
+          const mid = arcPoint(a, b, 0.5)
+          ctx.globalAlpha = 0.85
+          ctx.fillStyle = muted
+          ctx.font = `500 ${lf}px ${FONT}`
+          ctx.textAlign = 'center'
+          ctx.fillText('improve', mid.x, mid.y + lf + 2)
+          ctx.globalAlpha = 0.6
         }
-        parts = parts.filter(
-          (p) => p.x < X1 * w * 1.05 && p.alpha > 0.03 && p.fall < h * 0.6
-        )
+
+        // nodes + labels
+        ctx.globalAlpha = 1
+        ctx.textAlign = 'center'
+        for (let i = 0; i < nodes.length; i++) {
+          const x = nodeX(i)
+          const isActive = i === active
+          const pr = r + pulse[i] * 4
+          if (isActive || pulse[i] > 0) {
+            ctx.globalAlpha = 0.18 + pulse[i] * 0.2
+            ctx.fillStyle = accent
+            ctx.beginPath()
+            ctx.arc(x, y, pr + 5, 0, TAU)
+            ctx.fill()
+          }
+          ctx.globalAlpha = 1
+          ctx.beginPath()
+          ctx.arc(x, y, r, 0, TAU)
+          if (isActive) {
+            ctx.fillStyle = accent
+            ctx.fill()
+          } else {
+            ctx.fillStyle = surface
+            ctx.fill()
+            ctx.lineWidth = 1.4
+            ctx.strokeStyle = hair
+            ctx.stroke()
+          }
+          ctx.fillStyle = isActive ? ink : muted
+          ctx.font = `${isActive ? 600 : 500} ${lf}px ${FONT}`
+          ctx.fillText(nodes[i].label, x, y - r - 8)
+        }
+
+        // ship flash
+        if (shipT > 0 && shipT < 1) {
+          ctx.globalAlpha = (1 - shipT) * 0.6
+          ctx.strokeStyle = accent
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(nodeX(5), y, r + shipT * 22, 0, TAU)
+          ctx.stroke()
+        }
+
+        // token
+        const p = tokenPos()
+        ctx.globalAlpha = tokenAlpha
+        ctx.fillStyle = accent
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 4, 0, TAU)
+        ctx.fill()
+        ctx.globalAlpha = 1
       }
 
-      function frame(t: number) {
-        const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016
-        last = t
-        ctx.clearRect(0, 0, w, h)
-        envelope(t)
-        step(dt)
-        for (const p of parts) drawP(p)
-        ctx.globalAlpha = 1
+      function frame(now: number) {
+        const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016
+        last = now
+        update(dt)
+        render(phase === 'ship' ? timer / 0.8 : 0)
         raf = requestAnimationFrame(frame)
       }
-
       function staticFrame() {
-        ctx.clearRect(0, 0, w, h)
-        envelope(0)
-        const s: P[] = [
-          { x: 0.16, ty: 0.7, pass: true, decided: false, fall: 0 },
-          { x: 0.24, ty: -0.5, pass: true, decided: false, fall: 0 },
-          { x: 0.42, ty: 0.3, pass: true, decided: false, fall: 0 },
-          { x: 0.52, ty: -0.2, pass: true, decided: false, fall: 0 },
-          { x: 0.6, ty: 0.5, pass: false, decided: true, fall: h * 0.16 },
-          { x: 0.76, ty: 0.2, pass: true, decided: true, fall: 0 },
-          { x: 0.9, ty: -0.3, pass: true, decided: true, fall: 0 },
-        ].map((o) => ({ ...o, x: o.x * w, speed: 0, vy: 0, alpha: 1, pop: 0 }))
-        for (const p of s) drawP(p)
-        ctx.globalAlpha = 1
+        // a clear, settled diagram with the token mid-review
+        active = 2
+        pulse.fill(0)
+        tokenAlpha = 1
+        phase = 'pause'
+        render(0)
       }
-
       function start() {
         cancelAnimationFrame(raf)
         last = 0
@@ -268,8 +320,6 @@
 
       colors()
       resize()
-      if (!reduce) for (let i = 0; i < 22; i++) parts.push(make(true))
-
       new ResizeObserver(() => {
         resize()
         if (reduce || !visible) staticFrame()
