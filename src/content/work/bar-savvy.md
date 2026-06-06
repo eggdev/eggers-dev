@@ -18,6 +18,12 @@ metrics:
   - { value: '4,482', label: 'commits, sole continuous author', source: 'verified' }
   - { value: '25', label: 'production LLM modules in the data engine', source: 'verified' }
   - { value: '5-7×', label: 'shipping velocity as the harness matured', source: 'reported' }
+caseStudy:
+  - 'A Bun + Turborepo monorepo: four apps (web plus API, marketing, Expo native) and 29 shared @repo/* packages covering design system, auth, search, maps, payments, and data.'
+  - 'The data engine is an Apache Airflow ETL containerized to AWS ECR, with numbered chained DAGs and dynamic task mapping, fusing TABC, Google, reviews, and dual geocoding into one canonical venue record.'
+  - 'Cost-aware LLM use: cheap deterministic classifiers gate 25 GPT modules, including a double-check reviewer that flags its own disagreements for a human to settle.'
+  - 'The AI-native system: a .harness with AST lint rules and an auto-ratcheting merge policy, hooks that block unsafe agent actions, a launchd Night Shift loop, and cross-model Claude plus Codex review.'
+  - 'The arc over 2026: planning fluent by February, the harness hardened against itself by April, mature gates by May, pointed at production by June.'
 ---
 
 Bar Savvy turns Texas Alcoholic Beverage Commission data into analytics that help

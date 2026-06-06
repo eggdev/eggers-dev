@@ -28,6 +28,8 @@ const work = defineCollection({
       )
       .default([]),
     links: z.array(z.object({ label: z.string(), href: z.url() })).default([]),
+    // deeper, verified proof revealed in a "Read the full story" disclosure
+    caseStudy: z.array(z.string()).default([]),
   }),
 })
 

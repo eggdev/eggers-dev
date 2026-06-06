@@ -17,6 +17,12 @@ metrics:
   - { value: '~70%', label: 'of commits in a four-week sprint', source: 'verified' }
   - { value: '50 min to 1 min', label: 'deploy time, via an autonomous fix', source: 'reported' }
   - { value: '$150K+/yr', label: 'value from upcredit, live across the portfolio', source: 'reported' }
+caseStudy:
+  - 'Sidekick OS runs on a pnpm + Nx monorepo (api, web, cli, worker) with Effect 3 as the runtime substrate, Zero local-first sync, and WorkOS auth.'
+  - 'Per-user encryption: a DEK/KEK AES-256-GCM scheme encrypts knowledge at rest and decrypts client-side, so destroying a key crypto-shreds that user data, the unit of GDPR erasure.'
+  - 'AI-native from day one: a custom invariant scanner with twelve zero-mode architecture rules (Node and Git only), a git-native AI issue tracker, and most Codex work running fully autonomous.'
+  - 'An autonomous run root-caused a deploy split-brain, built a schema-drift gate, and cut deploy time from roughly 50 minutes to about one.'
+  - 'upcredit: a deliberately small rent-reporting credit product (Next.js, Clerk, Supabase) running across LV Collective student-housing properties.'
 ---
 
 Sidekick OS is a private executive-knowledge operating system: an AI assistant

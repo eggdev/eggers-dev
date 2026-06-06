@@ -16,6 +16,12 @@ metrics:
   - { value: '#6 of 94', label: 'contributor on NBA.com''s codebase', source: 'verified' }
   - { value: '76%', label: 'ownership of the @nbad/auth library', source: 'verified' }
   - { value: '~25K', label: 'All-Star booth sign-ups, zero incidents', source: 'reported' }
+caseStudy:
+  - 'ScoreStrip: built from the first commit through majority ownership, the live scores most visitors came to check.'
+  - 'Client-side tech lead for third-party login and entitlements across web and connected devices: TV Everywhere, international broadcasters, and NBA CIAM identity, packaged into @nbad/auth.'
+  - 'Tech-led the League Pass purchase page and the recursive block-rendering system behind it, so marketing could edit subscription and Local Access pages as content blocks. Localized in three languages.'
+  - 'Helped launch Local Access in-market streaming that routed around blackouts, and built the Nike sign-up flow for the 2024 All-Star booth.'
+  - 'A self-initiated platform rotation produced RepositoryManagementTool, the self-service repo-provisioning tool NBA DTC standardized on.'
 ---
 
 On NBA.com and League Pass, I built ScoreStrip from the first commit through

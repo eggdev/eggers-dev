@@ -36,6 +36,10 @@ mergePolicy({
 })`
 
 const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as const
+
+// Set this to the cleaned public harness repo URL once it's published, and the
+// excerpt links to it automatically. Empty = no link (no broken link shipped).
+const harnessUrl = ''
 ---
 
 <section id="ai" class="section ai">
@@ -67,7 +71,25 @@ const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as con
 
       <figure class="ai-code">
         <Code code={harness} lang="ts" themes={codeThemes} />
-        <figcaption>A slice of the harness I carry between projects.</figcaption>
+        <figcaption>
+          A slice of the harness I carry between projects.
+          {
+            harnessUrl && (
+              <a class="ai-code__link link-arrow" href={harnessUrl} target="_blank" rel="noopener">
+                See the harness
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M5 11L11 5M11 5H6M11 5V10"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </a>
+            )
+          }
+        </figcaption>
       </figure>
     </div>
 
