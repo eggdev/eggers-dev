@@ -41,3 +41,6 @@ Thumbs.db
 /.gemini/
 /.kiro/
 /.opencode/
+
+# impeccable tool state (critique snapshots, live config, design sidecar)
+/.impeccable/
