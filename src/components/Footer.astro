@@ -1,0 +1,36 @@
+---
+const year = new Date().getFullYear()
+---
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <p class="footer__c">© {year} Brendan Eggers</p>
+    <p class="footer__note">Designed and built by me, in Astro. The source is the proof.</p>
+    <a class="footer__top" href="#top">Back to top</a>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    border-top: 1px solid var(--hairline);
+    padding-block: var(--space-5);
+  }
+  .footer__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  .footer__note {
+    margin-right: auto;
+  }
+  .footer__top {
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .footer__top:hover {
+    color: var(--ink);
+  }
+</style>

@@ -1,0 +1,96 @@
+---
+const builds = [
+  {
+    title: 'eggers.wedding',
+    desc: 'A full wedding platform that runs my own wedding end to end: group RSVPs with two-way Zola sync, a Spotify song list, a seating chart, and an authenticated admin app, with an autonomous nightly agent doing repo cleanup.',
+    link: { label: 'eggers.wedding', href: 'https://eggers.wedding' },
+  },
+  {
+    title: 'A watcher on a Jetson',
+    desc: "A self-hosted AI agent on a Jetson Orin Nano keeps an eye on my place, where a Furbo used to sit. I'd rather run something I can actually program.",
+  },
+  {
+    title: 'reMarkable to shipped code',
+    desc: "When an idea hits and I'm away from my desk, I write it out longhand on a reMarkable and hand the pages to an agent that starts building before I'm back.",
+  },
+]
+---
+
+<section id="builds" class="section">
+  <div class="container">
+    <header class="section-head">
+      <p class="section-label">Things I build for myself</p>
+      <h2 class="h-section">The way I build doesn't clock out.</h2>
+      <p class="lede">
+        The same harness-and-agents playbook shows up in the things I make for myself. The wedding
+        is just the project with a date on it.
+      </p>
+    </header>
+
+    <ul class="builds">
+      {
+        builds.map((b) => (
+          <li class="build">
+            <div class="build__head">
+              <h3 class="build__title">{b.title}</h3>
+              {b.link && (
+                <a class="link-arrow build__link" href={b.link.href} target="_blank" rel="noopener">
+                  {b.link.label}
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M5 11L11 5M11 5H6M11 5V10"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </a>
+              )}
+            </div>
+            <p class="build__desc">{b.desc}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .builds {
+    display: grid;
+    gap: 0;
+  }
+  .build {
+    display: grid;
+    gap: 0.6rem;
+    padding-block: clamp(1.5rem, 1rem + 1.5vw, 2.25rem);
+    border-top: 1px solid var(--hairline);
+  }
+  @media (min-width: 52rem) {
+    .build {
+      grid-template-columns: minmax(12rem, 0.34fr) 1fr;
+      gap: clamp(1rem, 0.4rem + 2vw, 2.5rem);
+      align-items: baseline;
+    }
+  }
+  .build__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 1rem;
+  }
+  .build__title {
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.015em;
+  }
+  .build__link {
+    font-size: var(--text-sm);
+  }
+  .build__desc {
+    color: var(--muted);
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+</style>

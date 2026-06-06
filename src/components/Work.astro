@@ -1,0 +1,181 @@
+---
+import { getCollection, render } from 'astro:content'
+
+const entries = (await getCollection('work')).sort((a, b) => a.data.order - b.data.order)
+const rendered = await Promise.all(
+  entries.map(async (e) => ({ data: e.data, Content: (await render(e)).Content }))
+)
+const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source === 'reported'))
+---
+
+<section id="work" class="section">
+  <div class="container">
+    <header class="section-head">
+      <p class="section-label">Selected work</p>
+      <h2 class="h-section">Shipped, owned, measured.</h2>
+    </header>
+
+    <div class="work-list">
+      {
+        rendered.map(({ data, Content }) => (
+          <article class="work-entry">
+            <div class="work-entry__meta">
+              <h3 class="work-entry__title">{data.title}</h3>
+              <p class="work-entry__role">{data.role}</p>
+              <p class="work-entry__period tabular">{data.period}</p>
+            </div>
+
+            <div class="work-entry__body">
+              <p class="work-entry__outcome">{data.outcome}</p>
+              <div class="prose">
+                <Content />
+              </div>
+
+              <ul class="metrics">
+                {data.metrics.map((m) => (
+                  <li class="metric">
+                    <span class="metric__val tabular" data-source={m.source}>
+                      {m.value}
+                    </span>
+                    <span class="metric__label">{m.label}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p class="work-entry__stack">{data.stack.join('   ·   ')}</p>
+
+              {data.links.length > 0 && (
+                <ul class="work-entry__links">
+                  {data.links.map((l) => (
+                    <li>
+                      <a class="link-arrow" href={l.href} target="_blank" rel="noopener">
+                        {l.label}
+                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                          <path
+                            d="M5 11L11 5M11 5H6M11 5V10"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </article>
+        ))
+      }
+    </div>
+
+    {
+      hasReported && (
+        <p class="work-foot">
+          <span class="mark">*</span> Self-reported. Git-verified figures are unmarked.
+        </p>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .work-entry {
+    display: grid;
+    gap: clamp(1rem, 0.4rem + 2vw, 2.5rem);
+    padding-block: clamp(2.25rem, 1.5rem + 2.5vw, 3.5rem);
+    border-top: 1px solid var(--hairline);
+  }
+  @media (min-width: 52rem) {
+    .work-entry {
+      grid-template-columns: minmax(12rem, 0.34fr) 1fr;
+    }
+  }
+
+  .work-entry__title {
+    font-size: var(--text-xl);
+    font-weight: var(--w-bold);
+    letter-spacing: -0.02em;
+  }
+  .work-entry__role {
+    margin-top: 0.6rem;
+    color: var(--ink);
+    font-weight: var(--w-medium);
+    font-size: var(--text-sm);
+  }
+  .work-entry__period {
+    margin-top: 0.2rem;
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+
+  .work-entry__outcome {
+    font-size: var(--text-lg);
+    font-weight: var(--w-medium);
+    color: var(--ink);
+    text-wrap: pretty;
+    max-width: 46ch;
+  }
+  .work-entry__body .prose {
+    margin-top: var(--space-4);
+    font-size: var(--text-base);
+  }
+
+  .metrics {
+    margin-top: var(--space-5);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.5rem;
+    border-top: 1px solid var(--hairline);
+    padding-top: var(--space-4);
+  }
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .metric__val {
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .metric__val[data-source='reported']::after {
+    content: '*';
+    color: var(--muted);
+    font-weight: var(--w-regular);
+    margin-left: 0.1em;
+  }
+  .metric__label {
+    font-size: var(--text-sm);
+    color: var(--muted);
+    max-width: 22ch;
+  }
+
+  .work-entry__stack {
+    margin-top: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+
+  .work-entry__links {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    font-size: var(--text-sm);
+  }
+
+  .work-foot {
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--hairline);
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  .work-foot .mark {
+    color: var(--muted);
+  }
+</style>

@@ -1,0 +1,118 @@
+---
+import DotMatrix from './DotMatrix.astro'
+
+const roles = ['Director of SWE · LV Collective', 'Co-Founder / CTO · Bar Savvy', 'ex-NBA']
+---
+
+<section class="hero" id="top">
+  <div class="container hero__grid">
+    <div class="hero__text">
+      <p class="hero__name">Brendan Eggers</p>
+      <h1 class="hero__title">I build the systems that let agents ship real software.</h1>
+      <p class="hero__lede">
+        Most nights, software I didn't write opens pull requests against my codebase. A system I
+        built reads each one, runs the tests, and merges the ones that earn it. I wake up to a
+        cleaner repo than I left.
+      </p>
+      <ul class="chips hero__roles">
+        {roles.map((r) => <li class="chip">{r}</li>)}
+      </ul>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href="#work">See the work</a>
+        <a class="link-arrow" href="#contact">
+          Get in touch
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3 8h10M9 4l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+    <div class="hero__visual" aria-hidden="true">
+      <DotMatrix variant="field" accent={0.09} intensity={1} />
+      <span class="hero__visual-edge"></span>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: clamp(3rem, 2rem + 6vw, 6.5rem) var(--section-gap);
+  }
+  .hero__grid {
+    display: grid;
+    gap: clamp(2.25rem, 1rem + 5vw, 4rem);
+    align-items: center;
+  }
+  @media (min-width: 60rem) {
+    .hero__grid {
+      grid-template-columns: 1.05fr 0.82fr;
+    }
+  }
+
+  .hero__name {
+    font-size: var(--text-sm);
+    font-weight: var(--w-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: var(--space-3);
+  }
+  .hero__title {
+    font-size: var(--text-display);
+    font-weight: var(--w-display);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    max-width: 16ch;
+    text-wrap: balance;
+  }
+  .hero__lede {
+    margin-top: var(--space-4);
+    max-width: 48ch;
+    font-size: var(--text-lg);
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .hero__roles {
+    margin-top: var(--space-5);
+  }
+  .hero__actions {
+    margin-top: var(--space-5);
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .hero__visual {
+    position: relative;
+    min-height: 260px;
+    height: 100%;
+    min-block-size: clamp(240px, 38vh, 420px);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    overflow: hidden;
+  }
+  /* dissolve the field toward the edges so it reads as a crafted object */
+  .hero__visual-edge {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      120% 120% at 50% 50%,
+      transparent 55%,
+      var(--surface-raised) 100%
+    );
+  }
+  @media (max-width: 40rem) {
+    .hero__visual {
+      min-block-size: 200px;
+    }
+  }
+</style>

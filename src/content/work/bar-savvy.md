@@ -1,0 +1,39 @@
+---
+title: Bar Savvy
+org: Bar Savvy
+role: Technical Co-Founder & CTO
+period: 2023 to present
+order: 1
+outcome: Built a Texas alcohol-sales analytics platform end to end as the sole continuous engineer over three years, and ran it as an AI-native engineering operation.
+stack:
+  - Bun
+  - Turborepo
+  - Next.js
+  - Expo / React Native
+  - Supabase
+  - Apache Airflow
+  - Kubernetes
+  - Stripe
+metrics:
+  - { value: '4,482', label: 'commits, sole continuous author', source: 'verified' }
+  - { value: '25', label: 'production LLM modules in the data engine', source: 'verified' }
+  - { value: '5-7×', label: 'shipping velocity as the harness matured', source: 'reported' }
+---
+
+Bar Savvy turns Texas Alcoholic Beverage Commission data into analytics that help
+operators and investors find their best opportunities. I built it on a Bun and
+Turborepo monorepo: a Next.js web app, an Expo native app, and Supabase, owning
+every surface from the design system to billing.
+
+The data engine is an Apache Airflow ETL, containerized to AWS ECR, that fuses
+TABC sales data, Google, scraped reviews, and geocoding into one canonical venue
+record. It runs 25 production LLM modules for classification and fuzzy address
+matching, including a "double-check" reviewer, with cheap deterministic gating in
+front of the expensive calls. I stood up the production backend on Kubernetes
+myself, then made the pragmatic call to drop a high-maintenance Elasticsearch API
+for direct SQL, cutting ops burden while improving latency.
+
+The part I care most about is how it runs: a custom verification harness with
+AST-level lint rules and an auto-ratcheting merge policy, an autonomous nightly
+cleanup-and-merge loop, and cross-model Claude and Codex review. Early-stage by
+design, so the signal here is craft and full-stack ownership run lean.

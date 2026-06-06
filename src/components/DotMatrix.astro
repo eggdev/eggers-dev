@@ -1,0 +1,236 @@
+---
+/**
+ * DotMatrix — the signature visual. A field of dots whose size and opacity
+ * breathe along a slow traveling wave, with a gentle pointer-proximity bloom.
+ * Cobalt accent dots are sparse and deterministic. Reads its colors from CSS
+ * custom properties so it adapts to light/dark. Static under reduced motion,
+ * paused when offscreen. Decorative: aria-hidden.
+ */
+interface Props {
+  /** visual preset */
+  variant?: 'field' | 'calm' | 'dense'
+  /** fraction of dots tinted with the cobalt accent (0–1) */
+  accent?: number
+  /** animation amplitude, 0 = still, 1 = default */
+  intensity?: number
+  /** pointer-proximity bloom */
+  interactive?: boolean
+  class?: string
+}
+
+const {
+  variant = 'field',
+  accent = 0.05,
+  intensity = 1,
+  interactive = true,
+  class: className,
+} = Astro.props
+
+const presets = {
+  field: { gap: 22, radius: 1.7 },
+  calm: { gap: 30, radius: 1.9 },
+  dense: { gap: 16, radius: 1.4 },
+} as const
+const { gap, radius } = presets[variant]
+---
+
+<div
+  class:list={['dotmatrix', className]}
+  data-dotmatrix
+  data-gap={gap}
+  data-radius={radius}
+  data-accent={accent}
+  data-intensity={intensity}
+  data-interactive={interactive ? '1' : '0'}
+  aria-hidden="true"
+>
+  <canvas></canvas>
+</div>
+
+<style>
+  .dotmatrix {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .dotmatrix canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>
+
+<script>
+  type Field = {
+    el: HTMLElement
+    canvas: HTMLCanvasElement
+    ctx: CanvasRenderingContext2D
+    gap: number
+    radius: number
+    accentFrac: number
+    intensity: number
+    interactive: boolean
+    w: number
+    h: number
+    dpr: number
+    dot: string
+    dotAccent: string
+    pointer: { x: number; y: number; on: boolean }
+    raf: number
+    visible: boolean
+    reduce: boolean
+  }
+
+  const TAU = Math.PI * 2
+  const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
+
+  // deterministic per-cell hash → stable accent placement, no Math.random flicker
+  function hash(i: number, j: number) {
+    const n = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453
+    return n - Math.floor(n)
+  }
+
+  function readColors(f: Field) {
+    const cs = getComputedStyle(f.el)
+    f.dot = cs.getPropertyValue('--dot').trim() || 'gray'
+    f.dotAccent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
+  }
+
+  function resize(f: Field) {
+    const rect = f.el.getBoundingClientRect()
+    f.w = Math.max(1, Math.round(rect.width))
+    f.h = Math.max(1, Math.round(rect.height))
+    f.dpr = Math.min(window.devicePixelRatio || 1, 2)
+    f.canvas.width = Math.round(f.w * f.dpr)
+    f.canvas.height = Math.round(f.h * f.dpr)
+    f.ctx.setTransform(f.dpr, 0, 0, f.dpr, 0, 0)
+  }
+
+  function draw(f: Field, t: number) {
+    const { ctx, w, h, gap, radius } = f
+    ctx.clearRect(0, 0, w, h)
+    const cols = Math.ceil(w / gap) + 1
+    const rows = Math.ceil(h / gap) + 1
+    const offX = (w - (cols - 1) * gap) / 2
+    const offY = (h - (rows - 1) * gap) / 2
+    const amp = f.reduce ? 0 : f.intensity
+    const time = t * 0.00055
+
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const x = offX + i * gap
+        const y = offY + j * gap
+        // slow wave traveling diagonally across the field
+        const wave = Math.sin((x + y) * 0.012 - time * TAU)
+        let scale = 0.62 + 0.38 * ((wave + 1) / 2) * amp + (amp === 0 ? 0.18 : 0)
+        let alpha = 0.16 + 0.34 * ((wave + 1) / 2) * (amp || 0.55)
+
+        // pointer-proximity bloom
+        if (f.interactive && f.pointer.on && !f.reduce) {
+          const dx = x - f.pointer.x
+          const dy = y - f.pointer.y
+          const d = Math.hypot(dx, dy)
+          const influence = 130
+          if (d < influence) {
+            const k = 1 - d / influence
+            scale += k * 1.4
+            alpha += k * 0.5
+          }
+        }
+
+        const isAccent = hash(i, j) < f.accentFrac
+        ctx.globalAlpha = Math.min(alpha, isAccent ? 0.95 : 0.7)
+        ctx.fillStyle = isAccent ? f.dotAccent : f.dot
+        ctx.beginPath()
+        ctx.arc(x, y, Math.max(0.2, radius * scale), 0, TAU)
+        ctx.fill()
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  function start(f: Field) {
+    cancelAnimationFrame(f.raf)
+    if (f.reduce || !f.visible) {
+      draw(f, 0)
+      return
+    }
+    const loop = (t: number) => {
+      draw(f, t)
+      f.raf = requestAnimationFrame(loop)
+    }
+    f.raf = requestAnimationFrame(loop)
+  }
+
+  function init(el: HTMLElement) {
+    const canvas = el.querySelector('canvas')
+    if (!(canvas instanceof HTMLCanvasElement)) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const f: Field = {
+      el,
+      canvas,
+      ctx,
+      gap: Number(el.dataset.gap) || 22,
+      radius: Number(el.dataset.radius) || 1.7,
+      accentFrac: Number(el.dataset.accent) || 0.05,
+      intensity: Number(el.dataset.intensity ?? 1),
+      interactive: el.dataset.interactive === '1',
+      w: 0,
+      h: 0,
+      dpr: 1,
+      dot: 'gray',
+      dotAccent: 'blue',
+      pointer: { x: 0, y: 0, on: false },
+      raf: 0,
+      visible: true,
+      reduce: reduceMQ.matches,
+    }
+
+    readColors(f)
+    resize(f)
+    start(f)
+
+    const ro = new ResizeObserver(() => {
+      resize(f)
+      if (f.reduce || !f.visible) draw(f, 0)
+    })
+    ro.observe(el)
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        f.visible = entries[0].isIntersecting
+        start(f)
+      },
+      { rootMargin: '120px' }
+    )
+    io.observe(el)
+
+    if (f.interactive) {
+      const host = el.parentElement ?? el
+      host.addEventListener('pointermove', (e) => {
+        const r = f.canvas.getBoundingClientRect()
+        f.pointer.x = e.clientX - r.left
+        f.pointer.y = e.clientY - r.top
+        f.pointer.on = true
+      })
+      host.addEventListener('pointerleave', () => {
+        f.pointer.on = false
+      })
+    }
+
+    reduceMQ.addEventListener('change', () => {
+      f.reduce = reduceMQ.matches
+      start(f)
+    })
+    darkMQ.addEventListener('change', () => {
+      readColors(f)
+      if (f.reduce || !f.visible) draw(f, 0)
+    })
+  }
+
+  for (const el of document.querySelectorAll<HTMLElement>('[data-dotmatrix]')) init(el)
+</script>

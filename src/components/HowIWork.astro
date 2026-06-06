@@ -1,0 +1,181 @@
+---
+import { Code } from 'astro:components'
+
+const points = [
+  {
+    h: 'The harness',
+    p: "AST-level lint rules, an auto-ratcheting merge policy, and guardrail hooks the agents can't edit, not even when I tell them to.",
+  },
+  {
+    h: 'The night shift',
+    p: 'An autonomous loop opens small cleanup PRs every 20 minutes and merges the green, approved ones every 15. I wake up to a cleaner repo.',
+  },
+  {
+    h: 'Cross-model review',
+    p: "Claude plans, triages, and verifies. Codex implements and plays the skeptical reviewer. One model re-checks the other's findings against the code.",
+  },
+  {
+    h: 'The human gate',
+    p: 'Nothing reaches a person until it has passed everything I would have checked myself. Commit, never push.',
+  },
+]
+
+const harness = `// .harness/hooks.ts — the line agents can't cross
+preToolUse((action) => {
+  if (editsGuardrails(action) || usesNoVerify(action)) {
+    return block("guardrails and CI bypass are off-limits")
+  }
+})
+
+// quality only ratchets one direction
+mergePolicy({
+  required: ["typecheck", "unit", "e2e", "codex-review"],
+  ratchet: "auto",          // every green PR raises the bar
+  humanGate: "commit-never-push",
+})`
+
+const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as const
+---
+
+<section id="ai" class="section ai">
+  <div class="container">
+    <header class="section-head">
+      <p class="section-label">How I work with AI</p>
+      <h2 class="h-section">I build the harness, not just the prompt.</h2>
+      <p class="lede">
+        Anyone can wire up an agent in 2026. The rare part is the judgment about where it belongs,
+        written down as rules the agents can't break. Every project starts from a harness I carry
+        with me, with the guardrails already in place.
+      </p>
+    </header>
+
+    <div class="ai-grid">
+      <ul class="ai-points">
+        {
+          points.map((pt) => (
+            <li class="ai-point">
+              <h3 class="ai-point__h">{pt.h}</h3>
+              <p class="ai-point__p">{pt.p}</p>
+            </li>
+          ))
+        }
+      </ul>
+
+      <figure class="ai-code">
+        <Code code={harness} lang="ts" themes={codeThemes} />
+        <figcaption>A slice of the harness I carry between projects.</figcaption>
+      </figure>
+    </div>
+
+    <div class="ai-judgment">
+      <h3 class="ai-judgment__h">I direct agents like a senior manager running a tireless junior.</h3>
+      <dl class="ai-rules">
+        <div class="ai-rule">
+          <dt>Plan first</dt>
+          <dd>"We can build all of this in a night if we do proper planning."</dd>
+        </div>
+        <div class="ai-rule">
+          <dt>Root cause over the quick fix</dt>
+          <dd>"Step back and identify the root of the problem."</dd>
+        </div>
+        <div class="ai-rule">
+          <dt>A hard human gate</dt>
+          <dd>"Commit, never push."</dd>
+        </div>
+      </dl>
+      <p class="ai-result">
+        The result: a one-to-three-person operation that ships like a much larger team, with the
+        guardrails that make the speed safe to trust.
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .ai-grid {
+    display: grid;
+    gap: clamp(1.5rem, 0.8rem + 3vw, 3rem);
+    align-items: start;
+  }
+  @media (min-width: 56rem) {
+    .ai-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .ai-points {
+    display: grid;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+  .ai-point__h {
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.015em;
+  }
+  .ai-point__p {
+    margin-top: 0.4rem;
+    color: var(--muted);
+    max-width: 48ch;
+  }
+
+  .ai-code {
+    position: sticky;
+    top: 5rem;
+    min-width: 0;
+  }
+  .ai-code :global(.astro-code) {
+    max-width: 100%;
+  }
+  .ai-code figcaption {
+    margin-top: 0.75rem;
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  @media (max-width: 56rem) {
+    .ai-code {
+      position: static;
+    }
+  }
+
+  .ai-judgment {
+    margin-top: clamp(3rem, 2rem + 4vw, 5rem);
+    padding-top: clamp(2rem, 1.4rem + 2vw, 3rem);
+    border-top: 1px solid var(--hairline);
+  }
+  .ai-judgment__h {
+    font-size: var(--text-xl);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.02em;
+    max-width: 24ch;
+  }
+  .ai-rules {
+    margin-top: var(--space-5);
+    display: grid;
+    gap: var(--space-4);
+  }
+  @media (min-width: 48rem) {
+    .ai-rules {
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-5);
+    }
+  }
+  .ai-rule dt {
+    font-weight: var(--w-semibold);
+    font-size: var(--text-sm);
+    color: var(--ink);
+  }
+  .ai-rule dd {
+    margin-top: 0.35rem;
+    color: var(--muted);
+    font-size: var(--text-base);
+    text-wrap: pretty;
+  }
+  .ai-result {
+    margin-top: var(--space-5);
+    font-size: var(--text-lg);
+    color: var(--ink);
+    max-width: var(--measure);
+    text-wrap: pretty;
+  }
+</style>

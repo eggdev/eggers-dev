@@ -1,0 +1,70 @@
+---
+import DotMatrix from '../components/DotMatrix.astro'
+import BaseLayout from '../layouts/BaseLayout.astro'
+---
+
+<BaseLayout title="Not found — eggers.dev">
+  <main id="main" class="nf">
+    <div class="nf__field" aria-hidden="true">
+      <DotMatrix variant="calm" accent={0.12} intensity={1} />
+    </div>
+    <div class="container nf__content">
+      <p class="nf__code tabular">404</p>
+      <h1 class="nf__title">This page didn't make it through the gate.</h1>
+      <p class="nf__lede">The link is broken or the page never shipped. Either way, nothing here.</p>
+      <a class="link-arrow" href="/">
+        Back to eggers.dev
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M3 8h10M9 4l4 4-4 4"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"></path>
+        </svg>
+      </a>
+    </div>
+  </main>
+</BaseLayout>
+
+<style>
+  .nf {
+    position: relative;
+    min-height: 100svh;
+    display: grid;
+    align-items: center;
+    overflow: hidden;
+  }
+  .nf__field {
+    position: absolute;
+    inset: 0;
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 45%, #000 30%, transparent 78%);
+    mask-image: radial-gradient(120% 90% at 50% 45%, #000 30%, transparent 78%);
+    opacity: 0.7;
+  }
+  .nf__content {
+    position: relative;
+  }
+  .nf__code {
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    color: var(--accent);
+  }
+  .nf__title {
+    margin-top: var(--space-3);
+    font-size: var(--text-3xl);
+    font-weight: var(--w-display);
+    letter-spacing: -0.03em;
+    max-width: 18ch;
+  }
+  .nf__lede {
+    margin-top: var(--space-3);
+    color: var(--muted);
+    font-size: var(--text-lg);
+    max-width: 42ch;
+  }
+  .nf__content .link-arrow {
+    margin-top: var(--space-5);
+    font-size: var(--text-lg);
+  }
+</style>

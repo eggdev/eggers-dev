@@ -1,0 +1,158 @@
+---
+const email = 'brendan@eggers.dev'
+const socials = [
+  { label: 'GitHub', handle: 'eggdev', href: 'https://github.com/eggdev' },
+  { label: 'X', handle: 'egggdev', href: 'https://x.com/egggdev' },
+  { label: 'LinkedIn', handle: 'brendaneggers', href: 'https://linkedin.com/in/brendaneggers' },
+]
+---
+
+<section id="contact" class="section contact">
+  <div class="container">
+    <header class="section-head">
+      <p class="section-label">Contact</p>
+      <h2 class="h-section">Let's build something that runs.</h2>
+      <p class="lede">
+        I'm always glad to meet people building at the front, carefully. The fastest way to reach
+        me:
+      </p>
+    </header>
+
+    <div class="contact__cta">
+      <a class="cta" href={`mailto:${email}`}>
+        {email}
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M3 8h10M9 4l4 4-4 4"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"></path>
+        </svg>
+      </a>
+      <button class="copy" type="button" data-copy={email}>
+        <span class="copy__label">Copy</span>
+      </button>
+    </div>
+
+    <ul class="contact__links">
+      {
+        socials.map((s) => (
+          <li>
+            <a href={s.href} target="_blank" rel="noopener">
+              <span class="contact__net">{s.label}</span>
+              <span class="contact__handle">{s.handle}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>
+
+<style>
+  .contact__cta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: clamp(1.5rem, 1rem + 2.4vw, 2.2rem);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.02em;
+    color: var(--cta);
+    text-decoration: none;
+    padding-bottom: 0.2rem;
+    background-image: linear-gradient(var(--cta-line), var(--cta-line));
+    background-size: 0% 2px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size var(--dur-mid) var(--ease-out-expo);
+  }
+  .cta:hover {
+    color: var(--cta);
+    background-size: 100% 2px;
+  }
+  .cta svg {
+    transition: transform var(--dur-mid) var(--ease-out-expo);
+    flex: none;
+  }
+  .cta:hover svg {
+    transform: translateX(4px);
+  }
+
+  .copy {
+    font-size: var(--text-sm);
+    font-weight: var(--w-medium);
+    color: var(--muted);
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.7rem;
+    transition:
+      color var(--dur-fast) var(--ease-out-quart),
+      border-color var(--dur-fast) var(--ease-out-quart);
+  }
+  .copy:hover {
+    color: var(--ink);
+    border-color: var(--cta-line);
+  }
+  .copy[data-copied] {
+    color: var(--cta);
+    border-color: var(--cta-line);
+  }
+
+  .contact__links {
+    margin-top: clamp(2.5rem, 1.5rem + 3vw, 4rem);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 2.5rem;
+    border-top: 1px solid var(--hairline);
+    padding-top: var(--space-4);
+  }
+  .contact__links a {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    color: var(--ink);
+    text-decoration: none;
+    font-weight: var(--w-medium);
+  }
+  .contact__net {
+    color: var(--muted);
+    font-size: var(--text-sm);
+    min-width: 4.5rem;
+  }
+  .contact__handle {
+    border-bottom: 1px solid transparent;
+    transition: border-color var(--dur-fast) var(--ease-out-quart);
+  }
+  .contact__links a:hover .contact__handle {
+    border-color: var(--accent);
+  }
+</style>
+
+<script>
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+    btn.addEventListener('click', async () => {
+      const value = btn.dataset.copy
+      if (!value) return
+      try {
+        await navigator.clipboard.writeText(value)
+        const label = btn.querySelector('.copy__label')
+        const prev = label?.textContent ?? 'Copy'
+        if (label) label.textContent = 'Copied'
+        btn.setAttribute('data-copied', '')
+        setTimeout(() => {
+          if (label) label.textContent = prev
+          btn.removeAttribute('data-copied')
+        }, 1600)
+      } catch {
+        /* clipboard unavailable; the mailto link still works */
+      }
+    })
+  }
+</script>

@@ -1,0 +1,43 @@
+# build output
+dist/
+.astro/
+
+# dependencies
+node_modules/
+
+# generated types
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+
+# environment
+.env
+.env.production
+.dev.vars
+.wrangler/
+
+# os
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.gstack/
+
+# research + raw source copy — NOT for the public repo
+# (dossiers carry self-reported metrics, named colleagues, internal notes)
+# leading slash anchors to repo root so src/content/ is NOT matched
+/_source/
+/content/
+
+# agent / skill tooling installs — not portfolio code
+/.claude/
+/.agents/
+/.cursor/
+/.gemini/
+/.kiro/
+/.opencode/
