@@ -1,7 +1,8 @@
 # AGENTS.md — eggers.dev
 
 Personal portfolio for Brendan Eggers. Single-page Astro site, static output,
-deployed to Cloudflare Pages. The site itself is a work sample: its craft,
+deployed to Cloudflare Workers (static assets via `wrangler.jsonc`). The site
+itself is a work sample: its craft,
 speed, and restraint are part of the argument. Build it that way.
 
 ## Commands

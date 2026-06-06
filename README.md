@@ -43,4 +43,6 @@ Design system and conventions: see [`DESIGN.md`](./DESIGN.md),
 
 ## Deploy
 
-Cloudflare Pages, static build. Build command `bun run build`, output `dist/`.
+Cloudflare Workers (static assets). A Git-connected Worker runs `bun run build`,
+then `wrangler deploy` serves `dist/` per [`wrangler.jsonc`](./wrangler.jsonc).
+Production branch: `main`. Local: `bun run deploy`.

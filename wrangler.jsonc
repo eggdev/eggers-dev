@@ -1,0 +1,10 @@
+{
+  // Cloudflare Worker that serves the static Astro build (dist/) as assets.
+  // No server code: assets-only Worker. Name must match the Workers service.
+  "name": "eggers-dev",
+  "compatibility_date": "2026-06-06",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

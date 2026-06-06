@@ -14,6 +14,7 @@
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "deploy": "astro build && wrangler deploy",
     "prepare": "lefthook install"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "@astrojs/check": "^0.9.9",
     "@biomejs/biome": "^2.4.16",
     "lefthook": "^2.1.9",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "^4.98.0"
   }
 }
