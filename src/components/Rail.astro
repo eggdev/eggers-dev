@@ -31,7 +31,6 @@ const socials = [
       <span class="rail__mark" aria-hidden="true"></span>
       <span class="rail__word">eggers<span class="rail__dot">.</span>dev</span>
     </a>
-    <p class="rail__title">AI-native engineer and engineering leader</p>
   </div>
 
   <nav class="rail__nav" aria-label="Sections">
@@ -107,9 +106,6 @@ const socials = [
   .rail__word {
     display: none; /* mark-only on the mobile bar so all nav items (incl. Contact) fit */
   }
-  .rail__title {
-    display: none;
-  }
   .rail__nav {
     min-width: 0;
     overflow-x: auto;
@@ -181,15 +177,6 @@ const socials = [
     }
     .rail__word {
       display: inline;
-    }
-    .rail__title {
-      display: block;
-      margin-top: 1rem;
-      color: var(--muted);
-      font-size: var(--text-base);
-      max-width: 16ch;
-      line-height: 1.4;
-      text-wrap: balance;
     }
     .rail__nav {
       overflow: visible;
