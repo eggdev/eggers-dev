@@ -310,14 +310,6 @@ ol {
   position: relative;
 }
 
-.section-label {
-  font-size: var(--text-sm);
-  font-weight: var(--w-semibold);
-  letter-spacing: 0.02em;
-  color: var(--accent);
-  margin-bottom: var(--space-3);
-}
-
 .h-section {
   font-size: var(--text-2xl);
   font-weight: var(--w-bold);

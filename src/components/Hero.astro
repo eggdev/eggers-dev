@@ -38,12 +38,21 @@ const roles = ['Director of SWE · LV Collective', 'Co-Founder / CTO · Bar Savv
     padding-block: clamp(3rem, 2rem + 6vw, 5rem);
   }
   .hero__name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
     font-size: var(--text-sm);
-    font-weight: var(--w-semibold);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    font-weight: var(--w-medium);
     color: var(--muted);
     margin-bottom: var(--space-3);
+  }
+  .hero__name::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 2px;
+    background-image: radial-gradient(var(--accent) 40%, transparent 42%);
+    background-size: 3px 3px;
   }
   .hero__title {
     font-size: var(--text-display);
