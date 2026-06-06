@@ -1,5 +1,6 @@
 ---
 import { Code } from 'astro:components'
+import NightShift from './NightShift.astro'
 
 const points = [
   {
@@ -40,7 +41,6 @@ const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as con
 <section id="ai" class="section ai">
   <div class="container">
     <header class="section-head">
-      <p class="section-label">How I work with AI</p>
       <h2 class="h-section">I build the harness, not just the prompt.</h2>
       <p class="lede">
         Anyone can wire up an agent in 2026. The rare part is the judgment about where it belongs,
@@ -48,6 +48,10 @@ const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as con
         with me, with the guardrails already in place.
       </p>
     </header>
+
+    <div class="ai-system">
+      <NightShift />
+    </div>
 
     <div class="ai-grid">
       <ul class="ai-points">
@@ -92,6 +96,9 @@ const codeThemes = { light: 'github-light', dark: 'github-dark-default' } as con
 </section>
 
 <style>
+  .ai-system {
+    margin-bottom: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  }
   .ai-grid {
     display: grid;
     gap: clamp(1.5rem, 0.8rem + 3vw, 3rem);

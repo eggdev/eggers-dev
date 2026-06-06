@@ -19,7 +19,6 @@ const builds = [
 <section id="builds" class="section">
   <div class="container">
     <header class="section-head">
-      <p class="section-label">Things I build for myself</p>
       <h2 class="h-section">The way I build doesn't clock out.</h2>
       <p class="lede">
         The same harness-and-agents playbook shows up in the things I make for myself. The wedding
@@ -66,6 +65,16 @@ const builds = [
     gap: 0.6rem;
     padding-block: clamp(1.5rem, 1rem + 1.5vw, 2.25rem);
     border-top: 1px solid var(--hairline);
+    transition: border-color var(--dur-mid) var(--ease-out-quart);
+  }
+  .build:hover {
+    border-top-color: var(--accent);
+  }
+  .build__title {
+    transition: color var(--dur-fast) var(--ease-out-quart);
+  }
+  .build:hover .build__title {
+    color: var(--accent);
   }
   @media (min-width: 52rem) {
     .build {

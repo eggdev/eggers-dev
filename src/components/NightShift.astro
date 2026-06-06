@@ -1,0 +1,244 @@
+---
+/**
+ * NightShift — the harness rendered as a live system. PRs (dots) flow from the
+ * agent, through cross-model review, into the merge gate; most pass (turn
+ * cobalt) and merge, a few fail and fade. Canvas 2D, offscreen-paused, static
+ * under reduced motion. The labels below are the accessible description.
+ */
+const stages = ['Agent opens a PR', 'Cross-model review', 'Merge gate', 'Merged']
+---
+
+<figure class="nightshift">
+  <div class="nightshift__frame">
+    <canvas data-nightshift aria-hidden="true"></canvas>
+  </div>
+  <ol class="nightshift__stages" aria-label="The autonomous night-shift pipeline">
+    {stages.map((s, i) => <li><span class="nightshift__num tabular">{`0${i + 1}`}</span>{s}</li>)}
+  </ol>
+  <figcaption>The night shift, running. Most pull requests earn the merge; a few don't.</figcaption>
+</figure>
+
+<style>
+  .nightshift__frame {
+    position: relative;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: color-mix(in oklch, var(--surface-raised) 60%, transparent);
+    overflow: hidden;
+    height: clamp(180px, 22vw, 240px);
+  }
+  .nightshift__frame canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .nightshift__stages {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem 1.25rem;
+    margin-top: var(--space-4);
+  }
+  @media (min-width: 40rem) {
+    .nightshift__stages {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+  .nightshift__stages li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: var(--text-sm);
+    font-weight: var(--w-medium);
+    color: var(--ink);
+  }
+  .nightshift__num {
+    color: var(--accent);
+    font-weight: var(--w-semibold);
+    font-size: var(--text-xs);
+  }
+  .nightshift figcaption {
+    margin-top: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+</style>
+
+<script>
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-nightshift]')
+  const ctx = canvas?.getContext('2d')
+  if (canvas && ctx) {
+    const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
+    const TAU = Math.PI * 2
+
+    // stage x-fractions: author, review, gate, merged
+    const STAGE = [0.08, 0.4, 0.66, 0.93]
+    let w = 0,
+      h = 0,
+      dpr = 1
+    let dot = 'gray',
+      accent = 'blue',
+      muted = 'gray',
+      hair = 'gray'
+    let raf = 0,
+      visible = false,
+      reduce = reduceMQ.matches
+    let last = 0,
+      spawnAcc = 0
+
+    type P = { p: number; lane: number; speed: number; pass: boolean; decided: boolean; alpha: number }
+    let parts: P[] = []
+
+    function colors() {
+      const cs = getComputedStyle(document.documentElement)
+      dot = cs.getPropertyValue('--dot').trim() || 'gray'
+      accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
+      muted = cs.getPropertyValue('--muted').trim() || 'gray'
+      hair = cs.getPropertyValue('--hairline-strong').trim() || 'gray'
+    }
+    function resize() {
+      if (!ctx || !canvas) return
+      const r = canvas.getBoundingClientRect()
+      w = Math.max(1, r.width)
+      h = Math.max(1, r.height)
+      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    function spawn() {
+      parts.push({
+        p: STAGE[0],
+        lane: (Math.random() - 0.5) * 0.6,
+        speed: 0.055 + Math.random() * 0.03,
+        pass: Math.random() > 0.16,
+        decided: false,
+        alpha: 0,
+      })
+    }
+    function laneY(lane: number) {
+      return h / 2 + lane * h * 0.42
+    }
+    function scaffold() {
+      if (!ctx) return
+      // connecting line
+      ctx.strokeStyle = hair
+      ctx.globalAlpha = 0.5
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(STAGE[0] * w, h / 2)
+      ctx.lineTo(STAGE[3] * w, h / 2)
+      ctx.stroke()
+      // gate marker
+      const gx = STAGE[2] * w
+      ctx.globalAlpha = 0.9
+      ctx.strokeStyle = accent
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(gx, h / 2 - h * 0.22)
+      ctx.lineTo(gx, h / 2 + h * 0.22)
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+    function drawDot(p: P) {
+      if (!ctx) return
+      const x = p.p * w
+      // lane converges toward center by the gate, fans slightly after
+      const conv = p.p < STAGE[2] ? 1 - (p.p - STAGE[0]) / (STAGE[2] - STAGE[0]) : 0
+      const y = laneY(p.lane * Math.max(0.08, conv))
+      const passed = p.decided && p.p > STAGE[2]
+      ctx.globalAlpha = Math.min(1, p.alpha) * (p.decided && !p.pass ? 1 : 1)
+      ctx.fillStyle = passed ? (p.pass ? accent : muted) : dot
+      ctx.beginPath()
+      ctx.arc(x, y, p.pass ? 2.6 : 2.2, 0, TAU)
+      ctx.fill()
+    }
+    function step(dt: number) {
+      spawnAcc += dt
+      const interval = 0.42
+      if (spawnAcc > interval && parts.length < 26) {
+        spawnAcc = 0
+        spawn()
+      }
+      for (const p of parts) {
+        p.alpha = Math.min(1, p.alpha + dt * 3)
+        p.p += p.speed * dt
+        if (!p.decided && p.p >= STAGE[2]) p.decided = true
+        if (p.decided && !p.pass && p.p > STAGE[2]) {
+          p.lane += dt * 1.2 // failed ones drift off
+          p.alpha -= dt * 1.4
+        }
+      }
+      parts = parts.filter((p) => p.p < 1.02 && p.alpha > 0.02)
+    }
+    function frame(t: number) {
+      if (!ctx) return
+      const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016
+      last = t
+      ctx.clearRect(0, 0, w, h)
+      scaffold()
+      step(dt)
+      for (const p of parts) drawDot(p)
+      ctx.globalAlpha = 1
+      raf = requestAnimationFrame(frame)
+    }
+    function staticFrame() {
+      if (!ctx) return
+      ctx.clearRect(0, 0, w, h)
+      scaffold()
+      // a representative settled state
+      const sample = [0.2, 0.32, 0.5, 0.78, 0.86, 0.95]
+      for (let i = 0; i < sample.length; i++) {
+        const pass = i !== 2
+        const p: P = { p: sample[i], lane: (i % 2 ? 0.4 : -0.4), speed: 0, pass, decided: sample[i] > STAGE[2], alpha: 1 }
+        drawDot(p)
+      }
+      ctx.globalAlpha = 1
+    }
+    function start() {
+      cancelAnimationFrame(raf)
+      last = 0
+      if (reduce || !visible) {
+        staticFrame()
+        return
+      }
+      raf = requestAnimationFrame(frame)
+    }
+
+    colors()
+    resize()
+    // pre-seed so the pipeline reads as alive the instant it scrolls in
+    if (!reduce) {
+      for (let i = 0; i < 14; i++) {
+        const p = STAGE[0] + Math.random() * (1 - STAGE[0])
+        parts.push({
+          p,
+          lane: (Math.random() - 0.5) * 0.6,
+          speed: 0.055 + Math.random() * 0.03,
+          pass: Math.random() > 0.16,
+          decided: p > STAGE[2],
+          alpha: 1,
+        })
+      }
+    }
+    new ResizeObserver(() => {
+      resize()
+      if (reduce || !visible) staticFrame()
+    }).observe(canvas)
+    new IntersectionObserver(
+      (e) => {
+        visible = e[0].isIntersecting
+        start()
+      },
+      { rootMargin: '80px' }
+    ).observe(canvas)
+    reduceMQ.addEventListener('change', () => {
+      reduce = reduceMQ.matches
+      start()
+    })
+    darkMQ.addEventListener('change', () => {
+      colors()
+      if (reduce || !visible) staticFrame()
+    })
+  }
+</script>

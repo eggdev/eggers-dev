@@ -1,0 +1,218 @@
+---
+const items = [
+  { label: 'Go to Work', group: 'Navigate', type: 'nav', value: '#work' },
+  { label: 'Go to How I work', group: 'Navigate', type: 'nav', value: '#ai' },
+  { label: 'Go to Builds', group: 'Navigate', type: 'nav', value: '#builds' },
+  { label: 'Go to About', group: 'Navigate', type: 'nav', value: '#about' },
+  { label: 'Go to Contact', group: 'Navigate', type: 'nav', value: '#contact' },
+  { label: 'Back to top', group: 'Navigate', type: 'nav', value: '#top' },
+  { label: 'Copy email', group: 'Actions', type: 'copy', value: 'brendan@eggers.dev' },
+  { label: 'Email Brendan', group: 'Actions', type: 'href', value: 'mailto:brendan@eggers.dev' },
+  { label: 'GitHub', group: 'Open', type: 'href', value: 'https://github.com/eggdev' },
+  { label: 'X', group: 'Open', type: 'href', value: 'https://x.com/egggdev' },
+  {
+    label: 'LinkedIn',
+    group: 'Open',
+    type: 'href',
+    value: 'https://linkedin.com/in/brendaneggers',
+  },
+]
+---
+
+<dialog class="cmdk" aria-label="Command menu">
+  <div class="cmdk__box">
+    <input
+      type="text"
+      class="cmdk__input"
+      placeholder="Jump to a section, copy email, open a link…"
+      aria-label="Filter commands"
+      autocomplete="off"
+      spellcheck="false"
+      data-cmdk-input
+    />
+    <ul class="cmdk__list" role="listbox" data-cmdk-list>
+      {
+        items.map((it, i) => (
+          <li>
+            <button
+              type="button"
+              class="cmdk__item"
+              role="option"
+              aria-selected={i === 0 ? 'true' : 'false'}
+              data-type={it.type}
+              data-value={it.value}
+              data-label={it.label.toLowerCase()}
+            >
+              <span class="cmdk__group">{it.group}</span>
+              <span class="cmdk__label">{it.label}</span>
+            </button>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="cmdk__empty" hidden data-cmdk-empty>No matches.</p>
+  </div>
+</dialog>
+
+<style>
+  .cmdk {
+    margin: 0 auto;
+    margin-top: 14vh;
+    width: min(34rem, calc(100vw - 2rem));
+    padding: 0;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: 0 24px 70px -24px oklch(0.1 0.02 250 / 0.5);
+  }
+  .cmdk::backdrop {
+    background: oklch(0.15 0.02 250 / 0.4);
+    backdrop-filter: blur(3px);
+  }
+  .cmdk[open] {
+    animation: cmdk-in var(--dur-mid) var(--ease-out-expo);
+  }
+  @keyframes cmdk-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.99);
+    }
+  }
+  .cmdk__input {
+    width: 100%;
+    padding: 1rem 1.15rem;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--text-lg);
+  }
+  .cmdk__input::placeholder {
+    color: var(--muted);
+  }
+  .cmdk__input:focus {
+    outline: none;
+  }
+  .cmdk__list {
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 0.4rem;
+  }
+  .cmdk__item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+  }
+  .cmdk__item[aria-selected='true'] {
+    background: color-mix(in oklch, var(--accent) 14%, transparent);
+  }
+  .cmdk__group {
+    font-size: var(--text-xs);
+    color: var(--muted);
+    min-width: 4.5rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .cmdk__label {
+    font-weight: var(--w-medium);
+  }
+  .cmdk__empty {
+    padding: 1rem 1.15rem;
+    color: var(--muted);
+  }
+</style>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>('.cmdk')
+  const input = document.querySelector<HTMLInputElement>('[data-cmdk-input]')
+  const empty = document.querySelector<HTMLElement>('[data-cmdk-empty]')
+  if (dialog && input) {
+    const items = () => [...dialog.querySelectorAll<HTMLButtonElement>('.cmdk__item')]
+    const visible = () => items().filter((el) => !el.closest('li')!.hidden)
+
+    function setActive(target: HTMLButtonElement | undefined) {
+      for (const el of items()) el.setAttribute('aria-selected', 'false')
+      if (target) {
+        target.setAttribute('aria-selected', 'true')
+        target.scrollIntoView({ block: 'nearest' })
+      }
+    }
+
+    function open() {
+      if (dialog!.open) return
+      dialog!.showModal()
+      input!.value = ''
+      filter('')
+      requestAnimationFrame(() => input!.focus())
+    }
+
+    function filter(q: string) {
+      const query = q.trim().toLowerCase()
+      let shown = 0
+      for (const el of items()) {
+        const match = !query || (el.dataset.label ?? '').includes(query)
+        el.closest('li')!.hidden = !match
+        if (match) shown++
+      }
+      if (empty) empty.hidden = shown > 0
+      setActive(visible()[0])
+    }
+
+    function run(el: HTMLButtonElement | undefined) {
+      if (!el) return
+      const { type, value } = el.dataset
+      dialog!.close()
+      if (type === 'nav' && value) {
+        document.querySelector(value)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        history.replaceState(null, '', value)
+      } else if (type === 'copy' && value) {
+        navigator.clipboard?.writeText(value).catch(() => {})
+      } else if (type === 'href' && value) {
+        window.open(value, value.startsWith('mailto:') ? '_self' : '_blank', 'noopener')
+      }
+    }
+
+    input.addEventListener('input', () => filter(input.value))
+
+    input.addEventListener('keydown', (e) => {
+      const vis = visible()
+      const idx = vis.findIndex((el) => el.getAttribute('aria-selected') === 'true')
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setActive(vis[Math.min(vis.length - 1, idx + 1)] ?? vis[0])
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setActive(vis[Math.max(0, idx - 1)] ?? vis[0])
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        run(vis[idx] ?? vis[0])
+      }
+    })
+
+    for (const el of items()) {
+      el.addEventListener('click', () => run(el))
+      el.addEventListener('pointermove', () => setActive(el))
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        dialog.open ? dialog.close() : open()
+      }
+    })
+    for (const btn of document.querySelectorAll('[data-open-cmdk]')) {
+      btn.addEventListener('click', open)
+    }
+    // clicking the backdrop closes
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close()
+    })
+  }
+</script>

@@ -1,24 +1,30 @@
 ---
 import About from '../components/About.astro'
 import Builds from '../components/Builds.astro'
+import CommandPalette from '../components/CommandPalette.astro'
 import Contact from '../components/Contact.astro'
 import Footer from '../components/Footer.astro'
 import Hero from '../components/Hero.astro'
 import HowIWork from '../components/HowIWork.astro'
-import Nav from '../components/Nav.astro'
+import Rail from '../components/Rail.astro'
+import Substrate from '../components/Substrate.astro'
 import Work from '../components/Work.astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
 ---
 
 <BaseLayout>
-  <Nav />
-  <main id="main">
-    <Hero />
-    <Work />
-    <HowIWork />
-    <Builds />
-    <About />
-    <Contact />
-  </main>
-  <Footer />
+  <Substrate />
+  <div class="shell">
+    <Rail />
+    <main id="main" class="content">
+      <Hero />
+      <Work />
+      <HowIWork />
+      <Builds />
+      <About />
+      <Contact />
+      <Footer />
+    </main>
+  </div>
+  <CommandPalette />
 </BaseLayout>

@@ -27,7 +27,7 @@ const work = defineCollection({
         })
       )
       .default([]),
-    links: z.array(z.object({ label: z.string(), href: z.string().url() })).default([]),
+    links: z.array(z.object({ label: z.string(), href: z.url() })).default([]),
   }),
 })
 

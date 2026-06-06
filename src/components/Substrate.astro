@@ -1,0 +1,153 @@
+---
+/**
+ * Substrate — the page lives inside a living dot-field. Fixed, full-bleed,
+ * cursor-reactive (a bloom parts the field around the pointer), kept faint so
+ * text over it stays WCAG AA. Canvas 2D, perf-budgeted: DPR capped, paused when
+ * the tab is hidden, static under reduced motion. Decorative: aria-hidden.
+ */
+---
+
+<canvas id="substrate" class="substrate" aria-hidden="true"></canvas>
+
+<style>
+  .substrate {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: block;
+  }
+</style>
+
+<script>
+  const canvasEl = document.getElementById('substrate')
+  if (canvasEl instanceof HTMLCanvasElement) {
+    const canvas: HTMLCanvasElement = canvasEl
+    const ctx = canvas.getContext('2d')
+    const reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const darkMQ = window.matchMedia('(prefers-color-scheme: dark)')
+
+    const GAP = 28
+    const RADIUS = 1.6
+    const ACCENT = 0.04
+    const TAU = Math.PI * 2
+    const BLOOM = 150
+
+    let w = 0,
+      h = 0,
+      dpr = 1
+    let dot = 'gray',
+      dotAccent = 'blue'
+    let raf = 0
+    let visible = true
+    let reduce = reduceMQ.matches
+    const ptr = { x: -9999, y: -9999, on: false }
+
+    function hash(i: number, j: number) {
+      const n = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453
+      return n - Math.floor(n)
+    }
+
+    function readColors() {
+      const cs = getComputedStyle(document.documentElement)
+      dot = cs.getPropertyValue('--dot').trim() || 'gray'
+      dotAccent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
+    }
+
+    function resize() {
+      if (!ctx) return
+      w = window.innerWidth
+      h = window.innerHeight
+      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+
+    function draw(t: number) {
+      if (!ctx) return
+      ctx.clearRect(0, 0, w, h)
+      const cols = Math.ceil(w / GAP) + 1
+      const rows = Math.ceil(h / GAP) + 1
+      const offX = (w - (cols - 1) * GAP) / 2
+      const offY = (h - (rows - 1) * GAP) / 2
+      const time = t * 0.00045
+      const moving = !reduce
+
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const x = offX + i * GAP
+          const y = offY + j * GAP
+          const wave = moving ? Math.sin((x + y) * 0.011 - time * TAU) : 0
+          let scale = 0.6 + (moving ? 0.32 * ((wave + 1) / 2) : 0.32)
+          let alpha = 0.1 + (moving ? 0.14 * ((wave + 1) / 2) : 0.1)
+
+          if (ptr.on && moving) {
+            const d = Math.hypot(x - ptr.x, y - ptr.y)
+            if (d < BLOOM) {
+              const k = 1 - d / BLOOM
+              scale += k * 1.5
+              alpha += k * 0.45
+            }
+          }
+
+          const isAccent = hash(i, j) < ACCENT
+          ctx.globalAlpha = Math.min(alpha, isAccent ? 0.8 : 0.42)
+          ctx.fillStyle = isAccent ? dotAccent : dot
+          ctx.beginPath()
+          ctx.arc(x, y, Math.max(0.2, RADIUS * scale), 0, TAU)
+          ctx.fill()
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+
+    function loop(t: number) {
+      draw(t)
+      raf = requestAnimationFrame(loop)
+    }
+    function start() {
+      cancelAnimationFrame(raf)
+      if (reduce || !visible) {
+        draw(0)
+        return
+      }
+      raf = requestAnimationFrame(loop)
+    }
+
+    readColors()
+    resize()
+    start()
+
+    window.addEventListener('resize', () => {
+      resize()
+      if (reduce || !visible) draw(0)
+    })
+    window.addEventListener(
+      'pointermove',
+      (e) => {
+        ptr.x = e.clientX
+        ptr.y = e.clientY
+        ptr.on = true
+      },
+      { passive: true }
+    )
+    window.addEventListener('pointerout', () => {
+      ptr.on = false
+    })
+    document.addEventListener('visibilitychange', () => {
+      visible = !document.hidden
+      start()
+    })
+    reduceMQ.addEventListener('change', () => {
+      reduce = reduceMQ.matches
+      start()
+    })
+    darkMQ.addEventListener('change', () => {
+      readColors()
+      if (reduce || !visible) draw(0)
+    })
+  }
+</script>

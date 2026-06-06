@@ -11,7 +11,6 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
 <section id="work" class="section">
   <div class="container">
     <header class="section-head">
-      <p class="section-label">Selected work</p>
       <h2 class="h-section">Shipped, owned, measured.</h2>
     </header>
 
@@ -86,6 +85,16 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
     gap: clamp(1rem, 0.4rem + 2vw, 2.5rem);
     padding-block: clamp(2.25rem, 1.5rem + 2.5vw, 3.5rem);
     border-top: 1px solid var(--hairline);
+    transition: border-color var(--dur-mid) var(--ease-out-quart);
+  }
+  .work-entry:hover {
+    border-top-color: var(--accent);
+  }
+  .work-entry__title {
+    transition: color var(--dur-fast) var(--ease-out-quart);
+  }
+  .work-entry:hover .work-entry__title {
+    color: var(--accent);
   }
   @media (min-width: 52rem) {
     .work-entry {
