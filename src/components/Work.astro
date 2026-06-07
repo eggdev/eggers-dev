@@ -5,7 +5,6 @@ const entries = (await getCollection('work')).sort((a, b) => a.data.order - b.da
 const rendered = await Promise.all(
   entries.map(async (e) => ({ data: e.data, Content: (await render(e)).Content }))
 )
-const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source === 'reported'))
 ---
 
 <section id="work" class="section">
@@ -55,9 +54,7 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
               <ul class="metrics">
                 {data.metrics.map((m) => (
                   <li class="metric">
-                    <span class="metric__val tabular" data-source={m.source}>
-                      {m.value}
-                    </span>
+                    <span class="metric__val tabular">{m.value}</span>
                     <span class="metric__label">{m.label}</span>
                   </li>
                 ))}
@@ -91,13 +88,6 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
       }
     </div>
 
-    {
-      hasReported && (
-        <p class="work-foot">
-          <span class="mark">*</span> Self-reported. Git-verified figures are unmarked.
-        </p>
-      )
-    }
   </div>
 </section>
 
@@ -204,9 +194,9 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
 
   .metrics {
     margin-top: var(--space-5);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem 1.25rem;
     border-top: 1px solid var(--hairline);
     padding-top: var(--space-4);
   }
@@ -214,6 +204,7 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+    min-width: 0;
   }
   .metric__val {
     font-size: var(--text-lg);
@@ -221,16 +212,10 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
     color: var(--ink);
     letter-spacing: -0.01em;
   }
-  .metric__val[data-source='reported']::after {
-    content: '*';
-    color: var(--muted);
-    font-weight: var(--w-regular);
-    margin-left: 0.1em;
-  }
   .metric__label {
     font-size: var(--text-sm);
     color: var(--muted);
-    max-width: 22ch;
+    text-wrap: pretty;
   }
 
   .work-entry__stack {
@@ -248,14 +233,4 @@ const hasReported = rendered.some((e) => e.data.metrics.some((m) => m.source ===
     font-size: var(--text-sm);
   }
 
-  .work-foot {
-    margin-top: var(--space-5);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--hairline);
-    font-size: var(--text-sm);
-    color: var(--muted);
-  }
-  .work-foot .mark {
-    color: var(--muted);
-  }
 </style>

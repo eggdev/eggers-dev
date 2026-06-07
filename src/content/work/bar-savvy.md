@@ -15,9 +15,9 @@ stack:
   - Kubernetes
   - Stripe
 metrics:
-  - { value: '4,482', label: 'commits, sole continuous author', source: 'verified' }
+  - { value: '~77%', label: 'of commits over three years, sole author', source: 'verified' }
   - { value: '25', label: 'production LLM modules in the data engine', source: 'verified' }
-  - { value: '5-7×', label: 'shipping velocity as the harness matured', source: 'reported' }
+  - { value: '2,976', label: 'commits co-authored with AI', source: 'verified' }
 caseStudy:
   - 'A Bun + Turborepo monorepo: four apps (web plus API, marketing, Expo native) and 29 shared @repo/* packages covering design system, auth, search, maps, payments, and data.'
   - 'The data engine is an Apache Airflow ETL containerized to AWS ECR, with numbered chained DAGs and dynamic task mapping, fusing TABC, Google, reviews, and dual geocoding into one canonical venue record.'
