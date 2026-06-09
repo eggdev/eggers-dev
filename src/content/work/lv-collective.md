@@ -2,7 +2,7 @@
 title: Sidekick OS & upcredit
 org: LV Collective
 role: Director, Software Engineering
-period: 2025 to present
+period: 2024 to present
 order: 2
 outcome: Led Sidekick OS, an executive-knowledge OS, to a working product in a four-week sprint, and shipped upcredit, a rent-credit product now live across LV Collective's portfolio.
 stack:
