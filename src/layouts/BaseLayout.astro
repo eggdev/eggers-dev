@@ -5,15 +5,46 @@ import '../styles/global.css'
 interface Props {
   title?: string
   description?: string
+  noindex?: boolean
 }
 
 const {
   title = 'Brendan Eggers — AI-native engineer & engineering leader',
   description = 'Brendan Eggers builds the systems that let agents ship real software. Director of Software Engineering at LV Collective, Co-Founder/CTO at Bar Savvy, ex-NBA.',
+  noindex = false,
 } = Astro.props
 
 const canonical = new URL(Astro.url.pathname, Astro.site)
 const ogImage = new URL('/og.png', Astro.site)
+
+// Person schema: everything here is stated on the page itself.
+const personSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Person',
+  name: 'Brendan Eggers',
+  url: Astro.site?.toString(),
+  email: 'mailto:brendan@eggers.dev',
+  jobTitle: 'Director, Software Engineering',
+  description:
+    'AI-native engineer and engineering leader. Builds the systems that let agents ship real software.',
+  worksFor: [
+    { '@type': 'Organization', name: 'LV Collective' },
+    { '@type': 'Organization', name: 'Bar Savvy' },
+  ],
+  knowsAbout: [
+    'AI-native software engineering',
+    'Agent harnesses and guardrails',
+    'TypeScript',
+    'Next.js',
+    'Kubernetes',
+    'Apache Airflow',
+  ],
+  sameAs: [
+    'https://github.com/eggdev',
+    'https://x.com/egggdev',
+    'https://linkedin.com/in/brendaneggers',
+  ],
+}
 ---
 
 <!doctype html>
@@ -23,20 +54,30 @@ const ogImage = new URL('/og.png', Astro.site)
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#fbfcfd" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#16191d" media="(prefers-color-scheme: dark)" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="author" content="Brendan Eggers" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="eggers.dev" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Brendan Eggers — I build the systems that let agents ship real software." />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:creator" content="@egggdev" />
     <meta name="generator" content={Astro.generator} />
+    <script type="application/ld+json" set:html={JSON.stringify(personSchema)} />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

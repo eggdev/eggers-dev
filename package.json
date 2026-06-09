@@ -18,6 +18,7 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
     "@fontsource-variable/mona-sans": "^5.2.8",
     "astro": "^6.4.4"
   },
