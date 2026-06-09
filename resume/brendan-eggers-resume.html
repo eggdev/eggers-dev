@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Brendan Eggers — Resume</title>
+<style>
+  @page {
+    size: letter;
+    margin: 0;
+  }
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  :root {
+    --ink: #1c1b1a;
+    --body: #2e2c2a;
+    --muted: #6b6661;
+    --accent: #9a4a22;
+    --hairline: #ddd7d1;
+  }
+  html, body {
+    width: 8.5in;
+    height: 11in;
+  }
+  body {
+    font-family: "Avenir Next", Avenir, sans-serif;
+    font-size: 9.8px;
+    line-height: 1.45;
+    color: var(--body);
+    padding: 0.62in 0.72in 0.55in;
+    -webkit-print-color-adjust: exact;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ---------- header ---------- */
+  .name {
+    font-family: Charter, Georgia, serif;
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .headline {
+    margin-top: 2px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.01em;
+  }
+  .contact {
+    margin-top: 7px;
+    font-size: 9.3px;
+    color: var(--muted);
+  }
+  .contact span + span::before {
+    content: "\00b7";
+    margin: 0 0.55em;
+    color: #b3aca5;
+    font-weight: 700;
+  }
+
+  .summary {
+    margin-top: 13px;
+    font-size: 10.2px;
+    line-height: 1.5;
+    max-width: 64em;
+  }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 13px; }
+  h2 {
+    font-family: Charter, Georgia, serif;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.13em;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 9px;
+  }
+  h2::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+
+  /* ---------- entries ---------- */
+  .entry { margin-bottom: 11px; }
+  .entry:last-child { margin-bottom: 0; }
+  .entry-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .role {
+    font-size: 10.6px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .role .org {
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .role .org::before {
+    content: "\00b7";
+    margin: 0 0.5em;
+    color: var(--hairline);
+    font-weight: 700;
+  }
+  .dates {
+    font-size: 9.2px;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .note {
+    font-size: 9.2px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+  ul {
+    list-style: none;
+    margin-top: 4px;
+  }
+  li {
+    padding-left: 13px;
+    position: relative;
+    margin-bottom: 2.5px;
+  }
+  li::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 0.58em;
+    width: 5px;
+    height: 1.5px;
+    background: var(--accent);
+    opacity: 0.55;
+  }
+
+  /* compact one-line entries */
+  .brief { margin-bottom: 4px; }
+  .brief .role { font-weight: 500; font-size: 10px; }
+
+  /* ---------- skills / education ---------- */
+  .row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  .row dt {
+    flex: 0 0 92px;
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 9.6px;
+  }
+  .row dd { flex: 1; }
+  .row dd.dates { flex: none; margin-left: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <p class="name">Brendan Eggers</p>
+  <p class="headline">Staff Software Engineer</p>
+  <p class="contact">
+    <span>Connecticut (NYC metro)</span>
+    <span><a href="mailto:brendan@eggers.dev">brendan@eggers.dev</a></span>
+    <span><a href="https://eggers.dev">eggers.dev</a></span>
+    <span><a href="https://github.com/eggdev">github.com/eggdev</a></span>
+    <span><a href="https://linkedin.com/in/brendaneggers">linkedin.com/in/brendaneggers</a></span>
+  </p>
+  <p class="summary">
+    I build the systems that let AI agents ship real software: the harnesses, review gates,
+    and evals that have put close to three thousand agent-co-authored commits into production.
+    Underneath that is nine years of full-stack product work, from NBA.com to solo-CTO ventures,
+    owning everything from the apps down to the pipelines and infrastructure.
+  </p>
+</header>
+
+<section>
+  <h2>Experience</h2>
+
+  <div class="entry">
+    <div class="entry-head">
+      <p class="role">Director, Software Engineering<span class="org">LV Collective</span></p>
+      <p class="dates">2025 – Present</p>
+    </div>
+    <p class="note">Venture-incubator arrangement: I build and co-own the products below inside LV.</p>
+    <ul>
+      <li>Built Sidekick OS, a private knowledge assistant for executives, from zero to a working
+        product in a four-week sprint. It gives an executive AI chat over their connected sources,
+        plus an encrypted vault and inbox digests, on an Nx monorepo with Effect and Zero
+        local-first sync.</li>
+      <li>Designed its per-user encryption, a DEK/KEK AES-256-GCM scheme that decrypts client-side.
+        Destroying one key erases one user's data, which is how the product handles GDPR deletion.</li>
+      <li>Shipped upcredit, a rent-reporting credit product (Next.js, Clerk, Supabase) now live across
+        the company's student-housing portfolio and built to run with almost no upkeep.</li>
+      <li>Spend about half the role teaching the rest of the org to build with AI, mostly harness
+        setup and evals.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <p class="role">Technical Co-Founder &amp; CTO<span class="org">Bar Savvy</span></p>
+      <p class="dates">2023 – Present</p>
+    </div>
+    <p class="note">Independent venture and its own entity, built nights and weekends through the
+      NBA years and now incubated alongside the LV Collective role.</p>
+    <ul>
+      <li>Sole continuous engineer on a Texas alcohol-sales analytics platform for bar operators and investors:
+        web app, Expo native app, marketing site, and API in one Bun + Turborepo monorepo with
+        29 shared packages.</li>
+      <li>Built the data engine on Apache Airflow: chained DAGs that fuse TABC filings, Google data,
+        customer reviews, and dual geocoding into one canonical record per venue.</li>
+      <li>Run 25 LLM modules in production for classification and fuzzy address matching, each gated
+        by cheap deterministic checks, with a second-pass reviewer that flags its own disagreements
+        for a human to settle.</li>
+      <li>Stood up the backend on Kubernetes solo, then dropped a high-maintenance Elasticsearch
+        layer for plain SQL: less to operate, better latency.</li>
+      <li>Built the agent harness that maintains the repo overnight: AST-level lint rules, guardrail
+        hooks agents can't edit, and a merge policy that only ratchets stricter.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-head">
+      <p class="role">Senior Software Engineer<span class="org">NBA, Direct-to-Consumer</span></p>
+      <p class="dates">2022 – 2024</p>
+    </div>
+    <ul>
+      <li>Built NBA.com's score strip from the first commit and owned it from then on, with tens
+        of millions of eyeballs on it across a season.</li>
+      <li>Client-side tech lead for login and entitlements across web and connected devices
+        (TV Everywhere, international broadcasters, the league's CIAM identity), packaged as a
+        reusable React auth library.</li>
+      <li>Tech-led the League Pass purchase page and the block-rendering system behind it, which let
+        marketing edit subscription pages without an engineer. Localized in three languages.</li>
+      <li>Built the Nike sign-up flow for the 2024 All-Star booth, which took about 25,000 sign-ups
+        over the weekend without an incident.</li>
+      <li>A platform rotation I asked for produced the self-service repo-provisioning tool the
+        DTC org standardized on.</li>
+    </ul>
+  </div>
+
+  <div class="entry brief">
+    <div class="entry-head">
+      <p class="role">Senior Frontend Engineer<span class="org">Orange Comet (contract, then full-time)</span></p>
+      <p class="dates">Sep 2021 – May 2022</p>
+    </div>
+  </div>
+  <div class="entry brief">
+    <div class="entry-head">
+      <p class="role">Frontend Engineer<span class="org">OpenSlate, returned post-COVID; acquired by DoubleVerify</span></p>
+      <p class="dates">Mar 2021 – Jan 2022</p>
+    </div>
+  </div>
+  <div class="entry brief">
+    <div class="entry-head">
+      <p class="role">Software Engineer<span class="org">MakeSpace</span></p>
+      <p class="dates">Aug 2020 – Mar 2021</p>
+    </div>
+  </div>
+  <div class="entry brief">
+    <div class="entry-head">
+      <p class="role">Frontend Engineer<span class="org">OpenSlate</span></p>
+      <p class="dates">Dec 2019 – Jun 2020</p>
+    </div>
+  </div>
+
+  <div class="entry" style="margin-top: 8px;">
+    <div class="entry-head">
+      <p class="role">Frontend Web Developer<span class="org">Meredith Corporation (Synapse Group)</span></p>
+      <p class="dates">Apr 2017 – Dec 2019</p>
+    </div>
+    <ul>
+      <li>Core engineer on the conversion of the company's e-commerce platform to React, shipping
+        dozens of data-rich React/Redux apps and cutting render time about 25% on an application
+        serving up to 200 million users.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>Skills</h2>
+  <dl>
+    <div class="row">
+      <dt>Languages</dt>
+      <dd>TypeScript, JavaScript, Python, SQL</dd>
+    </div>
+    <div class="row">
+      <dt>Platform</dt>
+      <dd>React, Next.js, React Native (Expo), Node, Bun, Effect, REST APIs, Postgres, Supabase,
+        Kubernetes, Docker, CI/CD, Apache Airflow (ETL), AWS</dd>
+    </div>
+    <div class="row">
+      <dt>AI systems</dt>
+      <dd>LLM integration in production (Claude and OpenAI APIs), RAG, embeddings and vector
+        search, agent orchestration and tool calling, MCP, prompt engineering, evals, guardrails,
+        LLM cost optimization</dd>
+    </div>
+    <div class="row">
+      <dt>Approach</dt>
+      <dd>Strong preferences, happy to defend them: local-first architecture, domain-driven
+        design (DDD), red/green testing (TDD), adversarial cross-model agent review</dd>
+    </div>
+  </dl>
+</section>
+
+<section>
+  <h2>Education</h2>
+  <dl>
+    <div class="row">
+      <dt>B.A.</dt>
+      <dd>Wittenberg University</dd>
+      <dd class="dates">2014</dd>
+    </div>
+    <div class="row">
+      <dt>Immersive</dt>
+      <dd>General Assembly, Web Development Immersive</dd>
+      <dd class="dates">2016</dd>
+    </div>
+  </dl>
+</section>
+
+</body>
+</html>
