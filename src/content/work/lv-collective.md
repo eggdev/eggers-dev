@@ -23,7 +23,7 @@ caseStudy:
   - 'AI-native from day one: a custom invariant scanner with twelve zero-mode architecture rules (Node and Git only), a git-native AI issue tracker, and most Codex work running fully autonomous.'
   - 'An autonomous run root-caused a deploy split-brain, built a schema-drift gate, and cut deploy time from roughly 50 minutes to about one.'
   - 'upcredit: a deliberately small rent-reporting credit product (Next.js, Clerk, Supabase) live across the student-housing portfolio, generating six figures a year in value with minimal upkeep.'
-  - 'Builder and force-multiplier: I spend about as much time teaching the org to build with AI (harnesses, agent workflows, evals) as I do building Sidekick OS myself.'
+  - 'Builder and force-multiplier: the teaching half covers harnesses, agent workflows, and evals, so the org can ship AI-native work without me in the loop.'
 ---
 
-Inside the LV Collective incubator I led the build of Sidekick OS, a private executive-knowledge operating system, writing about 70% of the commits in a four-week sprint and running it AI-native from day one. Alongside it I shipped upcredit, a deliberately small rent-reporting credit product now live across the student-housing portfolio. The role splits between building and force-multiplying: about as much time teaching the org to build with AI as building it myself.
+Sidekick OS is a private knowledge OS for executives, built inside the LV Collective incubator and run AI-native from day one. upcredit is the opposite kind of product: small on purpose, quiet to run, and useful every month. The role itself splits in half — about as much time teaching the org to build with AI as building myself.

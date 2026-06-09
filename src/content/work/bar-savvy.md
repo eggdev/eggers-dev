@@ -27,4 +27,4 @@ caseStudy:
   - 'The arc over 2026: planning fluent by February, the harness hardened against itself by April, mature gates by May, pointed at production by June.'
 ---
 
-Bar Savvy turns Texas Alcoholic Beverage Commission data into analytics that help operators and investors find their best opportunities. I built it essentially end to end as the sole continuous engineer over three years, owning every surface from the web and native apps to the Airflow data engine, the Kubernetes backend, and the AI-native harness that ships it. Early-stage by design, so the signal is craft, full-stack ownership, and AI-native practice run lean.
+Bar Savvy turns Texas Alcoholic Beverage Commission data into analytics that help operators and investors find their best opportunities. Being the only engineer meant owning every surface: the web and native apps, the Airflow data engine, the Kubernetes backend, and the harness that ships it all. The company is still early-stage, so judge this one on craft, breadth, and how lean it runs.
