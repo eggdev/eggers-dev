@@ -33,4 +33,21 @@ const work = defineCollection({
   }),
 })
 
-export const collections = { work }
+/**
+ * `blog` — the build log. Posts are markdown; `pubDate` is the honest publish
+ * date (retrospectives say "earlier this year" in the body, never in a
+ * backdated stamp). Set `draft: true` to stage a post without publishing it.
+ */
+const blog = defineCollection({
+  loader: glob({ pattern: '*.md', base: './src/content/blog' }),
+  schema: z.object({
+    title: z.string(),
+    description: z.string(),
+    pubDate: z.coerce.date(),
+    updatedDate: z.coerce.date().optional(),
+    draft: z.boolean().default(false),
+    tags: z.array(z.string()).default([]),
+  }),
+})
+
+export const collections = { work, blog }

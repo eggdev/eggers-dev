@@ -1,0 +1,158 @@
+---
+import { getCollection, render } from 'astro:content'
+import BlogLayout from '../../layouts/BlogLayout.astro'
+
+export async function getStaticPaths() {
+  const posts = (await getCollection('blog')).filter((p) => !p.data.draft)
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }))
+}
+
+const { post } = Astro.props
+const { Content } = await render(post)
+
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+---
+
+<BlogLayout title={`${post.data.title} — Brendan Eggers`} description={post.data.description}>
+  <article class="post">
+    <a class="post__back link-arrow" href="/blog">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M13 8H3M7 4L3 8l4 4"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"></path>
+      </svg>
+      Writing
+    </a>
+
+    <header class="post__head">
+      <h1 class="post__title">{post.data.title}</h1>
+      <p class="post__meta tabular">
+        <time datetime={post.data.pubDate.toISOString()}>{fmtDate(post.data.pubDate)}</time>
+        {post.data.updatedDate && <span> · updated {fmtDate(post.data.updatedDate)}</span>}
+      </p>
+      {
+        post.data.tags.length > 0 && (
+          <ul class="chips post__tags">
+            {post.data.tags.map((t) => (
+              <li class="chip">{t}</li>
+            ))}
+          </ul>
+        )
+      }
+    </header>
+
+    <div class="prose post__body">
+      <Content />
+    </div>
+  </article>
+</BlogLayout>
+
+<style>
+  .post__back {
+    font-size: var(--text-sm);
+  }
+  .post__head {
+    margin-top: var(--space-4);
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .post__title {
+    font-size: var(--text-3xl);
+    font-weight: var(--w-bold);
+    letter-spacing: -0.03em;
+    line-height: var(--lh-tight);
+    text-wrap: balance;
+  }
+  .post__meta {
+    margin-top: var(--space-3);
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+  .post__tags {
+    margin-top: var(--space-3);
+  }
+
+  /* article typography — extends the global .prose for long-form reading */
+  .post__body {
+    color: var(--ink);
+    font-size: var(--text-base);
+    line-height: var(--lh-body);
+  }
+  .post__body :global(p),
+  .post__body :global(ul),
+  .post__body :global(ol),
+  .post__body :global(blockquote),
+  .post__body :global(pre),
+  .post__body :global(figure) {
+    margin-block: 1.1em;
+  }
+  .post__body :global(h2) {
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+    font-size: var(--text-xl);
+    font-weight: var(--w-bold);
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .post__body :global(h3) {
+    margin-top: 1.6em;
+    margin-bottom: 0.4em;
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    color: var(--ink);
+  }
+  .post__body :global(a) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+  .post__body :global(strong) {
+    color: var(--ink);
+    font-weight: var(--w-semibold);
+  }
+  .post__body :global(ul),
+  .post__body :global(ol) {
+    padding-left: 1.4rem;
+  }
+  .post__body :global(ul) {
+    list-style: disc;
+  }
+  .post__body :global(ol) {
+    list-style: decimal;
+  }
+  .post__body :global(li) {
+    margin-block: 0.35em;
+  }
+  .post__body :global(li)::marker {
+    color: var(--muted);
+  }
+  .post__body :global(blockquote) {
+    padding-left: 1.1rem;
+    border-left: 2px solid var(--accent);
+    color: var(--muted);
+    font-style: italic;
+  }
+  .post__body :global(:not(pre) > code) {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+    font-size: 0.88em;
+    padding: 0.12em 0.4em;
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+    border: 1px solid var(--hairline);
+  }
+  .post__body :global(hr) {
+    margin-block: var(--space-5);
+    border: 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .post__body :global(img) {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hairline);
+  }
+</style>
