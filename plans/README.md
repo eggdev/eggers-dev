@@ -14,7 +14,7 @@ but see the dependency notes — most are independent.
 | 002 | [Delete the unrendered Builds.astro](002-remove-dead-builds-component.md) | tech-debt | S | LOW | none | **DONE** — reviewed, approved. `b0f2bff` on `worktree-agent-a98190e743d87b777` |
 | 003 | [Patch Astro to 6.4.8](003-astro-security-patch.md) | security | S | LOW | none | **DONE** — approved with one criterion waived, see below. `8888abb` on `worktree-agent-ae35699b92b27e547` |
 | 004 | [Share the dot-field primitives](004-dedupe-dot-field-primitives.md) | tech-debt | M | MED | none | **EXECUTED, RECOMMEND DISCARDING** — see below. `8270ae2` on `worktree-agent-a83defb92e32f91df` |
-| 005 | [Fill in DESIGN.md §2's colour tokens](005-design-md-colors-section.md) | docs | S | LOW | 001 | TODO |
+| 005 | [Fill in DESIGN.md §2's colour tokens](005-design-md-colors-section.md) | docs | S | LOW | 001 | **DONE, SHIPPED** — `1123489`. All 29 shipped OKLCH values documented; `comm` gate empty |
 | 006 | [Upgrade to Astro 7](006-astro-7-upgrade.md) | migration/security | M | HIGH | 001–003 merged | **DONE, SHIPPED** — `ad10970`, live and verified (`Astro v7.1.4` in the generator meta) |
 
 ## Shipped
@@ -65,9 +65,18 @@ finding Med impact; it should have been Low, and the plan should never have been
 written. Astro cannot share a module without externalising the script, so there
 is no version of this refactor that keeps the inlining.
 
-**Recommendation: discard the branch and keep the duplication.** If the drift
-risk ever becomes real, the cheaper guard is a comment in each component
-pointing at the other.
+**Decision: discarded.** The branch and its worktree were deleted on
+2026-07-27 after the owner weighed the trade with the numbers in hand. The
+commit was `8270ae2` ("refactor(canvas): share the dot-field primitives between
+both fields") — recoverable from the reflog for roughly 90 days
+(`git show 8270ae2`), after which it is gone. The duplication in
+`Substrate.astro` and `DotMatrix.astro` is intentional; if the drift risk ever
+becomes real, the cheaper guard is a comment in each component pointing at the
+other, not a shared module.
+
+Measured cost that decided it: 0 → 3 emitted JS files (1.7K + 2.3K + 353B) and
+0 → 2 network requests per page before the signature canvas paints, to remove
+about 20 duplicated lines at a net cost of +25 lines overall.
 
 Two smaller notes from that run, both worth keeping:
 
