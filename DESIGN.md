@@ -1,4 +1,3 @@
-<!-- SEED: re-run /impeccable document once there's code to capture the actual tokens and components. -->
 ---
 name: eggers.dev
 description: Personal portfolio of a multi-disciplinary designer & engineer — confident, precise, fast.
@@ -28,19 +27,27 @@ It explicitly rejects: the **generic developer-portfolio template** (purple-grad
 
 A cool, restrained palette anchored on a single cobalt hue, with a warm counter-accent held in reserve. The base is near-monochrome with a faint cool tint pulled toward the cobalt; color appears only where it carries meaning.
 
-*Seed mode: final OKLCH values are resolved at implementation. The anchor and hue families below are committed; exact lightness/chroma per theme are tuned against live contrast.*
+Every value below is the token that ships in `src/styles/global.css`, which is the source of truth for color. Light is the `:root` default; dark is the `prefers-color-scheme: dark` override. Tokens that differ per theme are given as *light / dark*. The semantic tokens (`--accent`, `--cta`, `--focus`, `--dot-accent`) alias the raw families in light and are re-declared with their own values in dark, so a token can carry the same meaning at two different lightnesses.
 
 ### Primary
-- **Cobalt / Harbor Blue** (anchor `oklch(0.55 0.105 230)`; exact value `[to be resolved during implementation]`): The single brand voice. Links, focus rings, key highlights, active states, the rare accent rule. Carried across both light and dark by adjusting lightness, holding the hue near 230°.
+- **Cobalt / Harbor Blue** (`--cobalt` `oklch(0.55 0.12 238)`): The single brand voice. Links, focus rings, key highlights, active states, the rare accent rule. It ships at hue 238° — inside the ±10° band around the original 230° seed — and is carried across both themes by moving lightness while holding that hue.
+  - `--cobalt-ink` `oklch(0.48 0.13 238)` — cobalt as *text* on the light surface, darkened until it clears 4.5:1. This is what `--accent` resolves to in light. The brighter `--cobalt` stays reserved for fills and focus rings, where the text threshold doesn't apply; that split is why two near-identical cobalts exist.
+  - `--cobalt-strong` `oklch(0.42 0.14 240)` — hover/active for links.
+  - Dark declares its own cobalts rather than aliasing the family: `--accent` `oklch(0.72 0.13 238)` (luminous cobalt on slate), `--accent-strong` `oklch(0.8 0.13 235)`, `--accent-bg` `oklch(0.62 0.14 238)`.
+  - `--focus` is `--cobalt` in light and `oklch(0.78 0.13 238)` in dark. `--on-accent`, the text a cobalt fill carries, is `oklch(0.99 0.002 240)` / `oklch(0.16 0.01 245)`.
 
 ### Secondary
-- **Warm Counter-accent** (hue family ~40–55°, amber/coral; `[to be resolved during implementation]`): The deliberate exception. Reserved for a single human moment — an availability pill, a hover surprise, a highlight that should feel warm against the cool. Never competes with cobalt for the same job.
+- **Warm Counter-accent** (`--warm` `oklch(0.66 0.16 47)`): The deliberate exception. Reserved for a single human moment — an availability pill, a hover surprise, a highlight that should feel warm against the cool. Never competes with cobalt for the same job. The family sits at hue ~45–60°.
+  - `--warm-ink` `oklch(0.52 0.14 45)` — warm as *text* on light, darkened to clear 4.5:1, mirroring the cobalt fill/text split.
+  - `--warm-tint` `oklch(0.95 0.03 60)` — the faint warm surface wash.
+  - In light, `--cta` / `--cta-line` / `--cta-wash` alias `--warm-ink` / `--warm` / `--warm-tint`. In dark they take their own values: `oklch(0.8 0.13 52)` / `oklch(0.74 0.15 50)` / `oklch(0.27 0.04 50)`.
 
 ### Neutral
-- **Ink** (`[to be resolved]`): Body and heading text. Must reach ≥7:1 against its surface; may carry a trace of the cobalt hue at very low chroma rather than pure grey.
-- **Muted** (`[to be resolved]`): Secondary text, metadata, captions. Ink pulled toward the surface; must still clear ≥4.5:1 for body sizes.
-- **Surface** (`[to be resolved]`): Page background. Light theme leans toward pure/near-pure with the faintest cool tint; dark theme is a deep cool slate (cool, not black, not navy-cliché).
-- **Raised surface / hairline** (`[to be resolved]`): Section and card separation via tonal step + 1px hairline borders, not shadows.
+- **Ink** (`--ink` `oklch(0.24 0.022 250)` / `oklch(0.93 0.007 245)`): Body and heading text. Clears 7:1 against its surface in both themes, and carries a trace of the cobalt hue at very low chroma rather than reading as pure grey.
+- **Muted** (`--muted` `oklch(0.455 0.022 248)` / `oklch(0.71 0.015 245)`): Secondary text, metadata, captions. Ink pulled toward the surface, still clearing 4.5:1 at body sizes.
+- **Surface** (`--surface` `oklch(0.992 0.002 240)` / `oklch(0.195 0.012 245)`): Page background. Light is near-white with the faintest cool tint; dark is a deep cool slate — chroma stays at 0.012, so it reads cool without tipping into navy.
+- **Raised surface / hairline**: Section and card separation via a tonal step plus 1px hairline borders, never shadows. `--surface-raised` `oklch(0.975 0.004 240)` / `oklch(0.235 0.014 245)`; `--hairline` `oklch(0.9 0.007 240)` / `oklch(0.32 0.016 245)`; `--hairline-strong` `oklch(0.84 0.009 240)` / `oklch(0.4 0.02 245)`.
+- **Dot matrix** (`--dot` `oklch(0.55 0.04 240)` / `oklch(0.62 0.03 245)`): The base ink the background canvas fields draw with. Its companion `--dot-accent` is `--cobalt` in light and `oklch(0.72 0.13 238)` in dark, so the field picks up the brand hue without the chrome competing with content.
 
 ### Named Rules
 **The One Voice Rule.** Cobalt appears on ≤10% of any given screen. Its rarity is the point; the moment it's everywhere it stops meaning anything.
