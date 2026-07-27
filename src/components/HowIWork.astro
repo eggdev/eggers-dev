@@ -13,7 +13,7 @@ const points = [
   },
   {
     h: 'Cross-model review',
-    p: "Claude plans, triages, and verifies. Codex implements and plays the skeptical reviewer. One model re-checks the other's findings against the code.",
+    p: 'Claude plans, triages, and verifies. Codex implements and plays the skeptical reviewer, then Claude re-checks those findings against the code.',
   },
   {
     h: 'The human gate',
@@ -47,9 +47,9 @@ const harnessUrl = ''
     <header class="section-head">
       <h2 class="h-section">How I work</h2>
       <p class="lede">
-        Anyone can wire up an agent in 2026. The rare part is the judgment about where it belongs,
-        written down as rules the agents can't break, so every new project starts with good
-        guardrails.
+        The judgment about where an agent belongs is the part that carries over. I write it down as
+        rules the agents can't break, so every new project starts with the guardrails already in
+        place.
       </p>
     </header>
 
@@ -72,7 +72,7 @@ const harnessUrl = ''
       <figure class="ai-code">
         <Code code={harness} lang="ts" themes={codeThemes} />
         <figcaption>
-          A slice of the harness I carry between projects.
+          A sketch of the harness I carry between projects.
           {
             harnessUrl && (
               <a class="ai-code__link link-arrow" href={harnessUrl} target="_blank" rel="noopener">

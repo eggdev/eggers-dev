@@ -21,7 +21,7 @@ caseStudy:
   - 'Client-side tech lead for third-party login and entitlements across web and connected devices: TV Everywhere, international broadcasters, and NBA''s CIAM identity, packaged into @nbad/auth, a reusable React auth library I own most of.'
   - 'Tech-led the League Pass purchase page and the recursive block-rendering system behind it, so marketing could edit subscription and Local Access pages as content blocks without an engineer. Localized in three languages.'
   - 'Helped launch Local Access in-market streaming that routed around blackouts, and built the Nike sign-up flow for the 2024 All-Star booth.'
-  - 'A self-initiated platform rotation produced the self-service repo-provisioning tool NBA''s DTC org standardized on, with security scanning and approvals built in.'
+  - 'A platform rotation I asked for produced the self-service repo-provisioning tool NBA''s DTC org standardized on, with security scanning and approvals built in.'
 ---
 
 Two years on NBA.com and League Pass, split between the feature fans saw and the plumbing they didn't. I owned live scores from the first commit, tech-led third-party login and entitlements, and ran the League Pass subscription experience. A platform rotation I asked for produced the repo-provisioning tool the DTC org standardized on.
