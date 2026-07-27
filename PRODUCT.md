@@ -2,7 +2,7 @@
 
 ## Register
 
-brand
+The site speaks as a senior practitioner talking to a peer: plain declaratives, concrete nouns, and no adjective doing work the evidence should do. It states what was built and what happened, then stops — the brevity reads as confidence, not thinness. Where there is nothing specific to say, it says less rather than reaching for enthusiasm.
 
 ## Users
 

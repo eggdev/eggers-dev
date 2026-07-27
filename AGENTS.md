@@ -76,5 +76,8 @@ path; normal work reaches production through `main`.
 ## Performance
 
 - Static output, near-zero JS. Ship JS only where it earns its place (sticky-nav
-  active state, the dot-matrix). Self-host fonts. Keep the repo lean: no media or
-  build artifacts committed.
+  active state, the dot-matrix). Self-host fonts. Keep the repo lean: no build
+  output, no stray media. Two binaries are committed on purpose and stay put —
+  `public/og.png`, the social share card, which is a required static asset; and
+  `resume/brendan-eggers-resume.pdf`, a rendered deliverable kept in sync with
+  `resume/brendan-eggers-resume.html`. Do not delete either one.

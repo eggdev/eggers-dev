@@ -78,9 +78,22 @@ Flat by default. Motion and depth are deliberately quiet, so the system conveys 
 
 ## 5. Components
 
-*Seed mode: no components exist yet. The next `/impeccable document` run (scan mode, after the first build) will extract real component tokens and generate the `.impeccable/design.json` sidecar.*
+The site is built and live at https://eggers.dev, so the primitives below describe what ships. Text links are cobalt with a precise underline and focus treatment. Buttons come in two forms — primary (`.btn--primary`, an ink fill carrying surface-colored text) and ghost (`.btn--ghost`, a hairline border that picks up the accent on hover) — and both stay flat at rest. Navigation is weight-driven, with the active state carried by color. Work entries are the signature component: flat, hairline-separated, type-led, *not* an identical-card grid. The contact affordance stays reachable within a glance from anywhere on the page.
 
-Canonical primitives to define at build time, consistent with the rules above: text links (cobalt, with a precise underline/focus treatment), primary & ghost buttons (flat, hairline or filled-cobalt, white text on the cobalt fill), navigation (weight-driven, active-state by color), project / work entries (the signature component — flat, hairline-separated, type-led, *not* an identical-card grid), and the contact affordance (must be reachable within a glance from anywhere).
+The components live in `src/components/`:
+
+- `Rail.astro` — the persistent navigation rail: wordmark, the four section links (Work, How I work, About, Contact), and social links. Carries the scroll-driven active state.
+- `Hero.astro` — the opening claim, set in the largest type on the page.
+- `Work.astro` — the `#work` section; the hairline-separated, type-led work list.
+- `HowIWork.astro` — the `#ai` section, which explains the method and embeds the diagram below.
+- `NightShift.astro` — a canvas diagram of the harness drawn as the loop it actually runs.
+- `About.astro` — the `#about` section; a short prose column, no timeline or skill-bar widgetry.
+- `Contact.astro` — the `#contact` section; the email call-to-action, a copy-to-clipboard button, and the social handles.
+- `Footer.astro` — the closing hairline, copyright, and back-to-top link.
+- `Substrate.astro` — the fixed, full-bleed canvas dot-field the home page sits inside.
+- `DotMatrix.astro` — the standalone dot-field, used as the visual on the 404 page.
+
+`Builds.astro` (a "Side builds" section) also exists, but no page imports it and it is currently unrendered.
 
 ## 6. Do's and Don'ts
 
