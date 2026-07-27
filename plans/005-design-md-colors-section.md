@@ -5,10 +5,31 @@
 > next step. If anything in the "STOP conditions" section occurs, stop and
 > report — do not improvise.
 >
-> **Drift check (run first)**: `git diff --stat 3435350..HEAD -- DESIGN.md src/styles/global.css`
-> `DESIGN.md` is expected to have changed (plan 001 rewrote §5). Confirm §2 and
-> line 1 still match the excerpts below before proceeding; on a mismatch in
-> those specific places, treat it as a STOP condition.
+> **Step 0 — align your worktree first (run before anything else).**
+> Agent worktrees are branched from the session's starting commit, which is
+> **behind** `main`. This plan depends on plan 001, which is already merged, so
+> a stale worktree will show you the wrong `DESIGN.md`. Fix it first:
+>
+> ```bash
+> git fetch origin
+> git log --oneline main..HEAD    # MUST be empty — you have no unique work
+> git reset --hard origin/main
+> git log --oneline -1            # expect: fbed527 or later
+> ```
+>
+> If `git log --oneline main..HEAD` prints **anything**, STOP — the worktree has
+> work a reset would destroy. Otherwise the reset is safe and authorised: it is
+> an explicit instruction here, not improvisation.
+>
+> **Drift check (run after step 0)**:
+> ```bash
+> grep -c "to be resolved" DESIGN.md      # expect 6
+> grep -n "Seed mode" DESIGN.md           # expect one hit, at line 31, in §2
+> sed -n '/^## 5. Components/,+2p' DESIGN.md | head -3
+> ```
+> §5 must already read "The site is built and live at https://eggers.dev" — that
+> is plan 001's work and proves you are on the right base. If §5 still says "no
+> components exist yet", you are on a stale commit — STOP and report the SHA.
 
 ## Status
 

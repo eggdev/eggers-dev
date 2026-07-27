@@ -16,6 +16,7 @@ but see the dependency notes — most are independent.
 | 004 | [Share the dot-field primitives](004-dedupe-dot-field-primitives.md) | tech-debt | M | MED | none | **EXECUTED, RECOMMEND DISCARDING** — see below. `8270ae2` on `worktree-agent-a83defb92e32f91df` |
 | 005 | [Fill in DESIGN.md §2's colour tokens](005-design-md-colors-section.md) | docs | S | LOW | 001 | **DONE, SHIPPED** — `1123489`. All 29 shipped OKLCH values documented; `comm` gate empty |
 | 006 | [Upgrade to Astro 7](006-astro-7-upgrade.md) | migration/security | M | HIGH | 001–003 merged | **DONE, SHIPPED** — `ad10970`, live and verified (`Astro v7.1.4` in the generator meta) |
+| 007 | [Generate the resume PDF from the HTML](007-resume-pdf-build-step.md) | dx | S–M | LOW | none | TODO — deliberately deferred |
 
 ## Shipped
 
