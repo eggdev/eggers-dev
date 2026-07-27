@@ -15,6 +15,19 @@ speed, and restraint are part of the argument. Build it that way.
 
 Use `bun`, not npm/pnpm. Conventional commits. Commit, don't push, unless asked.
 
+## Deploy
+
+**Anything that lands on `main` ships to production.** A Git-connected
+Cloudflare Worker builds the site and serves `dist/` per `wrangler.jsonc`.
+That includes merging a branch into `main`, not just pushing commits to it.
+
+There is no GitHub Actions workflow, so the absence of `.github/workflows/` is
+not evidence that pushing is safe. The deploy is wired up in the Cloudflare
+dashboard and is invisible from inside the repo.
+
+`bun run deploy` builds and ships from a local machine. It is the out-of-band
+path; normal work reaches production through `main`.
+
 ## Structure
 
 - `src/pages/` — routes (`index.astro`, `404.astro`). Only reserved dir.
@@ -23,8 +36,10 @@ Use `bun`, not npm/pnpm. Conventional commits. Commit, don't push, unless asked.
 - `src/content/work/` — work entries as Markdown (typed collection).
 - `src/content.config.ts` — Zod schema for collections. Schema is the contract.
 - `src/styles/global.css` — design tokens (OKLCH) + base styles.
-- `src/assets/` — self-hosted fonts, static imagery.
-- `content/`, `_source/` — source copy and research. Not shipped. Don't import.
+- `public/` — favicon, OG image, `robots.txt`. Fonts come from the
+  `@fontsource-variable` package, not a checked-in directory.
+- `content/`, `_source/` — source copy and research. Not shipped, and
+  gitignored because this repo is public. Don't import, don't un-ignore.
 
 ## Design rules (non-negotiable; full spec in DESIGN.md)
 
