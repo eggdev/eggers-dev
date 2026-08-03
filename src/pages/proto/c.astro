@@ -1,0 +1,219 @@
+---
+import Contact from '../../components/Contact.astro'
+import Footer from '../../components/Footer.astro'
+import Rail from '../../components/Rail.astro'
+import Substrate from '../../components/Substrate.astro'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+
+const email = 'brendan@eggers.dev'
+
+const entries = [
+  {
+    title: 'Bar Savvy',
+    role: 'Co-Founder / CTO',
+    period: '2023 to present',
+    opening:
+      'Bar Savvy started with a public record most people don’t know exists: Texas publishes what every bar sells in alcohol, every month, by venue. In 2023 I was still working at the NBA, and as a side project on my own machine I started joining that record with public venue data and putting the result on a map. If you were thinking about opening a bar, you could pull up a neighborhood and see what the bars already there actually sold, not what they claimed. That map was the whole first product.',
+    detail:
+      'Sole continuous engineer across the web and native apps, the data engine, and the infrastructure. Paying customers; revenue covers operating costs.',
+    links: [{ label: 'barsavvy.com', href: 'https://barsavvy.com' }],
+  },
+  {
+    title: 'LV Collective',
+    role: 'Director, Software Engineering',
+    period: '2024 to present',
+    opening:
+      'LV Collective is where Bar Savvy is incubated and where the rest of my week goes. I led Sidekick OS, a private knowledge system for executives, and shipped upcredit, a small rent-credit product that runs across the student-housing portfolio with little upkeep. About half the role is teaching the rest of the org to build with AI without me in the loop.',
+    detail:
+      'Office hours and formal lessons grew into the AI Builders Committee; colleagues now run their own workflows and automations.',
+    links: [{ label: 'lvcollective.com', href: 'https://lvcollective.com' }],
+  },
+  {
+    title: 'NBA',
+    role: 'Senior Software Engineer, Direct-to-Consumer',
+    period: '2022 to 2024',
+    opening:
+      'When someone buys NBA League Pass and presses play, the game either starts or it doesn’t. Behind that press sits a chain: an account, a purchase, and a system deciding this person gets this game. I joined the NBA’s NextGen rewrite working on that chain, from signing in and paying through to watching.',
+    detail:
+      'Built the live-scores surface from its first commit, led client-side identity and entitlements across web and connected devices, and helped launch Local Access in-market streaming.',
+    links: [{ label: 'League Pass', href: 'https://www.nba.com/league-pass-purchase' }],
+  },
+  {
+    title: 'eggers.wedding',
+    role: 'Personal build, with Emina',
+    period: 'In active use',
+    opening:
+      'Every deadline I’ve shipped against professionally had some give in it, even when nobody admitted it. A wedding date doesn’t. Ours is fixed, the guests are real, and the software we’re planning it with is software I built.',
+    detail:
+      'Guest information, group RSVPs and admin, seating, Spotify music, and honeymoon planning in one system Emina and I run our whole wedding from.',
+    links: [{ label: 'eggers.wedding', href: 'https://eggers.wedding' }],
+  },
+]
+---
+
+<BaseLayout>
+  <Substrate />
+  <div class="shell">
+    <Rail />
+    <main id="main" class="content">
+      <header class="strip" id="top">
+        <h1 class="strip__name">Brendan Eggers</h1>
+        <a class="strip__email" href={`mailto:${email}`}>{email}</a>
+      </header>
+
+      <section id="work" class="section stories">
+        {
+          entries.map((e) => (
+            <article class="story-entry">
+              <div class="story-entry__meta">
+                <h2 class="story-entry__title">{e.title}</h2>
+                <p class="story-entry__role">{e.role}</p>
+                <p class="story-entry__period tabular">{e.period}</p>
+              </div>
+              <div class="story-entry__body">
+                <p class="story-entry__opening">{e.opening}</p>
+                <p class="story-entry__detail">{e.detail}</p>
+                <ul class="story-entry__links">
+                  {e.links.map((l) => (
+                    <li>
+                      <a class="link-arrow" href={l.href} target="_blank" rel="noopener">
+                        {l.label}
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M5 11L11 5M11 5H6M11 5V10"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          ))
+        }
+      </section>
+      <Contact />
+      <Footer />
+    </main>
+  </div>
+  <nav class="proto-switch" aria-label="Prototype variants">
+    <span>Variant</span>
+    <a href="/proto/a">A</a>
+    <a href="/proto/b">B</a>
+    <a href="/proto/c" aria-current="page">C</a>
+    <a href="/">live</a>
+  </nav>
+</BaseLayout>
+
+<style>
+  .strip {
+    padding-block: clamp(3rem, 2rem + 5vw, 5rem) clamp(1.5rem, 1rem + 2vw, 2.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .strip__name {
+    font-size: var(--text-2xl);
+    font-weight: var(--w-display);
+    letter-spacing: -0.03em;
+  }
+  .strip__email {
+    width: fit-content;
+    font-size: var(--text-base);
+    font-weight: var(--w-medium);
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .stories {
+    display: grid;
+  }
+  .story-entry {
+    display: grid;
+    gap: clamp(1rem, 0.4rem + 2vw, 2.5rem);
+    padding-block: clamp(2.25rem, 1.5rem + 2.5vw, 3.5rem);
+    border-top: 1px solid var(--hairline);
+    transition: border-color var(--dur-mid) var(--ease-out-quart);
+  }
+  .story-entry:hover {
+    border-top-color: var(--accent);
+  }
+  @media (min-width: 52rem) {
+    .story-entry {
+      grid-template-columns: minmax(12rem, 0.34fr) 1fr;
+    }
+  }
+  .story-entry__title {
+    font-size: var(--text-xl);
+    font-weight: var(--w-bold);
+    letter-spacing: -0.02em;
+  }
+  .story-entry__role {
+    margin-top: 0.6rem;
+    color: var(--ink);
+    font-weight: var(--w-medium);
+    font-size: var(--text-sm);
+  }
+  .story-entry__period {
+    margin-top: 0.2rem;
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+  .story-entry__opening {
+    max-width: 60ch;
+    font-size: var(--text-lg);
+    line-height: 1.6;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+  .story-entry__detail {
+    margin-top: var(--space-3);
+    max-width: 60ch;
+    font-size: var(--text-base);
+    line-height: 1.55;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  .story-entry__links {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    font-size: var(--text-sm);
+  }
+
+  .proto-switch {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 40;
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.4rem 0.7rem;
+    font-size: var(--text-sm);
+    color: var(--muted);
+    background: var(--surface-raised);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+  }
+  .proto-switch a {
+    color: var(--accent);
+    font-weight: var(--w-medium);
+  }
+  .proto-switch a[aria-current='page'] {
+    color: var(--ink);
+    text-decoration: none;
+  }
+</style>
