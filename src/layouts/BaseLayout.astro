@@ -9,8 +9,8 @@ interface Props {
 }
 
 const {
-  title = 'Brendan Eggers — AI-native engineer & engineering leader',
-  description = 'Brendan Eggers builds the systems that let agents ship real software. Director of Software Engineering at LV Collective, Co-Founder/CTO at Bar Savvy, ex-NBA.',
+  title = 'Brendan Eggers — Co-Founder & Director of Software Engineering',
+  description = 'Brendan Eggers takes ambiguous products from the user problem to the system that runs them in production. Co-Founder/CTO of Bar Savvy, Director of Software Engineering at LV Collective, ex-NBA.',
   noindex = false,
 } = Astro.props
 
@@ -26,7 +26,7 @@ const personSchema = {
   email: 'mailto:brendan@eggers.dev',
   jobTitle: 'Director, Software Engineering',
   description:
-    'AI-native engineer and engineering leader. Builds the systems that let agents ship real software.',
+    'Product engineer who takes ambiguous products from the user problem to the system that runs them in production.',
   worksFor: [
     { '@type': 'Organization', name: 'LV Collective' },
     { '@type': 'Organization', name: 'Bar Savvy' },
@@ -70,7 +70,7 @@ const personSchema = {
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Brendan Eggers — I build the systems that let agents ship real software." />
+    <meta property="og:image:alt" content="Brendan Eggers — Co-Founder & Director of Software Engineering" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />

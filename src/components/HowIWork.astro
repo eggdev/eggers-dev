@@ -9,7 +9,7 @@ const points = [
   },
   {
     h: 'The night shift',
-    p: 'An autonomous loop opens small cleanup PRs every 20 minutes and merges the green, approved ones every 15, all night, unattended.',
+    p: 'An autonomous loop opens small cleanup PRs and merges the ones that pass every gate, overnight, unattended.',
   },
   {
     h: 'Cross-model review',
@@ -47,9 +47,9 @@ const harnessUrl = ''
     <header class="section-head">
       <h2 class="h-section">How I work</h2>
       <p class="lede">
-        The judgment about where an agent belongs is the part that carries over. I write it down as
-        rules the agents can't break, so every new project starts with the guardrails already in
-        place.
+        I use AI where a product needs judgment rules can't provide, where failure can be surfaced
+        and recovered, and where I can observe enough of the system to improve it in production.
+        The agents that build with me work the same way: inside rules they can't break.
       </p>
     </header>
 
@@ -93,23 +93,6 @@ const harnessUrl = ''
       </figure>
     </div>
 
-    <div class="ai-judgment">
-      <h3 class="ai-judgment__h">What I actually say to them</h3>
-      <dl class="ai-rules">
-        <div class="ai-rule">
-          <dt>Plan first</dt>
-          <dd>"We can build all of this in a night if we do proper planning."</dd>
-        </div>
-        <div class="ai-rule">
-          <dt>Root cause over the quick fix</dt>
-          <dd>"Step back and identify the root of the problem."</dd>
-        </div>
-        <div class="ai-rule">
-          <dt>A hard human gate</dt>
-          <dd>"Commit, never push."</dd>
-        </div>
-      </dl>
-    </div>
   </div>
 </section>
 
@@ -163,37 +146,4 @@ const harnessUrl = ''
     }
   }
 
-  .ai-judgment {
-    margin-top: clamp(3rem, 2rem + 4vw, 5rem);
-    padding-top: clamp(2rem, 1.4rem + 2vw, 3rem);
-    border-top: 1px solid var(--hairline);
-  }
-  .ai-judgment__h {
-    font-size: var(--text-xl);
-    font-weight: var(--w-semibold);
-    letter-spacing: -0.02em;
-    max-width: 24ch;
-  }
-  .ai-rules {
-    margin-top: var(--space-5);
-    display: grid;
-    gap: var(--space-4);
-  }
-  @media (min-width: 48rem) {
-    .ai-rules {
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--space-5);
-    }
-  }
-  .ai-rule dt {
-    font-weight: var(--w-semibold);
-    font-size: var(--text-sm);
-    color: var(--ink);
-  }
-  .ai-rule dd {
-    margin-top: 0.35rem;
-    color: var(--muted);
-    font-size: var(--text-base);
-    text-wrap: pretty;
-  }
 </style>

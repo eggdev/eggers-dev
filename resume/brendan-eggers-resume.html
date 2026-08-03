@@ -168,7 +168,7 @@
 
 <header>
   <p class="name">Brendan Eggers</p>
-  <p class="headline">Staff Software Engineer</p>
+  <p class="headline">Co-Founder &amp; Director of Software Engineering</p>
   <p class="contact">
     <span>Connecticut (NYC metro)</span>
     <span><a href="mailto:brendan@eggers.dev">brendan@eggers.dev</a></span>
@@ -177,10 +177,9 @@
     <span><a href="https://linkedin.com/in/brendaneggers">linkedin.com/in/brendaneggers</a></span>
   </p>
   <p class="summary">
-    I build the systems that let AI agents ship real software: the harnesses, review gates,
-    and evals that have put close to three thousand agent-co-authored commits into production.
-    Underneath that is nine years of full-stack product work, from NBA.com to solo-CTO ventures,
-    owning everything from the apps down to the pipelines and infrastructure.
+    Product engineer who takes ambiguous products from the user problem to the system that runs
+    them in production. Co-founded Bar Savvy and built it end to end as its only engineer; before
+    that, built the NBA's client path from sign-in through purchase to game access.
   </p>
 </header>
 
@@ -195,15 +194,15 @@
     <p class="note">Venture-incubator arrangement: I build and co-own the products below inside LV.</p>
     <ul>
       <li>Built Sidekick OS, a private knowledge assistant for executives, from zero to a working
-        product in a four-week sprint. It gives an executive AI chat over their connected sources,
-        plus an encrypted vault and inbox digests, on an Nx monorepo with Effect and Zero
-        local-first sync.</li>
+        product. It gives an executive AI chat over their connected sources, plus an encrypted
+        vault and inbox digests, on an Nx monorepo with Effect and Zero local-first sync.</li>
       <li>Designed its per-user encryption, a DEK/KEK AES-256-GCM scheme that decrypts client-side.
         Destroying one key erases one user's data, which is how the product handles GDPR deletion.</li>
       <li>Shipped upcredit, a rent-reporting credit product (Next.js, Clerk, Supabase) now live across
         the company's student-housing portfolio and built to run with almost no upkeep.</li>
-      <li>Spend about half the role teaching the rest of the org to build with AI, mostly harness
-        setup and evals.</li>
+      <li>Spend about half the role teaching the org to build with AI. Office hours and formal
+        lessons grew into an AI Builders Committee; colleagues now run their own workflows and
+        automations.</li>
     </ul>
   </div>
 
@@ -212,15 +211,15 @@
       <p class="role">Technical Co-Founder &amp; CTO<span class="org">Bar Savvy</span></p>
       <p class="dates">2023 – Present</p>
     </div>
-    <p class="note">Independent venture and its own entity, built nights and weekends through the
-      NBA years and now incubated alongside the LV Collective role.</p>
+    <p class="note">Independent venture and its own entity, founded in 2023 and incubated at LV
+      Collective since October 2024.</p>
     <ul>
       <li>Sole continuous engineer on a Texas alcohol-sales analytics platform for bar operators and investors:
         web app, Expo native app, marketing site, and API in one Bun + Turborepo monorepo with
-        29 shared packages.</li>
+        29 shared packages. Active with paying customers; revenue covers operating costs.</li>
       <li>Built the data engine on Apache Airflow: chained DAGs that fuse TABC filings, Google data,
         customer reviews, and dual geocoding into one canonical record per venue.</li>
-      <li>Run 25 LLM modules in production for classification and fuzzy address matching, each gated
+      <li>Run LLM modules in production for classification and fuzzy address matching, each gated
         by cheap deterministic checks, with a second-pass reviewer that flags its own disagreements
         for a human to settle.</li>
       <li>Stood up the backend on Kubernetes solo, then dropped a high-maintenance Elasticsearch
@@ -236,15 +235,15 @@
       <p class="dates">2022 – 2024</p>
     </div>
     <ul>
-      <li>Built NBA.com's score strip from the first commit and owned it from then on, with tens
-        of millions of eyeballs on it across a season.</li>
+      <li>Built NBA.com's score strip from the first commit and remained its primary owner as it
+        grew into a durable live surface through the season.</li>
       <li>Client-side tech lead for login and entitlements across web and connected devices
         (TV Everywhere, international broadcasters, the league's CIAM identity), packaged as a
         reusable React auth library.</li>
       <li>Tech-led the League Pass purchase page and the block-rendering system behind it, which let
         marketing edit subscription pages without an engineer. Localized in three languages.</li>
-      <li>Built the Nike sign-up flow for the 2024 All-Star booth, which took about 25,000 sign-ups
-        over the weekend without an incident.</li>
+      <li>Helped launch Local Access in-market streaming, and built the Nike sign-up flow for the
+        2024 All-Star booth.</li>
       <li>Mentored engineers as a senior IC, and a platform rotation I asked for produced the
         self-service repo-provisioning tool the DTC org standardized on.</li>
     </ul>
@@ -282,8 +281,8 @@
     </div>
     <ul>
       <li>Core engineer on the conversion of the company's e-commerce platform to React, shipping
-        dozens of data-rich React/Redux apps and cutting render time about 25% on an application
-        serving up to 200 million users.</li>
+        dozens of data-rich React/Redux apps. A performance investigation connected a blocked
+        render path directly to subscription conversion.</li>
     </ul>
   </div>
 </section>
