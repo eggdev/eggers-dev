@@ -31,8 +31,10 @@ Thumbs.db
 # research + raw source copy — NOT for the public repo
 # (dossiers carry self-reported metrics, named colleagues, internal notes)
 # leading slash anchors to repo root so src/content/ is NOT matched
+# content/drafts/ is the exception: voice-tested drafts with cleared-public facts only
 /_source/
-/content/
+/content/*
+!/content/drafts/
 
 # agent / skill tooling installs — not portfolio code
 /.claude/
@@ -44,3 +46,4 @@ Thumbs.db
 
 # impeccable tool state (critique snapshots, live config, design sidecar)
 /.impeccable/
+/.serena
