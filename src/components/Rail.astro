@@ -4,6 +4,7 @@ const links = [
   { href: '#ai', label: 'How I work', short: 'AI' },
   { href: '#about', label: 'About', short: 'About' },
   { href: '#contact', label: 'Contact', short: 'Contact' },
+  { href: '/resume', label: 'Résumé', short: 'CV' },
 ]
 const socials = [
   {
@@ -37,7 +38,7 @@ const socials = [
       {
         links.map((l) => (
           <li>
-            <a href={l.href} data-navlink>
+            <a href={l.href} data-navlink={l.href.startsWith('#') ? true : undefined}>
               <span class="rail__line" aria-hidden="true" />
               <span class="lbl-full">{l.label}</span>
               <span class="lbl-short">{l.short}</span>

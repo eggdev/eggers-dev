@@ -1,0 +1,2 @@
+# Copy to .dev.vars for local publish testing. Never commit the real private key.
+GITHUB_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"

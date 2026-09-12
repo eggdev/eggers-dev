@@ -1,7 +1,7 @@
 {
   "extends": "astro/tsconfigs/strict",
-  "include": [".astro/types.d.ts", "**/*"],
-  "exclude": ["dist"],
+  "include": [".astro/types.d.ts", "src/**/*", "career/**/*", "astro.config.*"],
+  "exclude": ["dist", "studio", "career/**/*.test.ts"],
   "compilerOptions": {
     "strictNullChecks": true,
     "verbatimModuleSyntax": true

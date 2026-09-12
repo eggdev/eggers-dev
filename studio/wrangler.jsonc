@@ -1,0 +1,38 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "eggers-career-studio",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "studio.eggers.dev", "custom_domain": true }],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "eggers-career-studio",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://REPLACE_ME.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_ME",
+    "ALLOWED_EMAIL": "brendan@eggers.dev",
+    "GITHUB_APP_ID": "REPLACE_ME",
+    "GITHUB_INSTALLATION_ID": "REPLACE_ME",
+    "GITHUB_OWNER": "eggdev",
+    "GITHUB_REPO": "eggers-dev",
+    "GITHUB_BRANCH": "main",
+    "GITHUB_CONTENT_PATH": "career/public-resume.json"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  }
+}
