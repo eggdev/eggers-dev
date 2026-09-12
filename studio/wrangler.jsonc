@@ -16,6 +16,7 @@
     {
       "binding": "DB",
       "database_name": "eggers-career-studio",
+      "database_id": "5c53ae2e-77cf-48d8-a816-0fb70a8b460b",
       "migrations_dir": "./migrations"
     }
   ],

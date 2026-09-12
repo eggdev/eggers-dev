@@ -28,7 +28,7 @@ copy `.dev.vars.example` to `.dev.vars` and supply a GitHub App private key if y
 3. Create a GitHub App with repository `Contents: read and write`, no webhook, and no other
    permissions. Install it only on `eggdev/eggers-dev`.
 4. Put its App ID and installation ID in `wrangler.jsonc`.
-5. Deploy once. Wrangler auto-provisions the ID-less D1 binding:
+5. Deploy the Studio Worker. Its provisioned D1 database is registered in `wrangler.jsonc`:
 
    ```bash
    bun run deploy:studio
