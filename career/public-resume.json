@@ -8,7 +8,11 @@
     "email": "brendan@eggers.dev",
     "summary": "Product engineer who takes ambiguous products from the user problem to the system that runs them in production. Nine years of full-stack product work, from NBA.com to solo-CTO ventures, owning everything from the apps down to the pipelines and infrastructure.",
     "links": [
-      { "id": "website", "label": "eggers.dev", "href": "https://eggers.dev" },
+      {
+        "id": "website",
+        "label": "eggers.dev",
+        "href": "https://eggers.dev"
+      },
       {
         "id": "github",
         "label": "github.com/eggdev",
