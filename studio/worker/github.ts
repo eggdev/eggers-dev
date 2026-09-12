@@ -29,7 +29,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 async function getInstallationToken(env: Env): Promise<string> {
   if (!env.GITHUB_PRIVATE_KEY) throw new Error('GITHUB_PRIVATE_KEY is not configured')
-  if (env.GITHUB_APP_ID === 'REPLACE_ME' || env.GITHUB_INSTALLATION_ID === 'REPLACE_ME') {
+  const appId: string = env.GITHUB_APP_ID
+  const installationId: string = env.GITHUB_INSTALLATION_ID
+  if (appId === 'REPLACE_ME' || installationId === 'REPLACE_ME') {
     throw new Error('GitHub App variables are not configured')
   }
 
@@ -39,11 +41,11 @@ async function getInstallationToken(env: Env): Promise<string> {
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuedAt(now - 60)
     .setExpirationTime(now + 9 * 60)
-    .setIssuer(env.GITHUB_APP_ID)
+    .setIssuer(appId)
     .sign(key)
 
   const response = await fetch(
-    `https://api.github.com/app/installations/${encodeURIComponent(env.GITHUB_INSTALLATION_ID)}/access_tokens`,
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
     { method: 'POST', headers: apiHeaders(appJwt) }
   )
   const payload = await readJson(response)

@@ -23,7 +23,9 @@ export async function authenticate(request: Request, env: Env): Promise<StudioId
   const url = new URL(request.url)
   if (isLocalRequest(url)) return { email: env.ALLOWED_EMAIL, local: true }
 
-  if (env.ACCESS_TEAM_DOMAIN.includes('REPLACE_ME') || env.ACCESS_AUD === 'REPLACE_ME') {
+  const accessTeamDomain: string = env.ACCESS_TEAM_DOMAIN
+  const accessAud: string = env.ACCESS_AUD
+  if (accessTeamDomain.includes('REPLACE_ME') || accessAud === 'REPLACE_ME') {
     console.error(JSON.stringify({ message: 'Cloudflare Access variables are not configured' }))
     return null
   }
@@ -31,10 +33,10 @@ export async function authenticate(request: Request, env: Env): Promise<StudioId
   const token = request.headers.get('Cf-Access-Jwt-Assertion')
   if (!token) return null
 
-  const issuer = env.ACCESS_TEAM_DOMAIN.replace(/\/$/, '')
+  const issuer = accessTeamDomain.replace(/\/$/, '')
   try {
     const { payload } = await jwtVerify(token, getJwks(issuer), {
-      audience: env.ACCESS_AUD,
+      audience: accessAud,
       issuer,
     })
     return typeof payload.email === 'string' &&

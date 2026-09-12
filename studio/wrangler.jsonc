@@ -6,7 +6,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "studio.eggers.dev", "custom_domain": true }],
+  "routes": [
+    { "pattern": "studio.eggers.dev", "custom_domain": true },
+    { "pattern": "studio.eggers.dev/*", "zone_name": "eggers.dev" }
+  ],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
@@ -21,11 +24,11 @@
     }
   ],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "https://REPLACE_ME.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_ME",
+    "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
+    "ACCESS_AUD": "630731b9de121ab10b8aa6bab3bba69da1df786fa7e82e4ff12f1b00a8a0c419",
     "ALLOWED_EMAIL": "brendan@eggers.dev",
-    "GITHUB_APP_ID": "REPLACE_ME",
-    "GITHUB_INSTALLATION_ID": "REPLACE_ME",
+    "GITHUB_APP_ID": "4924287",
+    "GITHUB_INSTALLATION_ID": "161228447",
     "GITHUB_OWNER": "eggdev",
     "GITHUB_REPO": "eggers-dev",
     "GITHUB_BRANCH": "main",
