@@ -1,6 +1,6 @@
-import { createPrivateKey } from 'node:crypto'
 import type { ResumeContent } from '@career/schema'
-import { SignJWT } from 'jose'
+import { importPKCS8, SignJWT } from 'jose'
+import { convertRsaPrivateKeyToPkcs8Pem } from './pkcs8'
 
 interface GitHubFileResponse {
   sha: string
@@ -36,7 +36,7 @@ async function getInstallationToken(env: Env): Promise<string> {
     throw new Error('GitHub App variables are not configured')
   }
 
-  const key = createPrivateKey(env.GITHUB_PRIVATE_KEY.replace(/\\n/g, '\n'))
+  const key = await importPKCS8(convertRsaPrivateKeyToPkcs8Pem(env.GITHUB_PRIVATE_KEY), 'RS256')
   const now = Math.floor(Date.now() / 1_000)
   const appJwt = await new SignJWT({})
     .setProtectedHeader({ alg: 'RS256' })
