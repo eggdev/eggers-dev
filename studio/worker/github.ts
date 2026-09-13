@@ -28,6 +28,9 @@ const readJson = async (response: Response): Promise<unknown> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const githubErrorMessage = (payload: unknown): string =>
+  isRecord(payload) && typeof payload.message === 'string' ? `: ${payload.message}` : ''
+
 async function getInstallationToken(env: Env): Promise<string> {
   if (!env.GITHUB_PRIVATE_KEY) throw new Error('GITHUB_PRIVATE_KEY is not configured')
   const appId: string = env.GITHUB_APP_ID
@@ -51,7 +54,9 @@ async function getInstallationToken(env: Env): Promise<string> {
   )
   const payload = await readJson(response)
   if (!response.ok || !isRecord(payload) || typeof payload.token !== 'string') {
-    throw new Error(`GitHub App authentication failed (${response.status})`)
+    throw new Error(
+      `GitHub App authentication failed (${response.status})${githubErrorMessage(payload)}`
+    )
   }
   return payload.token
 }
@@ -104,7 +109,9 @@ export async function publishResumeToGitHub(
     typeof commit.sha !== 'string' ||
     typeof commit.html_url !== 'string'
   ) {
-    throw new Error(`GitHub rejected the résumé publish (${updateResponse.status})`)
+    throw new Error(
+      `GitHub rejected the résumé publish (${updateResponse.status})${githubErrorMessage(updatePayload)}`
+    )
   }
   return { sha: commit.sha, url: commit.html_url }
 }
