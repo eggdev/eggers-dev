@@ -18,6 +18,10 @@ npm-debug.log*
 .dev.vars
 .wrangler/
 
+# private Home imports and generated SQL
+/home/.private/
+/home/imports/
+
 # os
 .DS_Store
 Thumbs.db

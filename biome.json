@@ -49,7 +49,17 @@
       }
     },
     {
-      "includes": ["studio/worker-configuration.d.ts"],
+      "includes": ["home/src/styles.css"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDescendingSpecificity": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["studio/worker-configuration.d.ts", "home/worker-configuration.d.ts"],
       "formatter": { "enabled": false },
       "linter": { "enabled": false },
       "assist": { "enabled": false }
