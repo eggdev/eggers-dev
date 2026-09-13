@@ -13,14 +13,16 @@ import { TripStyleControl } from './components/TripStyleControl'
 import { styleMode } from './planning'
 import { Compare } from './views/Compare'
 import { Destinations } from './views/Destinations'
+import { Explore } from './views/Explore'
 import { Overview } from './views/Overview'
 import { Research } from './views/Research'
 
-type View = 'overview' | 'destinations' | 'compare' | 'research'
+type View = 'overview' | 'destinations' | 'explore' | 'compare' | 'research'
 
 const viewLabels: Record<View, string> = {
   overview: 'Today',
   destinations: 'Destinations',
+  explore: 'Stay + do',
   compare: 'Compare',
   research: 'Research',
 }
@@ -296,6 +298,18 @@ export default function App() {
               onToggleCompare={toggleCompare}
             />
           ) : null}
+          {view === 'explore' ? (
+            <Explore
+              destinations={data.destinations}
+              hotels={data.hotels}
+              experiences={data.experiences}
+              sources={data.sources}
+              pointAccounts={data.pointAccounts}
+              transferPaths={data.transferPaths}
+              onOpenDestination={(destination) => setSelectedDestinationId(destination.id)}
+              onOpenHotel={setSelectedHotel}
+            />
+          ) : null}
           {view === 'compare' ? (
             <Compare
               destinations={data.destinations}
@@ -333,6 +347,9 @@ export default function App() {
           pointAccounts={data.pointAccounts}
           transferPaths={data.transferPaths}
           mode={mode}
+          experiences={data.experiences.filter(
+            (experience) => experience.destinationId === selectedDestination.id
+          )}
           compared={comparedIds.includes(selectedDestination.id)}
           onClose={() => setSelectedDestinationId(undefined)}
           onToggleCompare={() => toggleCompare(selectedDestination.id)}

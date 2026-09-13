@@ -87,6 +87,50 @@ const requiredHotelCoverage: Record<string, Array<{ key: string; label: string }
     { key: 'mexico', label: 'Mexico' },
     { key: 'caribbean', label: 'Caribbean benchmark' },
   ],
+  'costa-rica': [
+    { key: 'rainforest', label: 'Rainforest / hot springs' },
+    { key: 'beach', label: 'Pacific coast' },
+  ],
+  'mendoza-wine-country': [
+    { key: 'city', label: 'Mendoza / Chacras' },
+    { key: 'wine-estate', label: 'Vineyard stay' },
+  ],
+  'porto-douro': [
+    { key: 'porto', label: 'Porto' },
+    { key: 'douro', label: 'Douro Valley' },
+  ],
+  'italian-lakes': [
+    { key: 'lakefront', label: 'Lakefront stay' },
+    { key: 'points', label: 'Points option' },
+  ],
+  'adriatic-montenegro-croatia': [
+    { key: 'boka', label: 'Bay of Kotor' },
+    { key: 'island', label: 'Croatian island' },
+  ],
+  sicily: [
+    { key: 'etna', label: 'Etna / wine' },
+    { key: 'coast', label: 'Coastal finish' },
+  ],
+  morocco: [
+    { key: 'marrakech', label: 'Marrakech' },
+    { key: 'atlas', label: 'Atlas Mountains' },
+  ],
+  belize: [
+    { key: 'jungle', label: 'Jungle' },
+    { key: 'reef', label: 'Reef / island' },
+  ],
+}
+
+export const poolWaterFit = (hotel: Hotel): number => {
+  if (hotel.analysis.fit.unitPool === 'standard') return 5
+  if (hotel.analysis.fit.unitPool === 'upgrade_only') return 4
+  if (hotel.analysis.fit.waterSetting === 'beach' || hotel.analysis.fit.waterSetting === 'lake') {
+    return 3.5
+  }
+  if (hotel.analysis.fit.waterSetting === 'river' || hotel.analysis.fit.waterSetting === 'coast') {
+    return 2.5
+  }
+  return 1
 }
 
 export interface HotelCoverage {

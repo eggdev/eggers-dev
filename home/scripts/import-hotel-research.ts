@@ -53,7 +53,9 @@ const run = async (command: string[]): Promise<string> => {
 const inputText = await Bun.file(inputPath).text()
 const payload = record(JSON.parse(inputText), 'hotel research')
 const sourceDate = text(payload.source_date, 'source date')
+const suppliedDestinations = records(payload.destinations ?? [], 'destinations')
 const hotels = records(payload.hotels, 'hotels')
+const suppliedExperiences = records(payload.experiences ?? [], 'experiences')
 const suppliedSources = records(payload.sources, 'sources')
 const suppliedFundingPlans = record(payload.funding_plans, 'funding plans')
 const officialSources = hotels.map((hotel) => {
@@ -79,6 +81,11 @@ const now = new Date().toISOString()
 const statements: string[] = []
 
 const programAnalysisDefaults: Record<string, JsonRecord> = {
+  Cash: {
+    pricing_model: 'Cash rate varies by room category, season, and package.',
+    availability: 'Date-dependent. Request or price the exact target unit for the full stay.',
+    transfer_path: 'No reliable direct transfer path; preserve points for another stay.',
+  },
   'World of Hyatt': {
     pricing_model:
       'Published category with five date levels; use Hyatt’s calendar for the chosen nights.',
@@ -133,10 +140,51 @@ const requiredCoverage: Record<string, string[]> = {
   mediterranean: ['culture', 'coast'],
   hawaii: ['maui', 'kauai'],
   'mexico-caribbean': ['mexico', 'caribbean'],
+  'costa-rica': ['rainforest', 'beach'],
+  'mendoza-wine-country': ['city', 'wine-estate'],
+  'porto-douro': ['porto', 'douro'],
+  'italian-lakes': ['lakefront', 'points'],
+  'adriatic-montenegro-croatia': ['boka', 'island'],
+  sicily: ['etna', 'coast'],
+  morocco: ['marrakech', 'atlas'],
+  belize: ['jungle', 'reef'],
 }
 
 const fundingModes = ['points', 'split', 'cash'] as const
 const awardReliabilities = ['date_dependent', 'fixed_value', 'not_reliable', 'cash_only'] as const
+
+const normalizeFit = (hotel: JsonRecord, id: string): JsonRecord => {
+  if (isRecord(hotel.fit)) return hotel.fit
+  const roomFacts = record(hotel.room_facts, `${id} room facts`)
+  const roomHighlight = text(hotel.actual_room_highlight, `${id} room highlight`)
+  const context = `${roomHighlight} ${Object.values(roomFacts).join(' ')}`.toLowerCase()
+  const unitPool =
+    roomFacts.private_pool === true || roomFacts.private_pool_every_room === true
+      ? 'standard'
+      : roomFacts.private_pool_categories === true || roomHighlight.toLowerCase().includes('pool')
+        ? 'upgrade_only'
+        : 'none'
+  const waterSetting = context.includes('river')
+    ? 'river'
+    : context.includes('beach') || context.includes('island') || context.includes('lagoon')
+      ? 'beach'
+      : context.includes('coast') || context.includes('sea')
+        ? 'coast'
+        : 'none'
+  return {
+    water_setting: waterSetting,
+    unit_pool: unitPool,
+    unit_pool_detail:
+      unitPool === 'standard'
+        ? 'The researched room facts identify a private pool with the target unit.'
+        : unitPool === 'upgrade_only'
+          ? 'Private pools exist only in an upgraded room or villa category.'
+          : 'No private pool is attached to the researched unit.',
+    chill_score: 3.5,
+    activity_score: 3.5,
+    vibe_tags: [waterSetting === 'none' ? 'culture' : waterSetting, 'relaxation'],
+  }
+}
 
 const normalizeFunding = (id: string): JsonRecord => {
   const supplied = record(suppliedFundingPlans[id], `${id} funding plan`)
@@ -181,6 +229,12 @@ const normalizeAnalysis = (hotel: JsonRecord, id: string): JsonRecord => {
   const analysis = record(hotel.analysis, `${id} analysis`)
   const normalized = {
     status: 'decision_ready',
+    location:
+      typeof hotel.destination_label === 'string' && hotel.destination_label.trim()
+        ? hotel.destination_label.trim()
+        : text(analysis.location, `${id} location`),
+    stay_role: 'Single-base candidate',
+    standard_award_room: text(hotel.actual_room_highlight, `${id} room highlight`),
     availability:
       'Date-dependent. Decision fit is researched; confirm the exact room and price before transferring.',
     transfer_path: 'No transferable-points path recorded.',
@@ -188,10 +242,20 @@ const normalizeAnalysis = (hotel: JsonRecord, id: string): JsonRecord => {
       'Room-only unless the selected rate explicitly includes meals; compare breakfast and half-board options.',
     resort_fee:
       'No separate fee identified; confirm taxes and mandatory charges on the final rate screen.',
+    access: 'Confirm the fastest airport or station transfer for the selected dates.',
+    upgrade_path: 'Compare the target room against the entry room before booking.',
+    best_for: 'A balanced honeymoon stay with both recovery time and access to local experiences.',
+    inclusions: ['Room inclusions vary by selected rate; confirm them before booking.'],
+    unavoidable_cash: [
+      'Taxes, transfers, meals, and activities not bundled into the selected rate.',
+    ],
+    tradeoffs: ['The exact room category and total cash price still require a live date check.'],
+    activities: [],
     verified_at: sourceDate,
     ...programAnalysisDefaults[program],
     ...analysis,
     funding: normalizeFunding(id),
+    fit: normalizeFit(hotel, id),
   }
   const requiredTextKeys = [
     'location',
@@ -210,8 +274,72 @@ const normalizeAnalysis = (hotel: JsonRecord, id: string): JsonRecord => {
   const requiredArrayKeys = ['inclusions', 'unavoidable_cash', 'tradeoffs', 'activities']
   for (const key of requiredTextKeys) text(normalized[key], `${id} ${key}`)
   for (const key of requiredArrayKeys) strings(normalized[key], `${id} ${key}`)
+  const fit = record(normalized.fit, `${id} fit`)
+  const waterSetting = text(fit.water_setting, `${id} water setting`)
+  if (!['beach', 'lake', 'river', 'coast', 'none'].includes(waterSetting)) {
+    fail(`${id} water setting must be beach, lake, river, coast, or none`)
+  }
+  const unitPool = text(fit.unit_pool, `${id} unit pool`)
+  if (!['standard', 'upgrade_only', 'none'].includes(unitPool)) {
+    fail(`${id} unit pool must be standard, upgrade_only, or none`)
+  }
+  text(fit.unit_pool_detail, `${id} unit pool detail`)
+  for (const key of ['chill_score', 'activity_score']) {
+    const score = number(fit[key], `${id} ${key}`)
+    if (score < 1 || score > 5) fail(`${id} ${key} must be between 1 and 5`)
+  }
+  strings(fit.vibe_tags, `${id} vibe tags`)
   return normalized
 }
+
+const normalizedDestinations = suppliedDestinations.map((destination) => {
+  const id = text(destination.id, 'destination id')
+  const scores = record(destination.scores, `${id} scores`)
+  for (const key of [
+    'points_fit',
+    'beach_water',
+    'food',
+    'relaxation',
+    'adventure',
+    'spring_weather',
+    'hotel_wow',
+    'cash_efficiency',
+    'logistics_ease',
+  ]) {
+    const score = number(scores[key], `${id} ${key}`)
+    if (score < 1 || score > 5) fail(`${id} ${key} must be between 1 and 5`)
+  }
+  const modes = record(destination.trip_modes, `${id} trip modes`)
+  for (const mode of ['relaxing', 'balanced', 'active']) text(modes[mode], `${id} ${mode}`)
+  return { destination, id }
+})
+
+const experienceDemands = ['low', 'moderate', 'high']
+const normalizedExperiences = suppliedExperiences.map((experience) => {
+  const id = text(experience.id, 'experience id')
+  const destinationId = text(experience.destination_id, `${id} destination id`)
+  const demand = text(experience.physical_demand, `${id} physical demand`)
+  if (!experienceDemands.includes(demand)) {
+    fail(`${id} physical demand must be ${experienceDemands.join(', ')}`)
+  }
+  for (const key of ['chill_score', 'active_score']) {
+    const score = number(experience[key], `${id} ${key}`)
+    if (score < 1 || score > 5) fail(`${id} ${key} must be between 1 and 5`)
+  }
+  for (const key of [
+    'name',
+    'category',
+    'duration',
+    'setting',
+    'cost_band',
+    'description',
+    'best_time',
+    'booking_note',
+  ]) {
+    text(experience[key], `${id} ${key}`)
+  }
+  return { experience, id, destinationId }
+})
 
 const normalizedHotels = hotels.map((hotel) => {
   const id = text(hotel.id, 'hotel id')
@@ -230,7 +358,12 @@ for (const fundingId of Object.keys(suppliedFundingPlans)) {
   if (!knownHotelIds.has(fundingId)) fail(`Funding plan references unknown hotel ${fundingId}`)
 }
 
+const importedDestinationIds = new Set([
+  ...normalizedDestinations.map((item) => item.id),
+  ...normalizedHotels.flatMap((item) => item.destinationIds),
+])
 for (const [destinationId, requiredTags] of Object.entries(requiredCoverage)) {
+  if (!importedDestinationIds.has(destinationId)) continue
   const candidates = normalizedHotels.filter(
     (item) =>
       item.analysis.status === 'decision_ready' && item.destinationIds.includes(destinationId)
@@ -252,6 +385,16 @@ for (const item of normalizedHotels) {
     if (!availableSourceIds.has(sourceId)) fail(`${item.id} references unknown source ${sourceId}`)
   }
 }
+for (const { destination, id } of normalizedDestinations) {
+  for (const sourceId of strings(destination.source_ids, `${id} source ids`)) {
+    if (!availableSourceIds.has(sourceId)) fail(`${id} references unknown source ${sourceId}`)
+  }
+}
+for (const { experience, id } of normalizedExperiences) {
+  for (const sourceId of strings(experience.source_ids, `${id} source ids`)) {
+    if (!availableSourceIds.has(sourceId)) fail(`${id} references unknown source ${sourceId}`)
+  }
+}
 
 statements.push(`INSERT OR IGNORE INTO research_runs
   (id, source_date, source_file, checksum, imported_at)
@@ -271,6 +414,31 @@ for (const source of sources) {
   statements.push(`INSERT OR IGNORE INTO research_snapshots
     (run_id, entity_type, entity_id, payload_json)
     VALUES (${sql(runId)}, 'source', ${sql(id)}, ${jsonSql(source)});`)
+}
+
+for (const { destination, id } of normalizedDestinations) {
+  statements.push(`INSERT INTO destinations
+    (id, name, region, scores_json, cash_leakage, best_window, weather_note,
+     points_angle_json, trip_modes_json, seed_notes, source_ids_json, created_at, updated_at)
+    VALUES (${sql(id)}, ${sql(text(destination.name, `${id} name`))},
+      ${sql(text(destination.region, `${id} region`))},
+      ${jsonSql(record(destination.scores, `${id} scores`))},
+      ${sql(text(destination.cash_leakage, `${id} cash leakage`))},
+      ${sql(text(destination.best_window, `${id} best window`))},
+      ${sql(text(destination.weather_note, `${id} weather note`))},
+      ${jsonSql(strings(destination.points_angle, `${id} points angle`))},
+      ${jsonSql(record(destination.trip_modes, `${id} trip modes`))},
+      ${sql(text(destination.seed_notes, `${id} seed notes`))},
+      ${jsonSql(strings(destination.source_ids, `${id} source ids`))}, ${sql(now)}, ${sql(now)})
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, region = excluded.region,
+      scores_json = excluded.scores_json, cash_leakage = excluded.cash_leakage,
+      best_window = excluded.best_window, weather_note = excluded.weather_note,
+      points_angle_json = excluded.points_angle_json, trip_modes_json = excluded.trip_modes_json,
+      seed_notes = excluded.seed_notes, source_ids_json = excluded.source_ids_json,
+      updated_at = excluded.updated_at;`)
+  statements.push(`INSERT OR IGNORE INTO research_snapshots
+    (run_id, entity_type, entity_id, payload_json)
+    VALUES (${sql(runId)}, 'destination', ${sql(id)}, ${jsonSql(destination)});`)
 }
 
 for (const { hotel, id, destinationIds, coverageTags, analysis } of normalizedHotels) {
@@ -305,10 +473,39 @@ for (const { hotel, id, destinationIds, coverageTags, analysis } of normalizedHo
     VALUES (${sql(runId)}, 'hotel', ${sql(id)}, ${jsonSql(hotel)});`)
 }
 
+for (const { experience, id, destinationId } of normalizedExperiences) {
+  statements.push(`INSERT INTO experiences
+    (id, destination_id, name, category, chill_score, active_score, physical_demand,
+     duration, setting, cost_band, description, best_time, booking_note, source_ids_json,
+     created_at, updated_at)
+    VALUES (${sql(id)}, ${sql(destinationId)}, ${sql(text(experience.name, `${id} name`))},
+      ${sql(text(experience.category, `${id} category`))},
+      ${number(experience.chill_score, `${id} chill score`)},
+      ${number(experience.active_score, `${id} active score`)},
+      ${sql(text(experience.physical_demand, `${id} physical demand`))},
+      ${sql(text(experience.duration, `${id} duration`))},
+      ${sql(text(experience.setting, `${id} setting`))},
+      ${sql(text(experience.cost_band, `${id} cost band`))},
+      ${sql(text(experience.description, `${id} description`))},
+      ${sql(text(experience.best_time, `${id} best time`))},
+      ${sql(text(experience.booking_note, `${id} booking note`))},
+      ${jsonSql(strings(experience.source_ids, `${id} source ids`))}, ${sql(now)}, ${sql(now)})
+    ON CONFLICT(id) DO UPDATE SET destination_id = excluded.destination_id,
+      name = excluded.name, category = excluded.category, chill_score = excluded.chill_score,
+      active_score = excluded.active_score, physical_demand = excluded.physical_demand,
+      duration = excluded.duration, setting = excluded.setting, cost_band = excluded.cost_band,
+      description = excluded.description, best_time = excluded.best_time,
+      booking_note = excluded.booking_note, source_ids_json = excluded.source_ids_json,
+      updated_at = excluded.updated_at;`)
+  statements.push(`INSERT OR IGNORE INTO research_snapshots
+    (run_id, entity_type, entity_id, payload_json)
+    VALUES (${sql(runId)}, 'experience', ${sql(id)}, ${jsonSql(experience)});`)
+}
+
 statements.push(`INSERT OR IGNORE INTO activity_log
   (id, action, entity_type, entity_id, summary, actor_email, created_at)
   VALUES (${sql(`import-${runId}`)}, 'imported', 'research_run', ${sql(runId)},
-    ${sql(`Added decision research for ${hotels.length} honeymoon hotels`)},
+    ${sql(`Added ${normalizedDestinations.length} destinations, ${hotels.length} hotels, and ${normalizedExperiences.length} experiences`)},
     'hotel-research-script', ${sql(now)});`)
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'eggers-home-hotels-'))
@@ -329,7 +526,7 @@ try {
   if (migrateOutput.trim()) console.log(migrateOutput.trim())
   await run(['bunx', 'wrangler', 'd1', 'execute', 'eggers-home', target, '--file', sqlPath])
   console.log(
-    `Imported ${hotels.length} hotels and ${sources.length} sources into ${isRemote ? 'remote' : 'local'} D1.`
+    `Imported ${normalizedDestinations.length} destinations, ${hotels.length} hotels, ${normalizedExperiences.length} experiences, and ${sources.length} sources into ${isRemote ? 'remote' : 'local'} D1.`
   )
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true })

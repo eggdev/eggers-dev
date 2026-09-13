@@ -80,6 +80,42 @@ export function HotelDetail({
           <span>Verified {readableDate(hotel.analysis.verifiedAt)}</span>
         </section>
 
+        <section className="detail-section hotel-fit-card">
+          <div className="section-heading section-heading--small">
+            <div>
+              <p className="eyebrow">Stay fit</p>
+              <h3>Pool, water, and rhythm</h3>
+            </div>
+            <span className={`unit-pool unit-pool--${hotel.analysis.fit.unitPool}`}>
+              {hotel.analysis.fit.unitPool === 'standard'
+                ? 'Private pool in target unit'
+                : hotel.analysis.fit.unitPool === 'upgrade_only'
+                  ? 'Private pool requires upgrade'
+                  : 'No private pool in unit'}
+            </span>
+          </div>
+          <p>{hotel.analysis.fit.unitPoolDetail}</p>
+          <div className="hotel-fit-signals">
+            <div>
+              <span>Water setting</span>
+              <strong>{titleCase(hotel.analysis.fit.waterSetting)}</strong>
+            </div>
+            <div>
+              <span>Chill capacity</span>
+              <strong>{hotel.analysis.fit.chillScore}/5</strong>
+            </div>
+            <div>
+              <span>Activity access</span>
+              <strong>{hotel.analysis.fit.activityScore}/5</strong>
+            </div>
+          </div>
+          <div className="tag-list tag-list--compact">
+            {hotel.analysis.fit.vibeTags.map((tag) => (
+              <span key={tag}>{tag}</span>
+            ))}
+          </div>
+        </section>
+
         <section className={`detail-section funding-card funding-card--${readiness.state}`}>
           <div className="section-heading section-heading--small">
             <div>

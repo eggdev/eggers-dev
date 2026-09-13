@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type {
   Destination,
+  Experience,
   Hotel,
   PlanningStatus,
   PointAccount,
@@ -16,6 +17,7 @@ interface DestinationDetailProps {
   pointAccounts: PointAccount[]
   transferPaths: TransferPath[]
   mode: TripMode
+  experiences: Experience[]
   compared: boolean
   onClose: () => void
   onToggleCompare: () => void
@@ -36,6 +38,7 @@ export function DestinationDetail({
   pointAccounts,
   transferPaths,
   mode,
+  experiences,
   compared,
   onClose,
   onToggleCompare,
@@ -47,6 +50,12 @@ export function DestinationDetail({
   const [favorite, setFavorite] = useState(destination.isFavorite)
   const [saving, setSaving] = useState(false)
   const coverage = hotelCoverage(destination, hotels)
+  const chillExperience = [...experiences].sort(
+    (a, b) => b.chillScore - b.activeScore - (a.chillScore - a.activeScore)
+  )[0]
+  const activeExperience = [...experiences].sort(
+    (a, b) => b.activeScore - b.chillScore - (a.activeScore - a.chillScore)
+  )[0]
 
   useEffect(() => {
     setNote(destination.personalNote)
@@ -138,6 +147,28 @@ export function DestinationDetail({
           </div>
           <p>{destination.weatherNote}</p>
         </section>
+
+        {chillExperience && activeExperience ? (
+          <section className="detail-section">
+            <h3>Two-day rhythm</h3>
+            <div className="drawer-rhythm">
+              <div>
+                <span>Day 1 · exhale</span>
+                <strong>{chillExperience.name}</strong>
+                <small>
+                  {chillExperience.duration} · {titleCase(chillExperience.physicalDemand)} demand
+                </small>
+              </div>
+              <div>
+                <span>Day 2 · go</span>
+                <strong>{activeExperience.name}</strong>
+                <small>
+                  {activeExperience.duration} · {titleCase(activeExperience.physicalDemand)} demand
+                </small>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="detail-section">
           <h3>Points paths</h3>

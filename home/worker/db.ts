@@ -6,6 +6,8 @@ import {
   type Confidence,
   type Destination,
   type DestinationPlanningUpdate,
+  type Experience,
+  type ExperienceDemand,
   type Hotel,
   type HotelFundingMode,
   type PlanningStatus,
@@ -21,6 +23,8 @@ import {
   type TransferPath,
   type TravelerProfile,
   type TripMode,
+  type UnitPoolStatus,
+  type WaterSetting,
 } from '../shared'
 import type { HomeIdentity } from './auth'
 
@@ -68,6 +72,24 @@ interface HotelRow {
 interface HotelDestinationLinkRow {
   hotel_id: string
   destination_id: string
+}
+
+interface ExperienceRow {
+  id: string
+  destination_id: string
+  name: string
+  category: string
+  chill_score: number
+  active_score: number
+  physical_demand: string
+  duration: string
+  setting: string
+  cost_band: string
+  description: string
+  best_time: string
+  booking_note: string
+  source_ids_json: string
+  updated_at: string
 }
 
 interface SourceRow {
@@ -206,7 +228,11 @@ const imageStrategy = (value: string): Hotel['imageStrategy'] => {
   }
 }
 
-const hotelAnalysis = (value: string): Hotel['analysis'] => {
+const hotelAnalysis = (
+  value: string,
+  roomFacts: Record<string, string | number | boolean>,
+  roomHighlight: string
+): Hotel['analysis'] => {
   const parsed = parseJson(value)
   if (!isRecord(parsed)) throw new Error('Stored hotel analysis is malformed')
   const array = (key: string): string[] => {
@@ -227,6 +253,50 @@ const hotelAnalysis = (value: string): Hotel['analysis'] => {
   const fundingSources = Array.isArray(funding.transfer_sources)
     ? funding.transfer_sources.filter((entry): entry is string => typeof entry === 'string')
     : []
+  const fit = isRecord(parsed.fit) ? parsed.fit : {}
+  const fitWasStored = isRecord(parsed.fit)
+  const fitText = (key: string, fallback: string): string =>
+    typeof fit[key] === 'string' ? fit[key] : fallback
+  const fitNumber = (key: string, fallback: number): number =>
+    typeof fit[key] === 'number' && Number.isFinite(fit[key]) ? fit[key] : fallback
+  const roomContext =
+    `${roomHighlight} ${Object.values(roomFacts).join(' ')} ${array('activities').join(' ')}`.toLowerCase()
+  const inferredWaterSetting: WaterSetting = roomContext.includes('lake')
+    ? 'lake'
+    : roomContext.includes('river')
+      ? 'river'
+      : roomContext.includes('beach') ||
+          roomContext.includes('island') ||
+          roomContext.includes('lagoon')
+        ? 'beach'
+        : roomContext.includes('coast') || roomContext.includes('sea')
+          ? 'coast'
+          : 'none'
+  const inferredUnitPool: UnitPoolStatus =
+    roomFacts.private_pool === true || roomFacts.private_pool_every_room === true
+      ? 'standard'
+      : roomFacts.private_pool_categories === true || roomHighlight.toLowerCase().includes('pool')
+        ? 'upgrade_only'
+        : 'none'
+  const waterSetting = fitText('water_setting', inferredWaterSetting)
+  const unitPool = fitText('unit_pool', inferredUnitPool)
+  const vibeTags = Array.isArray(fit.vibe_tags)
+    ? fit.vibe_tags.filter((entry): entry is string => typeof entry === 'string')
+    : []
+  const inferredVibes = [
+    'beach',
+    'sailing',
+    'wine',
+    'spa',
+    'wildlife',
+    'hiking',
+    'diving',
+    'food',
+    'culture',
+    'safari',
+    'island',
+    'snorkel',
+  ].filter((tag) => roomContext.includes(tag))
   return {
     status: parsed.status === 'decision_ready' ? 'decision_ready' : 'booking_check_needed',
     location: text('location', 'Location not yet researched'),
@@ -266,6 +336,30 @@ const hotelAnalysis = (value: string): Hotel['analysis'] => {
         'recommendation',
         'Use cash until a reliable award estimate is recorded.'
       ),
+    },
+    fit: {
+      waterSetting: (['beach', 'lake', 'river', 'coast', 'none'].includes(waterSetting)
+        ? waterSetting
+        : 'none') as WaterSetting,
+      unitPool: (['standard', 'upgrade_only', 'none'].includes(unitPool)
+        ? unitPool
+        : 'none') as UnitPoolStatus,
+      unitPoolDetail: fitText(
+        'unit_pool_detail',
+        inferredUnitPool === 'standard'
+          ? 'The researched room facts identify a private pool with the target unit.'
+          : inferredUnitPool === 'upgrade_only'
+            ? 'Private pools exist only in an upgraded room or villa category.'
+            : 'No private pool is attached to the researched unit.'
+      ),
+      chillScore: Math.min(5, Math.max(1, fitNumber('chill_score', fitWasStored ? 3 : 3.5))),
+      activityScore: Math.min(5, Math.max(1, fitNumber('activity_score', fitWasStored ? 3 : 3.5))),
+      vibeTags:
+        vibeTags.length > 0
+          ? vibeTags
+          : inferredVibes.length > 0
+            ? inferredVibes.slice(0, 4)
+            : [inferredWaterSetting === 'none' ? 'culture' : inferredWaterSetting, 'relaxation'],
     },
   }
 }
@@ -314,20 +408,45 @@ const mapDestination = (row: DestinationRow): Destination => ({
   updatedAt: row.updated_at,
 })
 
-const mapHotel = (row: HotelRow, destinationIds: string[]): Hotel => ({
+const mapHotel = (row: HotelRow, destinationIds: string[]): Hotel => {
+  const roomFacts = simpleRecord(row.room_facts_json)
+  return {
+    id: row.id,
+    name: row.name,
+    destinationId: row.destination_id,
+    destinationIds: destinationIds.length > 0 ? destinationIds : [row.destination_id],
+    program: row.program,
+    awardCategory: row.award_category,
+    actualRoomHighlight: row.actual_room_highlight,
+    roomFacts,
+    hotelWow: row.hotel_wow,
+    pointsNote: row.points_note,
+    coverageTags: stringArray(row.coverage_tags_json),
+    analysis: hotelAnalysis(row.analysis_json, roomFacts, row.actual_room_highlight),
+    imageStrategy: imageStrategy(row.image_strategy_json),
+    sourceIds: stringArray(row.source_ids_json),
+    updatedAt: row.updated_at,
+  }
+}
+
+const experienceDemands: ExperienceDemand[] = ['low', 'moderate', 'high']
+
+const mapExperience = (row: ExperienceRow): Experience => ({
   id: row.id,
-  name: row.name,
   destinationId: row.destination_id,
-  destinationIds: destinationIds.length > 0 ? destinationIds : [row.destination_id],
-  program: row.program,
-  awardCategory: row.award_category,
-  actualRoomHighlight: row.actual_room_highlight,
-  roomFacts: simpleRecord(row.room_facts_json),
-  hotelWow: row.hotel_wow,
-  pointsNote: row.points_note,
-  coverageTags: stringArray(row.coverage_tags_json),
-  analysis: hotelAnalysis(row.analysis_json),
-  imageStrategy: imageStrategy(row.image_strategy_json),
+  name: row.name,
+  category: row.category,
+  chillScore: row.chill_score,
+  activeScore: row.active_score,
+  physicalDemand: experienceDemands.includes(row.physical_demand as ExperienceDemand)
+    ? (row.physical_demand as ExperienceDemand)
+    : 'moderate',
+  duration: row.duration,
+  setting: row.setting,
+  costBand: row.cost_band,
+  description: row.description,
+  bestTime: row.best_time,
+  bookingNote: row.booking_note,
   sourceIds: stringArray(row.source_ids_json),
   updatedAt: row.updated_at,
 })
@@ -387,6 +506,7 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
     preference,
     latestRun,
     hotelLinkResult,
+    experienceResult,
   ] = await Promise.all([
     env.DB.prepare('SELECT key, value_json FROM app_state').all<StateRow>(),
     env.DB.prepare(`SELECT id, name, region, scores_json, cash_leakage, best_window,
@@ -416,6 +536,9 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
       ORDER BY imported_at DESC LIMIT 1`).first<ResearchRunRow>(),
     env.DB.prepare(`SELECT hotel_id, destination_id FROM hotel_destination_links
       ORDER BY hotel_id, destination_id`).all<HotelDestinationLinkRow>(),
+    env.DB.prepare(`SELECT id, destination_id, name, category, chill_score, active_score,
+      physical_demand, duration, setting, cost_band, description, best_time, booking_note,
+      source_ids_json, updated_at FROM experiences ORDER BY destination_id, category, name`).all<ExperienceRow>(),
   ])
 
   const states = new Map(stateResult.results.map((row) => [row.key, row.value_json]))
@@ -445,6 +568,7 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
           .map((link) => link.destination_id)
       )
     ),
+    experiences: experienceResult.results.map(mapExperience),
     sources: sourceResult.results.map(mapSource),
     pointAccounts: pointResult.results.map<PointAccount>((row) => ({
       currency: row.currency,

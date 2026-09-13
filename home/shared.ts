@@ -80,6 +80,18 @@ export interface HotelFundingPlan {
   recommendation: string
 }
 
+export type WaterSetting = 'beach' | 'lake' | 'river' | 'coast' | 'none'
+export type UnitPoolStatus = 'standard' | 'upgrade_only' | 'none'
+
+export interface HotelFit {
+  waterSetting: WaterSetting
+  unitPool: UnitPoolStatus
+  unitPoolDetail: string
+  chillScore: number
+  activityScore: number
+  vibeTags: string[]
+}
+
 export interface HotelAnalysis {
   status: HotelResearchStatus
   location: string
@@ -99,6 +111,27 @@ export interface HotelAnalysis {
   activities: string[]
   verifiedAt: string
   funding: HotelFundingPlan
+  fit: HotelFit
+}
+
+export type ExperienceDemand = 'low' | 'moderate' | 'high'
+
+export interface Experience {
+  id: string
+  destinationId: string
+  name: string
+  category: string
+  chillScore: number
+  activeScore: number
+  physicalDemand: ExperienceDemand
+  duration: string
+  setting: string
+  costBand: string
+  description: string
+  bestTime: string
+  bookingNote: string
+  sourceIds: string[]
+  updatedAt: string
 }
 
 export interface ResearchSource {
@@ -202,6 +235,7 @@ export interface BootstrapPayload {
   scoringSchema?: ScoringSchema
   destinations: Destination[]
   hotels: Hotel[]
+  experiences: Experience[]
   sources: ResearchSource[]
   pointAccounts: PointAccount[]
   transferPaths: TransferPath[]
