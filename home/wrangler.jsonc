@@ -19,13 +19,13 @@
     {
       "binding": "DB",
       "database_name": "eggers-home",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "024d618f-ecff-4807-af45-4925ee07e934",
       "migrations_dir": "./migrations"
     }
   ],
   "vars": {
     "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_WITH_HOME_ACCESS_AUD",
+    "ACCESS_AUD": "50c90203df572084f44c925fbbdfb8df3f0976805ec526283f2904d6bc20c15b",
     "ALLOWED_EMAILS": "brendan@eggers.dev"
   },
   "observability": {

@@ -151,9 +151,9 @@ const checksum = Array.from(new Uint8Array(digest), (byte) =>
 const sourceDate = pointsWallet.asOf
 const runId = `${sourceDate}-${checksum.slice(0, 12)}`
 
+// Wrangler imports the file atomically; remote D1 rejects explicit transaction statements.
 const statements: string[] = [
   'PRAGMA foreign_keys = ON;',
-  'BEGIN TRANSACTION;',
   `INSERT INTO research_runs (id, source_date, source_file, checksum, imported_at)
    VALUES (${sql(runId)}, ${sql(sourceDate)}, ${sql(basename(archivePath))}, ${sql(checksum)}, ${sql(now)})
    ON CONFLICT(checksum) DO NOTHING;`,
@@ -317,8 +317,6 @@ statements.push(`INSERT OR IGNORE INTO activity_log
   (id, action, entity_type, entity_id, summary, actor_email, created_at)
   VALUES (${sql(`import-${runId}`)}, 'imported', 'research_run', ${sql(runId)},
     ${sql(`Imported private honeymoon handoff dated ${sourceDate}`)}, 'import-script', ${sql(now)});`)
-statements.push('COMMIT;')
-
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'eggers-home-import-'))
 const sqlPath = join(temporaryDirectory, 'handoff.sql')
 
