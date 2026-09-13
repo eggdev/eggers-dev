@@ -1,10 +1,28 @@
 import { useMemo, useState } from 'react'
-import type { Destination, ScoreKey, ScoringSchema, TripMode } from '../../shared'
+import type {
+  Destination,
+  Hotel,
+  PointAccount,
+  ScoreKey,
+  ScoringSchema,
+  TransferPath,
+  TripMode,
+} from '../../shared'
 import { WeightEditor } from '../components/WeightEditor'
-import { scoreLabels, titleCase, weightedScore } from '../planning'
+import {
+  hotelCoverage,
+  hotelFundingReadiness,
+  hotelsForDestination,
+  rankableScore,
+  scoreLabels,
+  titleCase,
+} from '../planning'
 
 interface DestinationsProps {
   destinations: Destination[]
+  hotels: Hotel[]
+  pointAccounts: PointAccount[]
+  transferPaths: TransferPath[]
   comparedIds: string[]
   mode: TripMode
   stylePosition: number
@@ -18,6 +36,9 @@ interface DestinationsProps {
 
 export function Destinations({
   destinations,
+  hotels,
+  pointAccounts,
+  transferPaths,
   comparedIds,
   mode,
   stylePosition,
@@ -43,11 +64,15 @@ export function Destinations({
               .toLowerCase()
               .includes(query.toLowerCase())
         )
-        .sort(
-          (a, b) =>
-            weightedScore(b, weights, stylePosition) - weightedScore(a, weights, stylePosition)
-        ),
-    [destinations, query, region, status, stylePosition, weights]
+        .sort((a, b) => {
+          const scoreA = rankableScore(a, hotels, weights, stylePosition)
+          const scoreB = rankableScore(b, hotels, weights, stylePosition)
+          if (scoreA === undefined && scoreB === undefined) return a.name.localeCompare(b.name)
+          if (scoreA === undefined) return 1
+          if (scoreB === undefined) return -1
+          return scoreB - scoreA
+        }),
+    [destinations, hotels, query, region, status, stylePosition, weights]
   )
 
   return (
@@ -114,6 +139,15 @@ export function Destinations({
         </div>
         {visible.map((destination, index) => {
           const compared = comparedIds.includes(destination.id)
+          const coverage = hotelCoverage(destination, hotels)
+          const score = rankableScore(destination, hotels, weights, stylePosition)
+          const destinationFunding = hotelsForDestination(hotels, destination.id).map((hotel) =>
+            hotelFundingReadiness(hotel, pointAccounts, transferPaths)
+          )
+          const fullyFundable = destinationFunding.filter(
+            (item) => item.state === 'fully_fundable'
+          ).length
+          const constrained = destinationFunding.length - fullyFundable
           return (
             <article key={destination.id} className="destination-row">
               <button
@@ -123,8 +157,8 @@ export function Destinations({
                 aria-label={`Open ${destination.name}`}
               >
                 <span className="destination-rank">
-                  <strong>{String(index + 1).padStart(2, '0')}</strong>
-                  <small>{weightedScore(destination, weights, stylePosition)}</small>
+                  <strong>{score === undefined ? '—' : String(index + 1).padStart(2, '0')}</strong>
+                  <small>{score ?? 'NR'}</small>
                 </span>
                 <span className="destination-title">
                   <span className="destination-title__line">
@@ -133,8 +167,19 @@ export function Destinations({
                   </span>
                   <small>{destination.region}</small>
                   <p>{destination.tripModes[mode]}</p>
-                  <span className={`status status--${destination.planningStatus}`}>
-                    {titleCase(destination.planningStatus)}
+                  <span className="destination-title__meta">
+                    <span className={`status status--${destination.planningStatus}`}>
+                      {titleCase(destination.planningStatus)}
+                    </span>
+                    <span
+                      className={
+                        coverage.complete ? 'coverage-pill' : 'coverage-pill coverage-pill--needs'
+                      }
+                    >
+                      {coverage.complete
+                        ? `${coverage.researchedCount} researched · ${fullyFundable} full-points ready · ${constrained} split/cash`
+                        : `Unrankable · ${coverage.missing.join(', ') || '3 hotels required'}`}
+                    </span>
                   </span>
                 </span>
                 <span className="signal-list">

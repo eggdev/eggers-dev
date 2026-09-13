@@ -277,6 +277,9 @@ export default function App() {
           {view === 'destinations' ? (
             <Destinations
               destinations={data.destinations}
+              hotels={data.hotels}
+              pointAccounts={data.pointAccounts}
+              transferPaths={data.transferPaths}
               comparedIds={comparedIds}
               mode={mode}
               stylePosition={stylePosition}
@@ -298,6 +301,8 @@ export default function App() {
               destinations={data.destinations}
               comparedIds={comparedIds}
               hotels={data.hotels}
+              pointAccounts={data.pointAccounts}
+              transferPaths={data.transferPaths}
               mode={mode}
               stylePosition={stylePosition}
               weights={weights}
@@ -322,7 +327,11 @@ export default function App() {
       {selectedDestination ? (
         <DestinationDetail
           destination={selectedDestination}
-          hotels={data.hotels.filter((hotel) => hotel.destinationId === selectedDestination.id)}
+          hotels={data.hotels.filter((hotel) =>
+            hotel.destinationIds.includes(selectedDestination.id)
+          )}
+          pointAccounts={data.pointAccounts}
+          transferPaths={data.transferPaths}
           mode={mode}
           compared={comparedIds.includes(selectedDestination.id)}
           onClose={() => setSelectedDestinationId(undefined)}
@@ -336,6 +345,8 @@ export default function App() {
         <HotelDetail
           hotel={selectedHotel}
           sources={data.sources}
+          pointAccounts={data.pointAccounts}
+          transferPaths={data.transferPaths}
           onClose={() => setSelectedHotel(undefined)}
         />
       ) : null}

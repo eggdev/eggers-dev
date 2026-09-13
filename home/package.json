@@ -12,6 +12,7 @@
     "db:migrate:local": "wrangler d1 migrations apply eggers-home --local",
     "db:migrate:remote": "wrangler d1 migrations apply eggers-home --remote",
     "db:import": "bun run ./scripts/import-handoff.ts",
+    "db:import:hotels": "bun run ./scripts/import-hotel-research.ts",
     "deploy": "vite build && wrangler deploy --config dist/eggers_home/wrangler.json"
   },
   "dependencies": {

@@ -228,6 +228,8 @@ for (const hotel of hotels) {
   statements.push(`INSERT OR IGNORE INTO research_snapshots
     (run_id, entity_type, entity_id, payload_json)
     VALUES (${sql(runId)}, 'hotel', ${sql(id)}, ${jsonSql(hotel)});`)
+  statements.push(`INSERT OR IGNORE INTO hotel_destination_links (hotel_id, destination_id)
+    VALUES (${sql(id)}, ${sql(text(hotel.destination_id, 'hotel destination'))});`)
 }
 
 for (const source of sources) {
@@ -333,17 +335,7 @@ try {
     target,
   ])
   if (migrateOutput.trim()) console.log(migrateOutput.trim())
-  const importOutput = await run([
-    'bunx',
-    'wrangler',
-    'd1',
-    'execute',
-    'eggers-home',
-    target,
-    '--file',
-    sqlPath,
-  ])
-  if (importOutput.trim()) console.log(importOutput.trim())
+  await run(['bunx', 'wrangler', 'd1', 'execute', 'eggers-home', target, '--file', sqlPath])
   console.log(
     `Imported ${destinations.length} destinations, ${hotels.length} hotels, and ${sources.length} sources into ${isRemote ? 'remote' : 'local'} D1.`
   )

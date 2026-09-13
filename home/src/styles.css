@@ -631,6 +631,62 @@ strong {
   padding: 5px 8px;
 }
 
+.coverage-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklch, var(--success) 35%, var(--hairline));
+  border-radius: 99px;
+  background: color-mix(in oklch, var(--success) 8%, transparent);
+  color: var(--success);
+  font-size: 0.61rem;
+  font-variation-settings: "wght" 650;
+  line-height: 1.2;
+}
+
+.coverage-pill--needs {
+  border-color: color-mix(in oklch, var(--warm) 48%, var(--hairline));
+  background: var(--warm-wash);
+  color: var(--warm-ink);
+}
+
+.funding-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 99px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-variation-settings: "wght" 680;
+  line-height: 1.2;
+}
+
+.funding-pill--fully_fundable {
+  border-color: color-mix(in oklch, var(--success) 36%, var(--hairline));
+  background: color-mix(in oklch, var(--success) 8%, transparent);
+  color: var(--success);
+}
+
+.funding-pill--low_end_only,
+.funding-pill--split_required {
+  border-color: color-mix(in oklch, var(--warm) 48%, var(--hairline));
+  background: var(--warm-wash);
+  color: var(--warm-ink);
+}
+
+.funding-pill--insufficient,
+.funding-pill--unreliable {
+  border-color: color-mix(in oklch, var(--danger) 42%, var(--hairline));
+  background: color-mix(in oklch, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
 .status--shortlist,
 .status--finalist {
   border-color: color-mix(in oklch, var(--accent) 38%, var(--hairline));
@@ -1126,6 +1182,13 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.42;
 }
 
+.destination-title__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .signal-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1613,6 +1676,14 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: -0.05em;
 }
 
+.drawer__location {
+  max-width: 420px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 .drawer-actions {
   display: flex;
   gap: 9px;
@@ -1751,6 +1822,18 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.63rem;
 }
 
+.coverage-summary {
+  margin: 2px 0 16px;
+  color: var(--success);
+  font-size: 0.68rem;
+  font-variation-settings: "wght" 620;
+  line-height: 1.45;
+}
+
+.coverage-summary--needs {
+  color: var(--warm-ink);
+}
+
 .planning-note {
   display: flex;
   align-items: flex-start;
@@ -1791,6 +1874,17 @@ input[type="range"]::-moz-range-thumb {
   content: "";
 }
 
+.room-image-placeholder--researched {
+  background-color: color-mix(in oklch, var(--accent-wash) 50%, var(--surface-subtle));
+  background-image:
+    linear-gradient(135deg, color-mix(in oklch, var(--accent) 9%, transparent), transparent 58%),
+    radial-gradient(
+      circle,
+      color-mix(in oklch, var(--accent) 28%, var(--hairline)) 1px,
+      transparent 1px
+    );
+}
+
 .room-image-placeholder > * {
   position: relative;
   z-index: 1;
@@ -1812,6 +1906,167 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.71rem;
   font-variation-settings: "wght" 620;
   text-underline-offset: 3px;
+}
+
+.research-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-status-row > span:last-child {
+  color: var(--faint);
+  font-size: 0.65rem;
+}
+
+.funding-card {
+  margin-top: 4px;
+  padding: 22px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.funding-card .section-heading {
+  margin-bottom: 20px;
+}
+
+.funding-card h3 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.funding-split__labels {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.funding-split__labels strong {
+  color: var(--ink);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.funding-split__bar {
+  height: 8px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in oklch, var(--warm) 48%, var(--hairline));
+}
+
+.funding-split__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.funding-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--hairline);
+}
+
+.funding-metrics > div {
+  display: flex;
+  min-height: 74px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  background: var(--surface-raised);
+}
+
+.funding-metrics span {
+  color: var(--faint);
+  font-size: 0.6rem;
+}
+
+.funding-metrics strong {
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.funding-plan-check,
+.funding-recommendation,
+.funding-basis {
+  margin: 15px 0 0;
+  font-size: 0.71rem;
+  line-height: 1.5;
+}
+
+.funding-plan-check {
+  color: var(--warm-ink);
+}
+
+.funding-recommendation {
+  color: var(--ink);
+}
+
+.funding-basis {
+  color: var(--muted);
+}
+
+.funding-card .helper-text {
+  margin-bottom: 0;
+}
+
+.hotel-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.hotel-analysis-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hotel-analysis-grid span {
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-variation-settings: "wght" 650;
+}
+
+.hotel-analysis-grid strong {
+  font-size: 0.78rem;
+  font-variation-settings: "wght" 560;
+  line-height: 1.48;
+}
+
+.hotel-value-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 26px;
+}
+
+.hotel-value-grid h3 {
+  margin-bottom: 10px;
+}
+
+.hotel-value-grid ul {
+  margin: 0;
+  padding-left: 17px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.hotel-value-grid li + li {
+  margin-top: 5px;
 }
 
 .fact-grid,
@@ -2197,8 +2452,23 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .detail-facts,
-  .verification-grid {
+  .verification-grid,
+  .hotel-analysis-grid,
+  .hotel-value-grid,
+  .funding-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .funding-card {
+    padding: 18px;
+  }
+
+  .hotel-list button {
+    grid-template-columns: minmax(0, 1fr) 16px;
+  }
+
+  .hotel-list__category {
+    display: none;
   }
 
   .detail-facts p,

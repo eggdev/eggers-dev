@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react'
-import type { Destination, Hotel, PlanningStatus, TripMode } from '../../shared'
+import type {
+  Destination,
+  Hotel,
+  PlanningStatus,
+  PointAccount,
+  TransferPath,
+  TripMode,
+} from '../../shared'
 import { scoreKeys } from '../../shared'
-import { scoreLabels, titleCase } from '../planning'
+import { hotelCoverage, hotelFundingReadiness, scoreLabels, titleCase } from '../planning'
 
 interface DestinationDetailProps {
   destination: Destination
   hotels: Hotel[]
+  pointAccounts: PointAccount[]
+  transferPaths: TransferPath[]
   mode: TripMode
   compared: boolean
   onClose: () => void
@@ -24,6 +33,8 @@ const statuses: PlanningStatus[] = ['exploring', 'shortlist', 'finalist', 'booke
 export function DestinationDetail({
   destination,
   hotels,
+  pointAccounts,
+  transferPaths,
   mode,
   compared,
   onClose,
@@ -35,6 +46,7 @@ export function DestinationDetail({
   const [status, setStatus] = useState(destination.planningStatus)
   const [favorite, setFavorite] = useState(destination.isFavorite)
   const [saving, setSaving] = useState(false)
+  const coverage = hotelCoverage(destination, hotels)
 
   useEffect(() => {
     setNote(destination.personalNote)
@@ -139,20 +151,40 @@ export function DestinationDetail({
         <section className="detail-section">
           <div className="section-heading section-heading--small">
             <h3>Hotels in the research</h3>
-            <span>{hotels.length || 'None yet'}</span>
+            <span>{hotels.length || 'None yet'} candidates</span>
           </div>
+          <p
+            className={
+              coverage.complete ? 'coverage-summary' : 'coverage-summary coverage-summary--needs'
+            }
+          >
+            {coverage.complete
+              ? `Ranking unlocked · ${coverage.covered.join(' · ')}`
+              : `Ranking locked · missing ${coverage.missing.join(', ') || 'three complete candidates'}`}
+          </p>
           {hotels.length > 0 ? (
             <div className="hotel-list">
-              {hotels.map((hotel) => (
-                <button type="button" key={hotel.id} onClick={() => onOpenHotel(hotel)}>
-                  <span>
-                    <strong>{hotel.name}</strong>
-                    <small>{hotel.program}</small>
-                  </span>
-                  <span className="hotel-list__category">{hotel.awardCategory}</span>
-                  <span aria-hidden="true">→</span>
-                </button>
-              ))}
+              {hotels.map((hotel) => {
+                const readiness = hotelFundingReadiness(hotel, pointAccounts, transferPaths)
+                return (
+                  <button type="button" key={hotel.id} onClick={() => onOpenHotel(hotel)}>
+                    <span>
+                      <strong>{hotel.name}</strong>
+                      <small>
+                        {hotel.analysis.stayRole} · {hotel.program}
+                      </small>
+                      <span className={`funding-pill funding-pill--${readiness.state}`}>
+                        {readiness.label}
+                      </span>
+                    </span>
+                    <span className="hotel-list__category">
+                      {hotel.analysis.funding.pointsPercent}% points ·{' '}
+                      {hotel.analysis.funding.cashPercent}% cash
+                    </span>
+                    <span aria-hidden="true">→</span>
+                  </button>
+                )
+              })}
             </div>
           ) : (
             <p className="empty-copy">No hotel candidates have been attached yet.</p>

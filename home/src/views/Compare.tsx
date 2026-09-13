@@ -1,11 +1,27 @@
-import type { Destination, Hotel, ScoreKey, TripMode } from '../../shared'
+import type {
+  Destination,
+  Hotel,
+  PointAccount,
+  ScoreKey,
+  TransferPath,
+  TripMode,
+} from '../../shared'
 import { scoreKeys } from '../../shared'
-import { scoreLabels, titleCase, weightedScore } from '../planning'
+import {
+  hotelCoverage,
+  hotelFundingReadiness,
+  hotelsForDestination,
+  rankableScore,
+  scoreLabels,
+  titleCase,
+} from '../planning'
 
 interface CompareProps {
   destinations: Destination[]
   comparedIds: string[]
   hotels: Hotel[]
+  pointAccounts: PointAccount[]
+  transferPaths: TransferPath[]
   mode: TripMode
   stylePosition: number
   weights: Record<ScoreKey, number>
@@ -18,6 +34,8 @@ export function Compare({
   destinations,
   comparedIds,
   hotels,
+  pointAccounts,
+  transferPaths,
   mode,
   stylePosition,
   weights,
@@ -57,9 +75,16 @@ export function Compare({
             style={{ '--compare-count': compared.length } as React.CSSProperties}
           >
             {compared.map((destination) => {
-              const destinationHotels = hotels.filter(
-                (hotel) => hotel.destinationId === destination.id
-              )
+              const destinationHotels = hotelsForDestination(hotels, destination.id)
+              const coverage = hotelCoverage(destination, hotels)
+              const score = rankableScore(destination, hotels, weights, stylePosition)
+              const hotelFunding = destinationHotels.map((hotel) => ({
+                hotel,
+                readiness: hotelFundingReadiness(hotel, pointAccounts, transferPaths),
+              }))
+              const fullPointsReady = hotelFunding.filter(
+                (item) => item.readiness.state === 'fully_fundable'
+              ).length
               return (
                 <article key={destination.id} className="compare-column">
                   <header>
@@ -74,9 +99,18 @@ export function Compare({
                     <p>{destination.region}</p>
                     <h2>{destination.name}</h2>
                     <div className="compare-score">
-                      <strong>{weightedScore(destination, weights, stylePosition)}</strong>
-                      <span>/100 now</span>
+                      <strong>{score ?? '—'}</strong>
+                      <span>{score === undefined ? 'not rankable' : '/100 now'}</span>
                     </div>
+                    <span
+                      className={
+                        coverage.complete ? 'coverage-pill' : 'coverage-pill coverage-pill--needs'
+                      }
+                    >
+                      {coverage.complete
+                        ? `${coverage.researchedCount} hotels · route covered`
+                        : `Missing ${coverage.missing.join(', ') || 'hotel depth'}`}
+                    </span>
                   </header>
 
                   <div className="compare-cell compare-cell--concept">
@@ -100,7 +134,9 @@ export function Compare({
                       </div>
                       <div>
                         <dt>Lodging</dt>
-                        <dd>Not researched</dd>
+                        <dd>
+                          {fullPointsReady}/{destinationHotels.length} leads fully points-fundable
+                        </dd>
                       </div>
                       <div>
                         <dt>Food</dt>
@@ -144,10 +180,12 @@ export function Compare({
                     <span>Hotel leads</span>
                     {destinationHotels.length > 0 ? (
                       <div className="compare-hotels">
-                        {destinationHotels.map((hotel) => (
+                        {hotelFunding.map(({ hotel, readiness }) => (
                           <button type="button" key={hotel.id} onClick={() => onOpenHotel(hotel)}>
                             <strong>{hotel.name}</strong>
-                            <small>{hotel.awardCategory}</small>
+                            <small>
+                              {hotel.analysis.funding.pointsPercent}% points · {readiness.label}
+                            </small>
                           </button>
                         ))}
                       </div>

@@ -17,6 +17,11 @@ Each import creates an immutable `research_run` snapshot before updating the wor
 hotel, source, points, and transfer tables. Personal shortlist/status/note fields are preserved when
 the same destination is re-imported.
 
+Hotel research imports require one funding plan per hotel. Each plan records an assumed stay,
+points range, points/cash target, eligible transfer currencies, reliability, estimate basis, and a
+recommendation. The browser compares those plans with the current D1 balances and transfer paths;
+it does not assume unrecorded household points or speculative transfers.
+
 ## Local development
 
 From the repository root:
@@ -24,6 +29,7 @@ From the repository root:
 ```bash
 bun install
 bun run --cwd home db:import -- /absolute/path/to/honeymoon-handoff.zip --local
+bun run --cwd home db:import:hotels -- /absolute/path/to/hotel-research.json --local
 bun run dev:home
 ```
 
@@ -61,6 +67,7 @@ bun run --cwd home preview
 
    ```bash
    bun run --cwd home db:import -- /absolute/path/to/honeymoon-handoff.zip --remote
+   bun run --cwd home db:import:hotels -- /absolute/path/to/hotel-research.json --remote
    ```
 
 6. Reopen `home.eggers.dev` through Access.
@@ -74,6 +81,7 @@ comma-separated `ALLOWED_EMAILS` defense-in-depth allowlist before deploying.
 - `worker/` — Access validation, request security, input validation, and D1 queries
 - `migrations/` — versioned D1 schema
 - `scripts/import-handoff.ts` — private ZIP-to-D1 importer
+- `scripts/import-hotel-research.ts` — repeatable hotel research importer
 - `shared.ts` — browser/Worker contract
 
 The app stores user-entered research additively. Every finding carries a confidence state and can

@@ -15,10 +15,11 @@ import {
   compactNumber,
   daysUntil,
   getHyattTransferDeadline,
+  hotelFundingReadiness,
+  rankableScore,
   readableDate,
   titleCase,
   tripWindowLabel,
-  weightedScore,
 } from '../planning'
 
 interface OverviewProps {
@@ -54,9 +55,13 @@ export function Overview({
   onOpenHotel,
   onNavigate,
 }: OverviewProps) {
-  const ranked = [...destinations].sort(
-    (a, b) => weightedScore(b, weights, stylePosition) - weightedScore(a, weights, stylePosition)
-  )
+  const ranked = destinations
+    .map((destination) => ({
+      destination,
+      score: rankableScore(destination, hotels, weights, stylePosition),
+    }))
+    .filter((item): item is { destination: Destination; score: number } => item.score !== undefined)
+    .sort((a, b) => b.score - a.score)
   const hyattDeadline = getHyattTransferDeadline(pointAccounts)
   const deadlineDays = hyattDeadline ? daysUntil(hyattDeadline.through) : undefined
   const deadlineDate = hyattDeadline ? new Date(`${hyattDeadline.through}T12:00:00`) : undefined
@@ -143,7 +148,7 @@ export function Overview({
             </button>
           </div>
           <div className="ranking-list">
-            {ranked.slice(0, 5).map((destination, index) => (
+            {ranked.slice(0, 5).map(({ destination, score }, index) => (
               <button
                 type="button"
                 key={destination.id}
@@ -159,7 +164,7 @@ export function Overview({
                   {titleCase(destination.planningStatus)}
                 </span>
                 <span className="ranking-row__score">
-                  <strong>{weightedScore(destination, weights, stylePosition)}</strong>
+                  <strong>{score}</strong>
                   <small>/100</small>
                 </span>
               </button>
@@ -203,15 +208,18 @@ export function Overview({
             <span>{hotels.length} tracked</span>
           </div>
           <div className="hotel-watch__list">
-            {hotels.slice(0, 4).map((hotel) => (
-              <button type="button" key={hotel.id} onClick={() => onOpenHotel(hotel)}>
-                <span>
-                  <strong>{hotel.name}</strong>
-                  <small>{hotel.actualRoomHighlight}</small>
-                </span>
-                <span>{hotel.hotelWow}/5</span>
-              </button>
-            ))}
+            {hotels.slice(0, 4).map((hotel) => {
+              const readiness = hotelFundingReadiness(hotel, pointAccounts, transferPaths)
+              return (
+                <button type="button" key={hotel.id} onClick={() => onOpenHotel(hotel)}>
+                  <span>
+                    <strong>{hotel.name}</strong>
+                    <small>{readiness.label}</small>
+                  </span>
+                  <span>{hotel.analysis.funding.pointsPercent}% pts</span>
+                </button>
+              )
+            })}
           </div>
         </section>
       </div>

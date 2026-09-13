@@ -43,12 +43,15 @@ export interface Hotel {
   id: string
   name: string
   destinationId: string
+  destinationIds: string[]
   program: string
   awardCategory: string
   actualRoomHighlight: string
   roomFacts: Record<string, string | number | boolean>
   hotelWow: number
   pointsNote: string
+  coverageTags: string[]
+  analysis: HotelAnalysis
   imageStrategy: {
     status: string
     officialRoomPage?: string
@@ -57,6 +60,45 @@ export interface Hotel {
   }
   sourceIds: string[]
   updatedAt: string
+}
+
+export type HotelResearchStatus = 'decision_ready' | 'booking_check_needed'
+export type HotelFundingMode = 'points' | 'split' | 'cash'
+export type AwardReliability = 'date_dependent' | 'fixed_value' | 'not_reliable' | 'cash_only'
+
+export interface HotelFundingPlan {
+  mode: HotelFundingMode
+  pointsPercent: number
+  cashPercent: number
+  assumedNights: number
+  pointsLow: number
+  pointsHigh: number
+  targetProgram: string
+  transferSources: string[]
+  awardReliability: AwardReliability
+  estimateBasis: string
+  recommendation: string
+}
+
+export interface HotelAnalysis {
+  status: HotelResearchStatus
+  location: string
+  stayRole: string
+  standardAwardRoom: string
+  pricingModel: string
+  availability: string
+  transferPath: string
+  inclusions: string[]
+  unavoidableCash: string[]
+  mealPlan: string
+  resortFee: string
+  access: string
+  upgradePath: string
+  bestFor: string
+  tradeoffs: string[]
+  activities: string[]
+  verifiedAt: string
+  funding: HotelFundingPlan
 }
 
 export interface ResearchSource {

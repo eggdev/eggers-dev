@@ -1,11 +1,13 @@
 import {
   type ActivityItem,
   type AppPreferences,
+  type AwardReliability,
   type BootstrapPayload,
   type Confidence,
   type Destination,
   type DestinationPlanningUpdate,
   type Hotel,
+  type HotelFundingMode,
   type PlanningStatus,
   type PointAccount,
   type PointsWallet,
@@ -58,7 +60,14 @@ interface HotelRow {
   points_note: string
   image_strategy_json: string
   source_ids_json: string
+  analysis_json: string
+  coverage_tags_json: string
   updated_at: string
+}
+
+interface HotelDestinationLinkRow {
+  hotel_id: string
+  destination_id: string
 }
 
 interface SourceRow {
@@ -197,6 +206,72 @@ const imageStrategy = (value: string): Hotel['imageStrategy'] => {
   }
 }
 
+const hotelAnalysis = (value: string): Hotel['analysis'] => {
+  const parsed = parseJson(value)
+  if (!isRecord(parsed)) throw new Error('Stored hotel analysis is malformed')
+  const array = (key: string): string[] => {
+    const item = parsed[key]
+    return Array.isArray(item)
+      ? item.filter((entry): entry is string => typeof entry === 'string')
+      : []
+  }
+  const text = (key: string, fallback: string): string =>
+    typeof parsed[key] === 'string' ? parsed[key] : fallback
+  const funding = isRecord(parsed.funding) ? parsed.funding : {}
+  const fundingText = (key: string, fallback: string): string =>
+    typeof funding[key] === 'string' ? funding[key] : fallback
+  const fundingNumber = (key: string, fallback: number): number =>
+    typeof funding[key] === 'number' && Number.isFinite(funding[key]) ? funding[key] : fallback
+  const fundingMode = fundingText('mode', 'cash')
+  const awardReliability = fundingText('award_reliability', 'cash_only')
+  const fundingSources = Array.isArray(funding.transfer_sources)
+    ? funding.transfer_sources.filter((entry): entry is string => typeof entry === 'string')
+    : []
+  return {
+    status: parsed.status === 'decision_ready' ? 'decision_ready' : 'booking_check_needed',
+    location: text('location', 'Location not yet researched'),
+    stayRole: text('stay_role', 'Hotel candidate'),
+    standardAwardRoom: text('standard_award_room', 'Confirm in the live booking flow'),
+    pricingModel: text('pricing_model', 'Confirm in the live booking flow'),
+    availability: text('availability', 'Date-dependent; run after selecting dates'),
+    transferPath: text('transfer_path', 'No transferable-points path recorded'),
+    inclusions: array('inclusions'),
+    unavoidableCash: array('unavoidable_cash'),
+    mealPlan: text('meal_plan', 'Confirm against the selected rate'),
+    resortFee: text('resort_fee', 'Confirm against the selected rate'),
+    access: text('access', 'Confirm before booking'),
+    upgradePath: text('upgrade_path', 'Premium rooms require a separate live comparison'),
+    bestFor: text('best_for', 'Hotel candidate'),
+    tradeoffs: array('tradeoffs'),
+    activities: array('activities'),
+    verifiedAt: text('verified_at', rowDateFallback),
+    funding: {
+      mode: (['points', 'split', 'cash'].includes(fundingMode)
+        ? fundingMode
+        : 'cash') as HotelFundingMode,
+      pointsPercent: fundingNumber('points_percent', 0),
+      cashPercent: fundingNumber('cash_percent', 100),
+      assumedNights: fundingNumber('assumed_nights', 1),
+      pointsLow: fundingNumber('points_low', 0),
+      pointsHigh: fundingNumber('points_high', 0),
+      targetProgram: fundingText('target_program', 'Cash'),
+      transferSources: fundingSources,
+      awardReliability: (['date_dependent', 'fixed_value', 'not_reliable', 'cash_only'].includes(
+        awardReliability
+      )
+        ? awardReliability
+        : 'cash_only') as AwardReliability,
+      estimateBasis: fundingText('estimate_basis', 'Funding plan not yet imported'),
+      recommendation: fundingText(
+        'recommendation',
+        'Use cash until a reliable award estimate is recorded.'
+      ),
+    },
+  }
+}
+
+const rowDateFallback = 'Not recorded'
+
 const planningStatuses: PlanningStatus[] = [
   'exploring',
   'shortlist',
@@ -239,16 +314,19 @@ const mapDestination = (row: DestinationRow): Destination => ({
   updatedAt: row.updated_at,
 })
 
-const mapHotel = (row: HotelRow): Hotel => ({
+const mapHotel = (row: HotelRow, destinationIds: string[]): Hotel => ({
   id: row.id,
   name: row.name,
   destinationId: row.destination_id,
+  destinationIds: destinationIds.length > 0 ? destinationIds : [row.destination_id],
   program: row.program,
   awardCategory: row.award_category,
   actualRoomHighlight: row.actual_room_highlight,
   roomFacts: simpleRecord(row.room_facts_json),
   hotelWow: row.hotel_wow,
   pointsNote: row.points_note,
+  coverageTags: stringArray(row.coverage_tags_json),
+  analysis: hotelAnalysis(row.analysis_json),
   imageStrategy: imageStrategy(row.image_strategy_json),
   sourceIds: stringArray(row.source_ids_json),
   updatedAt: row.updated_at,
@@ -308,6 +386,7 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
     activityResult,
     preference,
     latestRun,
+    hotelLinkResult,
   ] = await Promise.all([
     env.DB.prepare('SELECT key, value_json FROM app_state').all<StateRow>(),
     env.DB.prepare(`SELECT id, name, region, scores_json, cash_leakage, best_window,
@@ -316,7 +395,8 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
       FROM destinations ORDER BY name`).all<DestinationRow>(),
     env.DB.prepare(`SELECT id, name, destination_id, program, award_category,
       actual_room_highlight, room_facts_json, hotel_wow, points_note, image_strategy_json,
-      source_ids_json, updated_at FROM hotels ORDER BY hotel_wow DESC, name`).all<HotelRow>(),
+      source_ids_json, analysis_json, coverage_tags_json, updated_at
+      FROM hotels ORDER BY hotel_wow DESC, name`).all<HotelRow>(),
     env.DB.prepare(`SELECT id, title, publisher, url, retrieved, supports_json
       FROM sources ORDER BY retrieved DESC, title`).all<SourceRow>(),
     env.DB.prepare(`SELECT currency, points, metadata_json FROM point_accounts
@@ -334,6 +414,8 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
       .first<PreferenceRow>(),
     env.DB.prepare(`SELECT id, source_date, imported_at FROM research_runs
       ORDER BY imported_at DESC LIMIT 1`).first<ResearchRunRow>(),
+    env.DB.prepare(`SELECT hotel_id, destination_id FROM hotel_destination_links
+      ORDER BY hotel_id, destination_id`).all<HotelDestinationLinkRow>(),
   ])
 
   const states = new Map(stateResult.results.map((row) => [row.key, row.value_json]))
@@ -355,7 +437,14 @@ export async function getBootstrap(env: Env, identity: HomeIdentity): Promise<Bo
     pointsWallet: parseState<PointsWallet>(states, 'points_wallet'),
     scoringSchema: parseState<ScoringSchema>(states, 'scoring_schema'),
     destinations: destinationResult.results.map(mapDestination),
-    hotels: hotelResult.results.map(mapHotel),
+    hotels: hotelResult.results.map((hotel) =>
+      mapHotel(
+        hotel,
+        hotelLinkResult.results
+          .filter((link) => link.hotel_id === hotel.id)
+          .map((link) => link.destination_id)
+      )
+    ),
     sources: sourceResult.results.map(mapSource),
     pointAccounts: pointResult.results.map<PointAccount>((row) => ({
       currency: row.currency,
