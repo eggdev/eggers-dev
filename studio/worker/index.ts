@@ -179,7 +179,7 @@ const applySecurityHeaders = (response: Response, local = false): Response => {
   secured.headers.set('X-Robots-Tag', 'noindex, nofollow')
   secured.headers.set(
     'Content-Security-Policy',
-    `default-src 'self'; script-src 'self'${local ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${local ? ' ws:' : ''}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
+    `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'${local ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${local ? ' ws:' : ''}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
   )
   return secured
 }
