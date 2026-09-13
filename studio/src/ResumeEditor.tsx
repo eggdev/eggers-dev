@@ -16,7 +16,7 @@ interface Props {
   onChange: (resume: ResumeRecord) => void
   onClone: () => void
   onPublish: () => void
-  onPrint: () => void
+  onExport: () => Promise<void>
   onPreview: () => void
 }
 
@@ -50,9 +50,10 @@ export function ResumeEditor({
   onChange,
   onClone,
   onPublish,
-  onPrint,
+  onExport,
   onPreview,
 }: Props) {
+  const [exporting, setExporting] = useState(false)
   const [openEntries, setOpenEntries] = useState(
     () => new Set(resume.data.experience.slice(0, 3).map((entry) => entry.id))
   )
@@ -64,6 +65,14 @@ export function ResumeEditor({
   }
   const updateRows = (key: 'skills' | 'education', rows: ResumeRow[]) =>
     updateData({ ...resume.data, [key]: rows })
+  const exportPdf = async () => {
+    setExporting(true)
+    try {
+      await onExport()
+    } finally {
+      setExporting(false)
+    }
+  }
   return (
     <div className="resume-editor">
       <header className="resume-editor__toolbar">
@@ -85,8 +94,13 @@ export function ResumeEditor({
           <button className="button button--quiet" type="button" onClick={onPreview}>
             Preview
           </button>
-          <button className="button button--quiet" type="button" onClick={onPrint}>
-            Export PDF
+          <button
+            className="button button--quiet"
+            type="button"
+            disabled={exporting}
+            onClick={() => void exportPdf()}
+          >
+            {exporting ? 'Exporting…' : 'Export PDF'}
           </button>
           {resume.isCanonical ? (
             <button

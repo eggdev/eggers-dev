@@ -1,4 +1,5 @@
 // @ts-check
+import react from '@astrojs/react'
 import sitemap from '@astrojs/sitemap'
 import { defineConfig } from 'astro/config'
 
@@ -7,6 +8,7 @@ export default defineConfig({
   site: 'https://eggers.dev',
   output: 'static',
   integrations: [
+    react(),
     sitemap({
       // The 404 page is an error response, not a destination.
       filter: (page) => !page.includes('/404'),

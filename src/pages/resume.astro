@@ -15,6 +15,7 @@ const education = resume.education.filter((row) => !row.hidden)
 const title = `${resume.profile.name} — Résumé`
 const description = `${resume.profile.headline}. ${resume.profile.summary}`
 const canonical = new URL('/resume', Astro.site)
+const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
 ---
 
 <!doctype html>
@@ -36,7 +37,7 @@ const canonical = new URL('/resume', Astro.site)
   <body>
     <nav class="actions" aria-label="Résumé actions">
       <a href="/">Back to eggers.dev</a>
-      <button type="button" data-print>Export PDF</button>
+      <button type="button" data-export>Export PDF</button>
     </nav>
 
     <main class:list={['sheet', `sheet--${resume.density}`]} id="resume">
@@ -114,9 +115,26 @@ const canonical = new URL('/resume', Astro.site)
 
     </main>
 
+    <script id="resume-export-data" type="application/json" set:html={serializedResume} />
     <script>
-      document.querySelector<HTMLButtonElement>('[data-print]')?.addEventListener('click', () => {
-        window.print()
+      const exportButton = document.querySelector<HTMLButtonElement>('[data-export]')
+      const resumeData = document.querySelector<HTMLScriptElement>('#resume-export-data')
+
+      exportButton?.addEventListener('click', async () => {
+        if (!resumeData?.textContent) return
+        exportButton.disabled = true
+        exportButton.textContent = 'Exporting…'
+        try {
+          const { downloadResumePdf } = await import('../../career/resume-pdf')
+          await downloadResumePdf(JSON.parse(resumeData.textContent))
+        } catch (error) {
+          console.error('Could not export résumé PDF', error)
+          exportButton.textContent = 'Export failed — retry'
+          return
+        } finally {
+          exportButton.disabled = false
+        }
+        exportButton.textContent = 'Export PDF'
       })
     </script>
   </body>

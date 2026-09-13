@@ -263,6 +263,16 @@ export function App() {
     }
   }
 
+  const exportActiveResume = async () => {
+    if (!activeResume) return
+    try {
+      const { downloadResumePdf } = await import('../../career/resume-pdf')
+      await downloadResumePdf(activeResume.data)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not export résumé PDF')
+    }
+  }
+
   if (loading) {
     return (
       <main className="center-state">
@@ -491,7 +501,7 @@ export function App() {
               onChange={queueResumeSave}
               onClone={() => void cloneActiveResume()}
               onPublish={() => void publishActiveResume()}
-              onPrint={() => window.print()}
+              onExport={exportActiveResume}
               onPreview={() => setPreviewExpanded(true)}
             />
           </section>

@@ -18,5 +18,5 @@
       "@career/*": ["../career/*"]
     }
   },
-  "include": ["src", "../career/schema.ts"]
+  "include": ["src", "../career/schema.ts", "../career/resume-pdf.tsx"]
 }

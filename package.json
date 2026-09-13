@@ -30,9 +30,13 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@astrojs/react": "^6.0.5",
     "@astrojs/sitemap": "^3.7.3",
     "@fontsource-variable/mona-sans": "^5.2.8",
-    "astro": "^7.1.4"
+    "@react-pdf/renderer": "^4.9.0",
+    "astro": "^7.1.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
