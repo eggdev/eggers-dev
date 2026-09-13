@@ -70,8 +70,8 @@ path; normal work reaches production through `main`.
 ## Content & honesty
 
 - Work entries lead with the shipped outcome, then the how.
-- Lead with git-verified numbers. State self-reported figures plainly, no false
-  precision. Never invent a metric.
+- Lead with specific, defensible numbers. Avoid false precision. Never invent a
+  metric.
 
 ## Performance
 

@@ -14,8 +14,8 @@ stack:
   - Supabase
   - PostHog
 metrics:
-  - { value: '~70%', label: 'of commits in a four-week sprint', source: 'verified' }
-  - { value: '$150K+/yr', label: 'value from upcredit, live across the portfolio', source: 'reported' }
+  - { value: '~70%', label: 'of commits in a four-week sprint' }
+  - { value: '$150K+/yr', label: 'value from upcredit, live across the portfolio' }
 caseStudy:
   - 'Sidekick OS is a private executive-knowledge OS: an AI assistant over an executive''s connected sources, an encrypted vault, inbox digests, and chat. Built on a pnpm + Nx monorepo with Effect 3 as the runtime substrate, Zero local-first sync, and WorkOS auth.'
   - 'Designed the per-user encryption, a DEK/KEK AES-256-GCM scheme that encrypts knowledge at rest and decrypts client-side, so destroying a key crypto-shreds that user''s data, the unit of GDPR erasure.'

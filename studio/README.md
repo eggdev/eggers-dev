@@ -42,8 +42,7 @@ copy `.dev.vars.example` to `.dev.vars` and supply a GitHub App private key if y
    ```
 
 The first authenticated request seeds D1 from the existing résumé and selected public work. Draft
-edits autosave to D1. Publishing is explicit, is limited to the canonical résumé, and is rejected
-while any included claim is marked `unverified`.
+edits autosave to D1. Publishing is explicit and limited to the canonical résumé.
 
 ## Useful commands
 

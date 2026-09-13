@@ -12,9 +12,6 @@ const resume = parsed.data
 const experiences = resume.experience.filter((entry) => !entry.hidden)
 const skills = resume.skills.filter((row) => !row.hidden)
 const education = resume.education.filter((row) => !row.hidden)
-const hasSelfReported = experiences.some((entry) =>
-  entry.bullets.some((bullet) => !bullet.hidden && bullet.status === 'self-reported')
-)
 const title = `${resume.profile.name} — Résumé`
 const description = `${resume.profile.headline}. ${resume.profile.summary}`
 const canonical = new URL('/resume', Astro.site)
@@ -75,14 +72,7 @@ const canonical = new URL('/resume', Astro.site)
                   {entry.note && <p class="note">{entry.note}</p>}
                   {bullets.length > 0 && (
                     <ul>
-                      {bullets.map((bullet) => (
-                        <li>
-                          {bullet.text}
-                          {bullet.status === 'self-reported' && (
-                            <sup aria-label="Self-reported claim">*</sup>
-                          )}
-                        </li>
-                      ))}
+                      {bullets.map((bullet) => <li>{bullet.text}</li>)}
                     </ul>
                   )}
                 </article>
@@ -122,7 +112,6 @@ const canonical = new URL('/resume', Astro.site)
         </dl>
       </section>
 
-      {hasSelfReported && <p class="provenance">* Self-reported</p>}
     </main>
 
     <script>
@@ -394,13 +383,6 @@ const canonical = new URL('/resume', Astro.site)
     content: '';
   }
 
-  sup {
-    margin-left: 1px;
-    color: #245b9d;
-    font-size: 0.72em;
-    font-weight: 700;
-  }
-
   .row {
     display: flex;
     gap: 12px;
@@ -424,12 +406,6 @@ const canonical = new URL('/resume', Astro.site)
 
   .row dd.dates {
     margin-left: auto;
-  }
-
-  .provenance {
-    margin-top: 6px;
-    color: #687383;
-    font-size: 7.5px;
   }
 
   @media (max-width: 8.75in) {

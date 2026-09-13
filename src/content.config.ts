@@ -4,8 +4,7 @@ import { glob } from 'astro/loaders'
 
 /**
  * `work` — the selected-work entries. Each is outcome-first: the frontmatter
- * `outcome` is the lead line, the Markdown body is the "how". Metrics lead with
- * git-verified numbers; self-reported figures carry a `note`.
+ * `outcome` is the lead line, the Markdown body is the "how".
  */
 const work = defineCollection({
   loader: glob({ pattern: '*.md', base: './src/content/work' }),
@@ -22,13 +21,11 @@ const work = defineCollection({
         z.object({
           value: z.string(),
           label: z.string(),
-          /** "verified" renders plain; "reported" gets a subtle self-reported mark */
-          source: z.enum(['verified', 'reported']).default('verified'),
         })
       )
       .default([]),
     links: z.array(z.object({ label: z.string(), href: z.url() })).default([]),
-    // deeper, verified proof revealed in a "Read the full story" disclosure
+    // deeper implementation detail revealed in a "Read the full story" disclosure
     caseStudy: z.array(z.string()).default([]),
   }),
 })

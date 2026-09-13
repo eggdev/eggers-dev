@@ -1,6 +1,3 @@
-export const claimStatuses = ['verified', 'self-reported', 'unverified'] as const
-export type ClaimStatus = (typeof claimStatuses)[number]
-
 export const resumeDensities = ['comfortable', 'compact', 'tight'] as const
 export type ResumeDensity = (typeof resumeDensities)[number]
 
@@ -22,9 +19,6 @@ export interface ResumeProfile {
 export interface ResumeBullet {
   id: string
   text: string
-  status: ClaimStatus
-  evidence?: string
-  sourceDocumentId?: string
   hidden?: boolean
 }
 
@@ -123,26 +117,11 @@ const parseLink = (value: unknown, path: string, errors: string[]): ResumeLink =
 const parseBullet = (value: unknown, path: string, errors: string[]): ResumeBullet => {
   if (!isRecord(value)) {
     errors.push(`${path} must be an object`)
-    return { id: '', text: '', status: 'unverified' }
-  }
-  const rawStatus = value.status
-  const status = claimStatuses.includes(rawStatus as ClaimStatus)
-    ? (rawStatus as ClaimStatus)
-    : 'unverified'
-  if (!claimStatuses.includes(rawStatus as ClaimStatus)) {
-    errors.push(`${path}.status must be verified, self-reported, or unverified`)
+    return { id: '', text: '' }
   }
   return {
     id: requiredString(value.id, `${path}.id`, errors, 80),
     text: requiredString(value.text, `${path}.text`, errors, 800),
-    status,
-    evidence: optionalString(value.evidence, `${path}.evidence`, errors, 2_000),
-    sourceDocumentId: optionalString(
-      value.sourceDocumentId,
-      `${path}.sourceDocumentId`,
-      errors,
-      80
-    ),
     hidden: optionalBoolean(value.hidden, `${path}.hidden`, errors),
   }
 }
@@ -236,14 +215,6 @@ export function validateResume(value: unknown): ValidationResult<ResumeContent> 
   }
 }
 
-export function getUnverifiedClaims(resume: ResumeContent): ResumeBullet[] {
-  return resume.experience.flatMap((entry) =>
-    entry.hidden
-      ? []
-      : entry.bullets.filter((bullet) => !bullet.hidden && bullet.status === 'unverified')
-  )
-}
-
 export function makePublicResume(resume: ResumeContent): ResumeContent {
   return {
     ...resume,
@@ -254,14 +225,7 @@ export function makePublicResume(resume: ResumeContent): ResumeContent {
         hidden: undefined,
         bullets: entry.bullets
           .filter((bullet) => !bullet.hidden)
-          .map(
-            ({
-              evidence: _evidence,
-              sourceDocumentId: _sourceDocumentId,
-              hidden: _hidden,
-              ...bullet
-            }) => bullet
-          ),
+          .map(({ hidden: _hidden, ...bullet }) => bullet),
       })),
     skills: resume.skills.filter((row) => !row.hidden).map(({ hidden: _hidden, ...row }) => row),
     education: resume.education

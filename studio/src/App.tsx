@@ -25,6 +25,7 @@ export function App() {
   const [documentSaveStatus, setDocumentSaveStatus] = useState<SaveStatus>('Saved')
   const [resumeSaveStatus, setResumeSaveStatus] = useState<SaveStatus>('Saved')
   const [publishing, setPublishing] = useState(false)
+  const [previewExpanded, setPreviewExpanded] = useState(false)
 
   const documentTimers = useRef(new Map<string, number>())
   const resumeTimers = useRef(new Map<string, number>())
@@ -292,7 +293,10 @@ export function App() {
           <button
             type="button"
             aria-current={view === 'library'}
-            onClick={() => setView('library')}
+            onClick={() => {
+              setView('library')
+              setPreviewExpanded(false)
+            }}
           >
             Library
           </button>
@@ -488,21 +492,19 @@ export function App() {
               onClone={() => void cloneActiveResume()}
               onPublish={() => void publishActiveResume()}
               onPrint={() => window.print()}
+              onPreview={() => setPreviewExpanded(true)}
             />
           </section>
-          <aside className="preview-pane" aria-label="Live résumé preview">
-            <div className="preview-pane__header">
-              <div>
-                <span>Live preview</span>
-                <small>Letter · {activeResume.data.density}</small>
-              </div>
-              {activeResume.isCanonical ? (
-                <a href="https://eggers.dev/resume" target="_blank" rel="noreferrer">
-                  Open public ↗
-                </a>
-              ) : null}
-            </div>
-            <ResumePreview resume={activeResume.data} />
+          <aside
+            className={`preview-pane ${previewExpanded ? 'preview-pane--expanded' : ''}`}
+            aria-label="Live résumé preview"
+          >
+            <ResumePreview
+              resume={activeResume.data}
+              publicUrl={activeResume.isCanonical ? 'https://eggers.dev/resume' : undefined}
+              expanded={previewExpanded}
+              onExpandedChange={setPreviewExpanded}
+            />
           </aside>
         </main>
       ) : (

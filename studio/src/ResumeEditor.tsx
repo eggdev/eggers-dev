@@ -1,5 +1,4 @@
 import {
-  claimStatuses,
   type ResumeBullet,
   type ResumeContent,
   type ResumeExperience,
@@ -18,6 +17,7 @@ interface Props {
   onClone: () => void
   onPublish: () => void
   onPrint: () => void
+  onPreview: () => void
 }
 
 const move = <T,>(items: T[], index: number, direction: -1 | 1): T[] => {
@@ -31,7 +31,6 @@ const move = <T,>(items: T[], index: number, direction: -1 | 1): T[] => {
 const newBullet = (): ResumeBullet => ({
   id: crypto.randomUUID(),
   text: 'New accomplishment',
-  status: 'unverified',
 })
 
 const newExperience = (): ResumeExperience => ({
@@ -52,6 +51,7 @@ export function ResumeEditor({
   onClone,
   onPublish,
   onPrint,
+  onPreview,
 }: Props) {
   const [openEntries, setOpenEntries] = useState(
     () => new Set(resume.data.experience.slice(0, 3).map((entry) => entry.id))
@@ -64,15 +64,6 @@ export function ResumeEditor({
   }
   const updateRows = (key: 'skills' | 'education', rows: ResumeRow[]) =>
     updateData({ ...resume.data, [key]: rows })
-  const unverifiedCount = resume.data.experience.reduce(
-    (total, entry) =>
-      total +
-      entry.bullets.filter(
-        (bullet) => !entry.hidden && !bullet.hidden && bullet.status === 'unverified'
-      ).length,
-    0
-  )
-
   return (
     <div className="resume-editor">
       <header className="resume-editor__toolbar">
@@ -91,6 +82,9 @@ export function ResumeEditor({
           <button className="button button--quiet" type="button" onClick={onClone}>
             Duplicate
           </button>
+          <button className="button button--quiet" type="button" onClick={onPreview}>
+            Preview
+          </button>
           <button className="button button--quiet" type="button" onClick={onPrint}>
             Export PDF
           </button>
@@ -98,26 +92,14 @@ export function ResumeEditor({
             <button
               className="button button--primary"
               type="button"
-              disabled={publishing || unverifiedCount > 0}
+              disabled={publishing}
               onClick={onPublish}
-              title={
-                unverifiedCount > 0
-                  ? `${unverifiedCount} unverified claim${unverifiedCount === 1 ? '' : 's'} must be resolved`
-                  : undefined
-              }
             >
               {publishing ? 'Publishing…' : 'Publish'}
             </button>
           ) : null}
         </div>
       </header>
-
-      {unverifiedCount > 0 ? (
-        <p className="validation-note">
-          {unverifiedCount} unverified claim{unverifiedCount === 1 ? '' : 's'} — publishing stays
-          locked until each is resolved or hidden.
-        </p>
-      ) : null}
 
       <fieldset className="density-control">
         <legend>Page density</legend>
@@ -471,40 +453,6 @@ export function ResumeEditor({
                             updateExperience(index, { ...entry, bullets })
                           }}
                         />
-                        <div className="bullet-editor__meta">
-                          <label>
-                            <span>Provenance</span>
-                            <select
-                              value={bullet.status}
-                              onChange={(event) => {
-                                const bullets = [...entry.bullets]
-                                bullets[bulletIndex] = {
-                                  ...bullet,
-                                  status: event.target.value as ResumeBullet['status'],
-                                }
-                                updateExperience(index, { ...entry, bullets })
-                              }}
-                            >
-                              {claimStatuses.map((status) => (
-                                <option value={status} key={status}>
-                                  {status}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="evidence-field">
-                            <span>Private evidence note</span>
-                            <input
-                              placeholder="Commit, source, or context"
-                              value={bullet.evidence ?? ''}
-                              onChange={(event) => {
-                                const bullets = [...entry.bullets]
-                                bullets[bulletIndex] = { ...bullet, evidence: event.target.value }
-                                updateExperience(index, { ...entry, bullets })
-                              }}
-                            />
-                          </label>
-                        </div>
                       </div>
                     ))}
                     {entry.bullets.length === 0 ? (

@@ -77,9 +77,30 @@ const mapResume = (row: ResumeDbRow): ResumeRecord => ({
   updatedAt: row.updated_at,
 })
 
+const normalizeStoredResumes = async (env: Env): Promise<void> => {
+  const result = await env.DB.prepare('SELECT id, data_json FROM resumes').all<
+    Pick<ResumeDbRow, 'id' | 'data_json'>
+  >()
+  const updates = result.results.flatMap((row) => {
+    const normalized = JSON.stringify(parseResumeJson(row.data_json))
+    if (normalized === row.data_json) return []
+    return [
+      env.DB.prepare('UPDATE resumes SET data_json = ? WHERE id = ? AND data_json = ?').bind(
+        normalized,
+        row.id,
+        row.data_json
+      ),
+    ]
+  })
+  if (updates.length > 0) await env.DB.batch(updates)
+}
+
 export async function ensureSeeded(env: Env): Promise<void> {
   const existing = await env.DB.prepare('SELECT id FROM resumes LIMIT 1').first('id')
-  if (existing) return
+  if (existing) {
+    await normalizeStoredResumes(env)
+    return
+  }
 
   const now = new Date().toISOString()
   const statements = [

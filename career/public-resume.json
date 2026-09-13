@@ -35,23 +35,19 @@
       "bullets": [
         {
           "id": "lv-sidekick",
-          "text": "Built Sidekick OS, a private knowledge assistant for executives, from zero to a working product. It gives an executive AI chat over their connected sources, plus an encrypted vault and inbox digests, on an Nx monorepo with Effect and Zero local-first sync.",
-          "status": "verified"
+          "text": "Built Sidekick OS, a private knowledge assistant for executives, from zero to a working product. It gives an executive AI chat over their connected sources, plus an encrypted vault and inbox digests, on an Nx monorepo with Effect and Zero local-first sync."
         },
         {
           "id": "lv-encryption",
-          "text": "Designed its per-user encryption, a DEK/KEK AES-256-GCM scheme that decrypts client-side. Destroying one key erases one user's data, which is how the product handles GDPR deletion.",
-          "status": "verified"
+          "text": "Designed its per-user encryption, a DEK/KEK AES-256-GCM scheme that decrypts client-side. Destroying one key erases one user's data, which is how the product handles GDPR deletion."
         },
         {
           "id": "lv-upcredit",
-          "text": "Shipped upcredit, a rent-reporting credit product now live across the company's student-housing portfolio and built to run with almost no upkeep.",
-          "status": "self-reported"
+          "text": "Shipped upcredit, a rent-reporting credit product now live across the company's student-housing portfolio and built to run with almost no upkeep."
         },
         {
           "id": "lv-teaching",
-          "text": "Spend about half the role teaching the org to build with AI. Office hours and formal lessons grew into an AI Builders Committee; colleagues now run their own workflows and automations.",
-          "status": "self-reported"
+          "text": "Spend about half the role teaching the org to build with AI. Office hours and formal lessons grew into an AI Builders Committee; colleagues now run their own workflows and automations."
         }
       ]
     },
@@ -64,28 +60,23 @@
       "bullets": [
         {
           "id": "bar-platform",
-          "text": "Sole continuous engineer on a Texas alcohol-sales analytics platform for bar operators and investors: web app, Expo native app, marketing site, and API in one Bun + Turborepo monorepo with 29 shared packages. Active with paying customers; revenue covers operating costs.",
-          "status": "self-reported"
+          "text": "Sole continuous engineer on a Texas alcohol-sales analytics platform for bar operators and investors: web app, Expo native app, marketing site, and API in one Bun + Turborepo monorepo with 29 shared packages. Active with paying customers; revenue covers operating costs."
         },
         {
           "id": "bar-data",
-          "text": "Built the data engine on Apache Airflow: chained DAGs that fuse TABC filings, Google data, customer reviews, and dual geocoding into one canonical record per venue.",
-          "status": "verified"
+          "text": "Built the data engine on Apache Airflow: chained DAGs that fuse TABC filings, Google data, customer reviews, and dual geocoding into one canonical record per venue."
         },
         {
           "id": "bar-llm",
-          "text": "Run LLM modules in production for classification and fuzzy address matching, each gated by cheap deterministic checks, with a second-pass reviewer that flags its own disagreements for a human to settle.",
-          "status": "verified"
+          "text": "Run LLM modules in production for classification and fuzzy address matching, each gated by cheap deterministic checks, with a second-pass reviewer that flags its own disagreements for a human to settle."
         },
         {
           "id": "bar-ops",
-          "text": "Stood up the backend on Kubernetes solo, then dropped a high-maintenance Elasticsearch layer for plain SQL: less to operate, better latency.",
-          "status": "verified"
+          "text": "Stood up the backend on Kubernetes solo, then dropped a high-maintenance Elasticsearch layer for plain SQL: less to operate, better latency."
         },
         {
           "id": "bar-harness",
-          "text": "Built the agent harness that maintains the repo overnight: AST-level lint rules, guardrail hooks agents can't edit, and a merge policy that only ratchets stricter.",
-          "status": "verified"
+          "text": "Built the agent harness that maintains the repo overnight: AST-level lint rules, guardrail hooks agents can't edit, and a merge policy that only ratchets stricter."
         }
       ]
     },
@@ -97,28 +88,23 @@
       "bullets": [
         {
           "id": "nba-scores",
-          "text": "Built NBA.com's score strip from the first commit and remained its primary owner as it grew into a durable live surface through the season.",
-          "status": "verified"
+          "text": "Built NBA.com's score strip from the first commit and remained its primary owner as it grew into a durable live surface through the season."
         },
         {
           "id": "nba-auth",
-          "text": "Client-side tech lead for login and entitlements across web and connected devices (TV Everywhere, international broadcasters, the league's CIAM identity), packaged as a reusable React auth library.",
-          "status": "verified"
+          "text": "Client-side tech lead for login and entitlements across web and connected devices (TV Everywhere, international broadcasters, the league's CIAM identity), packaged as a reusable React auth library."
         },
         {
           "id": "nba-league-pass",
-          "text": "Tech-led the League Pass purchase page and the block-rendering system behind it, which let marketing edit subscription pages without an engineer. Localized in three languages.",
-          "status": "verified"
+          "text": "Tech-led the League Pass purchase page and the block-rendering system behind it, which let marketing edit subscription pages without an engineer. Localized in three languages."
         },
         {
           "id": "nba-local-access",
-          "text": "Helped launch Local Access in-market streaming, and built the Nike sign-up flow for the 2024 All-Star booth.",
-          "status": "verified"
+          "text": "Helped launch Local Access in-market streaming, and built the Nike sign-up flow for the 2024 All-Star booth."
         },
         {
           "id": "nba-mentoring",
-          "text": "Mentored engineers as a senior IC, and a platform rotation I asked for produced the self-service repo-provisioning tool the DTC org standardized on.",
-          "status": "verified"
+          "text": "Mentored engineers as a senior IC, and a platform rotation I asked for produced the self-service repo-provisioning tool the DTC org standardized on."
         }
       ]
     },
@@ -158,8 +144,7 @@
       "bullets": [
         {
           "id": "meredith-react",
-          "text": "Core engineer on the conversion of the company's e-commerce platform to React, shipping dozens of data-rich React/Redux apps. A performance investigation connected a blocked render path directly to subscription conversion.",
-          "status": "verified"
+          "text": "Core engineer on the conversion of the company's e-commerce platform to React, shipping dozens of data-rich React/Redux apps. A performance investigation connected a blocked render path directly to subscription conversion."
         }
       ]
     }

@@ -1,9 +1,4 @@
-import {
-  getUnverifiedClaims,
-  makePublicResume,
-  type ResumeContent,
-  validateResume,
-} from '@career/schema'
+import { makePublicResume, type ResumeContent, validateResume } from '@career/schema'
 import {
   type ApiErrorPayload,
   type CareerDocument,
@@ -154,14 +149,6 @@ async function handleApi(request: Request, env: Env, identity: StudioIdentity): 
     if (!resume) throw new ApiProblem('Résumé not found', 404)
     if (!resume.isCanonical) {
       throw new ApiProblem('Only the canonical résumé can be published', 409)
-    }
-    const unverified = getUnverifiedClaims(resume.data)
-    if (unverified.length > 0) {
-      throw new ApiProblem(
-        'Resolve unverified claims before publishing',
-        422,
-        unverified.map((claim) => claim.text)
-      )
     }
     const publicResume = makePublicResume(resume.data)
     const commit = await publishResumeToGitHub(env, resume.title, publicResume)

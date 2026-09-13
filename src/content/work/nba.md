@@ -13,9 +13,9 @@ stack:
   - ArgoCD
   - Helm
 metrics:
-  - { value: '#6 of 94', label: 'contributor on NBA.com''s codebase', source: 'verified' }
-  - { value: '76%', label: 'ownership of the @nbad/auth library', source: 'verified' }
-  - { value: '~25K', label: 'All-Star booth sign-ups, zero incidents', source: 'reported' }
+  - { value: '#6 of 94', label: 'contributor on NBA.com''s codebase' }
+  - { value: '76%', label: 'ownership of the @nbad/auth library' }
+  - { value: '~25K', label: 'All-Star booth sign-ups, zero incidents' }
 caseStudy:
   - 'Built the live-scores feature from the first commit through majority ownership, and ranked a top-6 contributor of 94 on the main codebase.'
   - 'Client-side tech lead for third-party login and entitlements across web and connected devices: TV Everywhere, international broadcasters, and NBA''s CIAM identity, packaged into @nbad/auth, a reusable React auth library I own most of.'
