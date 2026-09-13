@@ -18,7 +18,7 @@ import {
   updateDocument,
   updateResume,
 } from './db'
-import { publishResumeToGitHub } from './github'
+import { type GitHubCommit, publishResumeToGitHub } from './github'
 
 class ApiProblem extends Error {
   constructor(
@@ -151,7 +151,19 @@ async function handleApi(request: Request, env: Env, identity: StudioIdentity): 
       throw new ApiProblem('Only the canonical résumé can be published', 409)
     }
     const publicResume = makePublicResume(resume.data)
-    const commit = await publishResumeToGitHub(env, resume.title, publicResume)
+    let commit: GitHubCommit
+    try {
+      commit = await publishResumeToGitHub(env, resume.title, publicResume)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'GitHub publishing failed'
+      console.error(
+        JSON.stringify({
+          message: 'Résumé publishing failed',
+          error: detail,
+        })
+      )
+      throw new ApiProblem('Could not publish résumé', 502, [detail])
+    }
     const publishedAt = await recordPublish(env, resume.id, commit.sha, commit.url)
     return json({ commitSha: commit.sha, commitUrl: commit.url, publishedAt })
   }
