@@ -16,11 +16,11 @@
     {
       "binding": "DB",
       "database_name": "eggers-apps",
-      "database_id": "REPLACE_WITH_EGGERS_APPS_D1_ID",
+      "database_id": "e3893d1a-664c-4fcc-97e5-94503fff05da",
       "migrations_dir": "../../packages/database/migrations"
     }
   ],
-  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "REPLACE_WITH_PUBLIC_CONTENT_KV_ID" }],
+  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "d038a139c095491ea856efb375346371" }],
   "vars": {
     "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
     "ACCESS_AUD": "630731b9de121ab10b8aa6bab3bba69da1df786fa7e82e4ff12f1b00a8a0c419",

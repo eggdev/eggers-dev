@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "eggers-apps",
-      "database_id": "REPLACE_WITH_EGGERS_APPS_D1_ID",
+      "database_id": "e3893d1a-664c-4fcc-97e5-94503fff05da",
       "migrations_dir": "../../packages/database/migrations"
     }
   ],

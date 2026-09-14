@@ -39,7 +39,7 @@ const { caption } = Astro.props
   .nightshift figcaption {
     margin-top: var(--space-4);
     font-size: var(--text-sm);
-    color: var(--muted);
+    color: var(--muted-foreground);
     max-width: 60ch;
   }
 </style>
@@ -107,7 +107,7 @@ const { caption } = Astro.props
       function colors() {
         const cs = getComputedStyle(document.documentElement)
         ink = cs.getPropertyValue('--ink').trim() || '#000'
-        muted = cs.getPropertyValue('--muted').trim() || 'gray'
+        muted = cs.getPropertyValue('--muted-foreground').trim() || 'gray'
         accent = cs.getPropertyValue('--dot-accent').trim() || 'blue'
         hair = cs.getPropertyValue('--hairline-strong').trim() || 'gray'
         surface = cs.getPropertyValue('--surface-raised').trim() || '#fff'

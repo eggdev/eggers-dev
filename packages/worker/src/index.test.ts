@@ -1,4 +1,4 @@
-import { decodeJson, protectedWorkerEffect } from '@repo/worker'
+import { applySecurityHeaders, decodeJson, protectedWorkerEffect } from '@repo/worker'
 import { Effect, Schema } from 'effect'
 import { describe, expect, test } from 'vitest'
 
@@ -40,5 +40,17 @@ describe('Worker HTTP boundary', () => {
       )
     )
     expect(error.status).toBe(422)
+  })
+
+  test('allows WebAssembly evaluation only when explicitly requested', () => {
+    const defaultPolicy = applySecurityHeaders(new Response()).headers.get(
+      'Content-Security-Policy'
+    )
+    const wasmPolicy = applySecurityHeaders(new Response(), { allowWasmEval: true }).headers.get(
+      'Content-Security-Policy'
+    )
+
+    expect(defaultPolicy).not.toContain("'wasm-unsafe-eval'")
+    expect(wasmPolicy).toContain("script-src 'self' 'wasm-unsafe-eval'")
   })
 })

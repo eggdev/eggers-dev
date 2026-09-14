@@ -64,7 +64,12 @@ export const isTrustedOrigin = (request: Request): boolean => {
 
 export const applySecurityHeaders = (
   response: Response,
-  options: { allowInlineScripts?: boolean; local?: boolean; privateApp?: boolean } = {}
+  options: {
+    allowInlineScripts?: boolean
+    allowWasmEval?: boolean
+    local?: boolean
+    privateApp?: boolean
+  } = {}
 ): Response => {
   const secured = new Response(response.body, response)
   secured.headers.set('X-Content-Type-Options', 'nosniff')
@@ -77,7 +82,7 @@ export const applySecurityHeaders = (
   if (options.privateApp) secured.headers.set('X-Robots-Tag', 'noindex, nofollow')
   secured.headers.set(
     'Content-Security-Policy',
-    `default-src 'self'; script-src 'self'${options.local || options.allowInlineScripts ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'${options.local ? ' ws:' : ''}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
+    `default-src 'self'; script-src 'self'${options.local || options.allowInlineScripts ? " 'unsafe-inline'" : ''}${options.allowWasmEval ? " 'wasm-unsafe-eval'" : ''}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'${options.local ? ' ws:' : ''}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
   )
   return secured
 }

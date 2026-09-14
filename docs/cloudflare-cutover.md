@@ -1,8 +1,25 @@
 # Cloudflare cutover
 
-The repository refactor is complete, but production resources are intentionally not created or
-modified by the code change. Perform this runbook before any monorepo deployment. Keep exports in a
-temporary directory outside the public repository.
+Production was cut over on 2026-09-14. This document remains the recovery record and checklist; do
+not rerun the create or import commands against the live resources.
+
+Completed:
+
+- Backed up both legacy D1 databases outside the repository and left the source databases intact.
+- Created `eggers-apps` and `eggers-public-content`, applied the shared migration stream, imported
+  the Home and legacy Studio data, and verified every source/target row count.
+- Updated the Worker bindings and deployed Web, Studio, and Home independently.
+- Verified the public site, résumé export, static metadata, error handling, private preview
+  fail-closed response, and unauthenticated Access redirects for Studio and Home.
+
+Still required:
+
+- Create the path-scoped Access application for `eggers.dev/preview/*`, replace the remaining Web
+  audience placeholder, and redeploy Web.
+- Complete an authenticated Studio publish/preview check and a reversible Home write from a normal
+  browser. Automated dashboard sessions are stopped by Cloudflare's human-verification challenge.
+
+Keep database exports in a temporary directory outside the public repository.
 
 ## 1. Back up the two existing D1 databases
 

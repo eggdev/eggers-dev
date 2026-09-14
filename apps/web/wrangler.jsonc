@@ -7,7 +7,7 @@
   "preview_urls": false,
   "routes": [{ "pattern": "eggers.dev", "custom_domain": true }],
   "assets": { "binding": "ASSETS", "directory": "./dist" },
-  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "REPLACE_WITH_PUBLIC_CONTENT_KV_ID" }],
+  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "d038a139c095491ea856efb375346371" }],
   "vars": {
     "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
     "ACCESS_AUD": "REPLACE_WITH_WEB_PREVIEW_ACCESS_AUD",

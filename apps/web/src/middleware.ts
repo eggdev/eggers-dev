@@ -27,5 +27,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
     'Cache-Control',
     preview ? 'private, no-store' : 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600'
   )
-  return applySecurityHeaders(response, { allowInlineScripts: true, privateApp: preview })
+  return applySecurityHeaders(response, {
+    allowInlineScripts: true,
+    allowWasmEval: context.url.pathname === '/resume',
+    privateApp: preview,
+  })
 })
