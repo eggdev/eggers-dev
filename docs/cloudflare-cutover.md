@@ -9,15 +9,12 @@ Completed:
 - Created `eggers-apps` and `eggers-public-content`, applied the shared migration stream, imported
   the Home and legacy Studio data, and verified every source/target row count.
 - Updated the Worker bindings and deployed Web, Studio, and Home independently.
-- Verified the public site, résumé export, static metadata, error handling, private preview
-  fail-closed response, and unauthenticated Access redirects for Studio and Home.
-
-Still required:
-
-- Create the path-scoped Access application for `eggers.dev/preview/*`, replace the remaining Web
-  audience placeholder, and redeploy Web.
-- Complete an authenticated Studio publish/preview check and a reversible Home write from a normal
-  browser. Automated dashboard sessions are stopped by Cloudflare's human-verification challenge.
+- Created the `eggers.dev/preview/*` Access application with the reusable exact-email policy,
+  updated the Web audience binding, and redeployed.
+- Verified the public site, résumé export, static metadata, error handling, unauthenticated Access
+  redirects, authenticated private preview headers, and the Studio-to-KV publication flow.
+- Loaded the imported Home workspace and verified a reversible preference write persisted through a
+  fresh navigation, then restored the original value.
 
 Keep database exports in a temporary directory outside the public repository.
 

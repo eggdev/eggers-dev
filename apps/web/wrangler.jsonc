@@ -10,7 +10,7 @@
   "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "d038a139c095491ea856efb375346371" }],
   "vars": {
     "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_WITH_WEB_PREVIEW_ACCESS_AUD",
+    "ACCESS_AUD": "2ba49a11bbb28f9578d371b345984cca748dec8e0aebeb419eedcfb1ea46a2a2",
     "ALLOWED_EMAILS": "brendan@eggers.dev",
     "ALLOW_LOCAL_AUTH_BYPASS": "true"
   },
