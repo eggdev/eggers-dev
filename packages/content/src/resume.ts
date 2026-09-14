@@ -56,11 +56,10 @@ export interface ValidationResult<T> {
   errors: string[]
 }
 
-const text = (maxLength: number) =>
-  Schema.String.pipe(Schema.minLength(1), Schema.maxLength(maxLength))
+const text = (maxLength: number) => Schema.String.pipe(Schema.maxLength(maxLength))
 const optionalText = (maxLength: number) =>
   Schema.optional(Schema.String.pipe(Schema.maxLength(maxLength)))
-const id = text(80)
+const id = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(80))
 
 export const ResumeLinkSchema = Schema.Struct({
   id,
@@ -121,19 +120,62 @@ export function validateResume(value: unknown): ValidationResult<ResumeContent> 
 }
 
 export function makePublicResume(resume: ResumeContent): ResumeContent {
+  const clean = (value: string): string => value.trim()
+  const cleanOptional = (value: string | undefined): string | undefined => {
+    const cleaned = value?.trim()
+    return cleaned ? cleaned : undefined
+  }
+
   return {
     ...resume,
+    profile: {
+      name: clean(resume.profile.name),
+      headline: clean(resume.profile.headline),
+      location: clean(resume.profile.location),
+      email: clean(resume.profile.email),
+      summary: clean(resume.profile.summary),
+      links: resume.profile.links
+        .map((link) => ({ ...link, label: clean(link.label), href: clean(link.href) }))
+        .filter((link) => link.label.length > 0 && link.href.length > 0),
+    },
     experience: resume.experience
       .filter((entry) => !entry.hidden)
       .map(({ hidden: _entryHidden, ...entry }) => ({
         ...entry,
+        role: clean(entry.role),
+        organization: clean(entry.organization),
+        period: clean(entry.period),
+        note: cleanOptional(entry.note),
         bullets: entry.bullets
           .filter((bullet) => !bullet.hidden)
-          .map(({ hidden: _bulletHidden, ...bullet }) => bullet),
-      })),
-    skills: resume.skills.filter((row) => !row.hidden).map(({ hidden: _hidden, ...row }) => row),
+          .map(({ hidden: _bulletHidden, ...bullet }) => ({ ...bullet, text: clean(bullet.text) }))
+          .filter((bullet) => bullet.text.length > 0),
+      }))
+      .filter(
+        (entry) =>
+          entry.role.length > 0 ||
+          entry.organization.length > 0 ||
+          entry.period.length > 0 ||
+          Boolean(entry.note) ||
+          entry.bullets.length > 0
+      ),
+    skills: resume.skills
+      .filter((row) => !row.hidden)
+      .map(({ hidden: _hidden, ...row }) => ({
+        ...row,
+        label: clean(row.label),
+        value: clean(row.value),
+        trailing: cleanOptional(row.trailing),
+      }))
+      .filter((row) => row.label.length > 0 || row.value.length > 0 || Boolean(row.trailing)),
     education: resume.education
       .filter((row) => !row.hidden)
-      .map(({ hidden: _hidden, ...row }) => row),
+      .map(({ hidden: _hidden, ...row }) => ({
+        ...row,
+        label: clean(row.label),
+        value: clean(row.value),
+        trailing: cleanOptional(row.trailing),
+      }))
+      .filter((row) => row.label.length > 0 || row.value.length > 0 || Boolean(row.trailing)),
   }
 }

@@ -1,13 +1,14 @@
 ---
 import '@fontsource-variable/mona-sans/wght.css'
+import { makePublicResume } from '@repo/content'
 import { loadPublishedContent } from '@web/content'
 
-const resume = (await loadPublishedContent()).resume
-const experiences = resume.experience.filter((entry) => !entry.hidden)
-const skills = resume.skills.filter((row) => !row.hidden)
-const education = resume.education.filter((row) => !row.hidden)
-const title = `${resume.profile.name} — Résumé`
-const description = `${resume.profile.headline}. ${resume.profile.summary}`
+const resume = makePublicResume((await loadPublishedContent()).resume)
+const experiences = resume.experience
+const skills = resume.skills
+const education = resume.education
+const title = resume.profile.name ? `${resume.profile.name} — Résumé` : 'Résumé'
+const description = [resume.profile.headline, resume.profile.summary].filter(Boolean).join('. ')
 const canonical = new URL('/resume', Astro.site)
 const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
 ---
@@ -18,14 +19,14 @@ const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <meta name="description" content={description} />
-    <meta name="author" content={resume.profile.name} />
+    {description && <meta name="description" content={description} />}
+    {resume.profile.name && <meta name="author" content={resume.profile.name} />}
     <meta name="theme-color" content="#f2f4f7" />
     <link rel="canonical" href={canonical} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta property="og:type" content="profile" />
     <meta property="og:title" content={title} />
-    <meta property="og:description" content={description} />
+    {description && <meta property="og:description" content={description} />}
     <meta property="og:url" content={canonical} />
   </head>
   <body>
@@ -36,76 +37,92 @@ const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
 
     <main class:list={['sheet', `sheet--${resume.density}`]} id="resume">
       <header class="resume-header">
-        <h1>{resume.profile.name}</h1>
-        <p class="headline">{resume.profile.headline}</p>
-        <p class="contact">
-          <span>{resume.profile.location}</span>
-          <span><a href={`mailto:${resume.profile.email}`}>{resume.profile.email}</a></span>
-          {
-            resume.profile.links.map((link) => (
-              <span><a href={link.href}>{link.label}</a></span>
-            ))
-          }
-        </p>
-        <p class="summary">{resume.profile.summary}</p>
+        {resume.profile.name && <h1>{resume.profile.name}</h1>}
+        {resume.profile.headline && <p class="headline">{resume.profile.headline}</p>}
+        {
+          (resume.profile.location || resume.profile.email || resume.profile.links.length > 0) && (
+            <p class="contact">
+              {resume.profile.location && <span>{resume.profile.location}</span>}
+              {resume.profile.email && (
+                <span><a href={`mailto:${resume.profile.email}`}>{resume.profile.email}</a></span>
+              )}
+              {resume.profile.links.map((link) => (
+                <span><a href={link.href}>{link.label}</a></span>
+              ))}
+            </p>
+          )
+        }
+        {resume.profile.summary && <p class="summary">{resume.profile.summary}</p>}
       </header>
 
-      <section>
-        <h2><span>Experience</span></h2>
-        <div class="entries">
-          {
-            experiences.map((entry) => {
-              const bullets = entry.bullets.filter((bullet) => !bullet.hidden)
-              return (
-                <article class:list={['entry', bullets.length === 0 && 'entry--brief']}>
-                  <div class="entry__head">
-                    <h3>
-                      {entry.role}<span>{entry.organization}</span>
-                    </h3>
-                    <p class="dates">{entry.period}</p>
-                  </div>
+      {
+        experiences.length > 0 && (
+          <section>
+            <h2><span>Experience</span></h2>
+            <div class="entries">
+              {experiences.map((entry) => (
+                <article class:list={['entry', entry.bullets.length === 0 && 'entry--brief']}>
+                  {(entry.role || entry.organization || entry.period) && (
+                    <div class="entry__head">
+                      {(entry.role || entry.organization) && (
+                        <h3>
+                          {entry.role}
+                          {entry.organization && (
+                            <span class:list={[!entry.role && 'organization--only']}>
+                              {entry.organization}
+                            </span>
+                          )}
+                        </h3>
+                      )}
+                      {entry.period && <p class="dates">{entry.period}</p>}
+                    </div>
+                  )}
                   {entry.note && <p class="note">{entry.note}</p>}
-                  {bullets.length > 0 && (
+                  {entry.bullets.length > 0 && (
                     <ul>
-                      {bullets.map((bullet) => <li>{bullet.text}</li>)}
+                      {entry.bullets.map((bullet) => <li>{bullet.text}</li>)}
                     </ul>
                   )}
                 </article>
-              )
-            })
-          }
-        </div>
-      </section>
+              ))}
+            </div>
+          </section>
+        )
+      }
 
-      <section>
-        <h2><span>Skills</span></h2>
-        <dl>
-          {
-            skills.map((row) => (
-              <div class="row">
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-                {row.trailing && <dd class="dates">{row.trailing}</dd>}
-              </div>
-            ))
-          }
-        </dl>
-      </section>
+      {
+        skills.length > 0 && (
+          <section>
+            <h2><span>Skills</span></h2>
+            <dl>
+              {skills.map((row) => (
+                <div class="row">
+                  {row.label && <dt>{row.label}</dt>}
+                  {row.value && <dd>{row.value}</dd>}
+                  {row.trailing && <dd class="dates">{row.trailing}</dd>}
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      }
 
-      <section>
-        <h2><span>Education</span></h2>
-        <dl>
-          {
-            education.map((row) => (
-              <div class="row">
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-                {row.trailing && <dd class="dates">{row.trailing}</dd>}
-              </div>
-            ))
-          }
-        </dl>
-      </section>
+      {
+        education.length > 0 && (
+          <section>
+            <h2><span>Education</span></h2>
+            <dl>
+              {education.map((row) => (
+                <div class="row">
+                  {row.label && <dt>{row.label}</dt>}
+                  {row.value && <dd>{row.value}</dd>}
+                  {row.trailing && <dd class="dates">{row.trailing}</dd>}
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      }
 
     </main>
 
@@ -352,6 +369,10 @@ const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
     color: #c5ccd5;
     content: '·';
     font-weight: 700;
+  }
+
+  h3 span.organization--only::before {
+    display: none;
   }
 
   .entry--brief h3 {

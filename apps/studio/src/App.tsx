@@ -9,6 +9,8 @@ import { Label } from '@repo/ui/label'
 import { Separator } from '@repo/ui/separator'
 import { Textarea } from '@repo/ui/textarea'
 import { ApiError, api } from '@studio/api'
+import { ResumeEditor } from '@studio/ResumeEditor'
+import { ResumePreview } from '@studio/ResumePreview'
 import { useCallback, useEffect, useState } from 'react'
 
 type Section = 'site' | 'work' | 'process' | 'resume' | 'advanced'
@@ -29,6 +31,7 @@ export function App() {
   const [status, setStatus] = useState('Loading…')
   const [error, setError] = useState('')
   const [advanced, setAdvanced] = useState('')
+  const [resumePreviewExpanded, setResumePreviewExpanded] = useState(false)
 
   useEffect(() => {
     api
@@ -99,6 +102,15 @@ export function App() {
       window.open(result.url, '_blank', 'noopener,noreferrer')
     } catch (cause) {
       setError(errorMessage(cause))
+    }
+  }
+
+  const exportResume = async (resume: PublicSiteContent['resume']) => {
+    try {
+      const { downloadResumePdf } = await import('@repo/content/resume-pdf')
+      await downloadResumePdf(resume)
+    } catch (cause) {
+      setError(`Could not export résumé: ${errorMessage(cause)}`)
     }
   }
 
@@ -434,105 +446,18 @@ export function App() {
           )}
 
           {section === 'resume' && (
-            <div className="grid gap-5">
-              <EditorCard
-                title="Résumé profile"
-                description="The canonical résumé is published with the site snapshot."
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {(['name', 'headline', 'location', 'email'] as const).map((key) => (
-                    <Label key={key} className="capitalize">
-                      {key}
-                      <Input
-                        value={content.resume.profile[key]}
-                        onChange={(event) =>
-                          mutate((current) => ({
-                            ...current,
-                            resume: {
-                              ...current.resume,
-                              profile: { ...current.resume.profile, [key]: event.target.value },
-                            },
-                          }))
-                        }
-                      />
-                    </Label>
-                  ))}
-                </div>
-                <Label>
-                  Summary
-                  <Textarea
-                    value={content.resume.profile.summary}
-                    onChange={(event) =>
-                      mutate((current) => ({
-                        ...current,
-                        resume: {
-                          ...current.resume,
-                          profile: { ...current.resume.profile, summary: event.target.value },
-                        },
-                      }))
-                    }
-                  />
-                </Label>
-              </EditorCard>
-              {content.resume.experience.map((experience, index) => (
-                <EditorCard
-                  key={experience.id}
-                  title={experience.role}
-                  description={experience.organization}
-                >
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    {(['role', 'organization', 'period'] as const).map((key) => (
-                      <Label key={key} className="capitalize">
-                        {key}
-                        <Input
-                          value={experience[key]}
-                          onChange={(event) =>
-                            mutate((current) => ({
-                              ...current,
-                              resume: {
-                                ...current.resume,
-                                experience: current.resume.experience.map((item, itemIndex) =>
-                                  itemIndex === index
-                                    ? { ...item, [key]: event.target.value }
-                                    : item
-                                ),
-                              },
-                            }))
-                          }
-                        />
-                      </Label>
-                    ))}
-                  </div>
-                  {experience.bullets.map((bullet, bulletIndex) => (
-                    <Label key={bullet.id}>
-                      Accomplishment {bulletIndex + 1}
-                      <Textarea
-                        value={bullet.text}
-                        onChange={(event) =>
-                          mutate((current) => ({
-                            ...current,
-                            resume: {
-                              ...current.resume,
-                              experience: current.resume.experience.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? {
-                                      ...item,
-                                      bullets: item.bullets.map((value, valueIndex) =>
-                                        valueIndex === bulletIndex
-                                          ? { ...value, text: event.target.value }
-                                          : value
-                                      ),
-                                    }
-                                  : item
-                              ),
-                            },
-                          }))
-                        }
-                      />
-                    </Label>
-                  ))}
-                </EditorCard>
-              ))}
+            <div className="grid gap-5 xl:grid-cols-[minmax(32rem,1.15fr)_minmax(24rem,0.85fr)] xl:items-start">
+              <ResumeEditor
+                resume={content.resume}
+                onChange={(resume) => mutate((current) => ({ ...current, resume }))}
+              />
+              <ResumePreview
+                resume={content.resume}
+                publicUrl="https://eggers.dev/resume"
+                expanded={resumePreviewExpanded}
+                onExpandedChange={setResumePreviewExpanded}
+                onExport={() => exportResume(content.resume)}
+              />
             </div>
           )}
 

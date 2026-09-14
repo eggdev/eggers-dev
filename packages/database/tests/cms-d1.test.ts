@@ -58,4 +58,34 @@ describe('CMS D1 repository', () => {
     expect(snapshot.content.seo.title).toBe(publicContentSeed.seo.title)
     expect(snapshot.content.resume.experience.length).toBeGreaterThan(0)
   })
+
+  test('promotes the retained canonical résumé when creating the whole-site draft', async () => {
+    const legacyResume = structuredClone(publicContentSeed.resume)
+    legacyResume.profile.headline = 'Recovered canonical résumé'
+    const now = '2026-09-14T12:00:00.000Z'
+
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM cms_site_drafts WHERE id = 'site'"),
+      env.DB.prepare('DELETE FROM resumes'),
+      env.DB.prepare(`INSERT INTO resumes
+        (id, title, data_json, is_canonical, revision, created_at, updated_at)
+        VALUES (?, ?, ?, 1, 263, ?, ?)`).bind(
+        'resume-canonical',
+        'Canonical résumé',
+        JSON.stringify(legacyResume),
+        now,
+        now
+      ),
+    ])
+
+    const initial = await Effect.runPromise(
+      CmsRepository.pipe(
+        Effect.flatMap((repository) => repository.getDraft),
+        Effect.provide(makeCmsRepositoryLayer(env.DB))
+      )
+    )
+
+    expect(initial.revision).toBe(1)
+    expect(initial.content.resume.profile.headline).toBe('Recovered canonical résumé')
+  })
 })

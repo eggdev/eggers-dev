@@ -13,6 +13,12 @@ test('Studio serves its Access-protected CMS through the Worker', async ({ page 
   expect(response?.headers()['x-robots-tag']).toBe('noindex, nofollow')
   await expect(page.getByRole('heading', { name: 'Studio', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Publish site' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Resume' }).click()
+  await expect(page.getByText('Live résumé', { exact: true })).toBeVisible()
+  await expect(page.locator('#resume-preview')).toContainText('Brendan Eggers')
+  await expect(page.getByRole('button', { name: 'Add role' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add row' })).toHaveCount(2)
 })
 
 test('Home serves its Access-protected workspace through the Worker', async ({ page }) => {

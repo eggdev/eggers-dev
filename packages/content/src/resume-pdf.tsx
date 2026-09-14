@@ -1,9 +1,10 @@
 import { Document, Link, Page, pdf, StyleSheet, Text, View } from '@react-pdf/renderer'
-import type {
-  ResumeContent,
-  ResumeDensity,
-  ResumeExperience,
-  ResumeRow,
+import {
+  makePublicResume,
+  type ResumeContent,
+  type ResumeDensity,
+  type ResumeExperience,
+  type ResumeRow,
 } from '@repo/content/resume'
 
 export const RESUME_PDF_FILENAME = 'brendan-eggers-resume.pdf'
@@ -196,7 +197,7 @@ function SectionHeading({ children }: { children: string }) {
 }
 
 function Experience({ entry, density }: { entry: ResumeExperience; density: ResumeDensity }) {
-  const bullets = entry.bullets.filter((bullet) => !bullet.hidden)
+  const bullets = entry.bullets
   const brief = bullets.length === 0
 
   return (
@@ -204,19 +205,27 @@ function Experience({ entry, density }: { entry: ResumeExperience; density: Resu
       wrap={false}
       style={brief ? densityStyles[density].briefEntry : densityStyles[density].entry}
     >
-      <View style={styles.entryHead}>
-        <Text
-          style={[
-            styles.role,
-            brief ? densityStyles[density].briefRole : densityStyles[density].role,
-          ]}
-        >
-          {entry.role}
-          <Text style={styles.organizationSeparator}> · </Text>
-          <Text style={styles.organization}>{entry.organization}</Text>
-        </Text>
-        <Text style={styles.dates}>{entry.period}</Text>
-      </View>
+      {entry.role || entry.organization || entry.period ? (
+        <View style={styles.entryHead}>
+          {entry.role || entry.organization ? (
+            <Text
+              style={[
+                styles.role,
+                brief ? densityStyles[density].briefRole : densityStyles[density].role,
+              ]}
+            >
+              {entry.role}
+              {entry.role && entry.organization ? (
+                <Text style={styles.organizationSeparator}> · </Text>
+              ) : null}
+              {entry.organization ? (
+                <Text style={styles.organization}>{entry.organization}</Text>
+              ) : null}
+            </Text>
+          ) : null}
+          {entry.period ? <Text style={styles.dates}>{entry.period}</Text> : null}
+        </View>
+      ) : null}
       {entry.note ? <Text style={styles.note}>{entry.note}</Text> : null}
       {bullets.length > 0 ? (
         <View style={styles.bullets}>
@@ -233,69 +242,86 @@ function Experience({ entry, density }: { entry: ResumeExperience; density: Resu
 }
 
 function ResumeRows({ rows }: { rows: ResumeRow[] }) {
-  return rows
-    .filter((row) => !row.hidden)
-    .map((row) => (
-      <View key={row.id} style={styles.row} wrap={false}>
-        <Text style={styles.rowLabel}>{row.label}</Text>
-        <Text style={styles.rowValue}>{row.value}</Text>
-        {row.trailing ? <Text style={styles.dates}>{row.trailing}</Text> : null}
-      </View>
-    ))
+  return rows.map((row) => (
+    <View key={row.id} style={styles.row} wrap={false}>
+      {row.label ? <Text style={styles.rowLabel}>{row.label}</Text> : null}
+      {row.value ? <Text style={styles.rowValue}>{row.value}</Text> : null}
+      {row.trailing ? <Text style={styles.dates}>{row.trailing}</Text> : null}
+    </View>
+  ))
 }
 
 export function ResumePdfDocument({ resume }: Props) {
-  const experiences = resume.experience.filter((entry) => !entry.hidden)
+  const visibleResume = makePublicResume(resume)
+  const experiences = visibleResume.experience
   const contactItems: { id: string; label: string; href?: string }[] = [
-    { id: 'location', label: resume.profile.location },
-    { id: 'email', label: resume.profile.email, href: `mailto:${resume.profile.email}` },
-    ...resume.profile.links,
-  ]
+    { id: 'location', label: visibleResume.profile.location },
+    {
+      id: 'email',
+      label: visibleResume.profile.email,
+      href: visibleResume.profile.email ? `mailto:${visibleResume.profile.email}` : undefined,
+    },
+    ...visibleResume.profile.links,
+  ].filter((item) => item.label.length > 0)
 
   return (
     <Document
-      author={resume.profile.name}
+      author={visibleResume.profile.name}
       creator="Career Studio"
-      subject={resume.profile.summary}
-      title={`${resume.profile.name} — Résumé`}
+      subject={visibleResume.profile.summary}
+      title={visibleResume.profile.name ? `${visibleResume.profile.name} — Résumé` : 'Résumé'}
     >
-      <Page size="LETTER" style={[styles.page, densityStyles[resume.density].page]}>
+      <Page size="LETTER" style={[styles.page, densityStyles[visibleResume.density].page]}>
         <View>
-          <Text style={styles.name}>{resume.profile.name}</Text>
-          <Text style={styles.headline}>{resume.profile.headline}</Text>
-          <View style={styles.contact}>
-            {contactItems.map((item, index) => (
-              <View key={item.id} style={styles.contactItem}>
-                {index > 0 ? <Text style={styles.contactSeparator}>·</Text> : null}
-                {item.href ? (
-                  <Link src={item.href} style={styles.link}>
-                    {item.label}
-                  </Link>
-                ) : (
-                  <Text>{item.label}</Text>
-                )}
-              </View>
+          {visibleResume.profile.name ? (
+            <Text style={styles.name}>{visibleResume.profile.name}</Text>
+          ) : null}
+          {visibleResume.profile.headline ? (
+            <Text style={styles.headline}>{visibleResume.profile.headline}</Text>
+          ) : null}
+          {contactItems.length > 0 ? (
+            <View style={styles.contact}>
+              {contactItems.map((item, index) => (
+                <View key={item.id} style={styles.contactItem}>
+                  {index > 0 ? <Text style={styles.contactSeparator}>·</Text> : null}
+                  {item.href ? (
+                    <Link src={item.href} style={styles.link}>
+                      {item.label}
+                    </Link>
+                  ) : (
+                    <Text>{item.label}</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {visibleResume.profile.summary ? (
+            <Text style={styles.summary}>{visibleResume.profile.summary}</Text>
+          ) : null}
+        </View>
+
+        {experiences.length > 0 ? (
+          <View style={densityStyles[visibleResume.density].section}>
+            <SectionHeading>Experience</SectionHeading>
+            {experiences.map((entry) => (
+              <Experience key={entry.id} entry={entry} density={visibleResume.density} />
             ))}
           </View>
-          <Text style={styles.summary}>{resume.profile.summary}</Text>
-        </View>
+        ) : null}
 
-        <View style={densityStyles[resume.density].section}>
-          <SectionHeading>Experience</SectionHeading>
-          {experiences.map((entry) => (
-            <Experience key={entry.id} entry={entry} density={resume.density} />
-          ))}
-        </View>
+        {visibleResume.skills.length > 0 ? (
+          <View style={densityStyles[visibleResume.density].section}>
+            <SectionHeading>Skills</SectionHeading>
+            <ResumeRows rows={visibleResume.skills} />
+          </View>
+        ) : null}
 
-        <View style={densityStyles[resume.density].section}>
-          <SectionHeading>Skills</SectionHeading>
-          <ResumeRows rows={resume.skills} />
-        </View>
-
-        <View style={densityStyles[resume.density].section}>
-          <SectionHeading>Education</SectionHeading>
-          <ResumeRows rows={resume.education} />
-        </View>
+        {visibleResume.education.length > 0 ? (
+          <View style={densityStyles[visibleResume.density].section}>
+            <SectionHeading>Education</SectionHeading>
+            <ResumeRows rows={visibleResume.education} />
+          </View>
+        ) : null}
       </Page>
     </Document>
   )
@@ -312,7 +338,7 @@ export async function downloadResumePdf(resume: ResumeContent): Promise<void> {
   link.href = url
   link.download = RESUME_PDF_FILENAME
   link.hidden = true
-  document.body.append(link)
+  document.body.appendChild(link)
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)

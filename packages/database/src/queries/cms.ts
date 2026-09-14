@@ -5,6 +5,7 @@ import {
   type PublishedSnapshot,
   validatePublicSiteContent,
   validatePublishedSnapshot,
+  validateResume,
 } from '@repo/content'
 import { publicContentSeed } from '@repo/content/seed'
 import { Effect, Layer } from 'effect'
@@ -25,8 +26,37 @@ interface PublicationRow {
   snapshot_json: string
 }
 
+interface LegacyResumeRow {
+  data_json: string
+}
+
 const storageError = (message: string, cause?: unknown) =>
   new CmsError({ kind: 'storage', message, cause })
+
+const initialDraftContent = (
+  legacyResume: LegacyResumeRow | undefined
+): Effect.Effect<PublicSiteContent, CmsError> => {
+  if (!legacyResume) return Effect.succeed(publicContentSeed)
+
+  return Effect.try({
+    try: () => JSON.parse(legacyResume.data_json) as unknown,
+    catch: (cause) => storageError('The retained canonical résumé is malformed', cause),
+  }).pipe(
+    Effect.flatMap((candidate) => {
+      const result = validateResume(candidate)
+      return result.data
+        ? Effect.succeed(result.data)
+        : Effect.fail(
+            new CmsError({
+              kind: 'invalid',
+              message: 'The retained canonical résumé is invalid',
+              details: result.errors,
+            })
+          )
+    }),
+    Effect.map((resume) => ({ ...publicContentSeed, resume }))
+  )
+}
 
 const mapDraft = (row: DraftRow): Effect.Effect<CmsDraft, CmsError> =>
   Effect.try({
@@ -67,7 +97,10 @@ export const makeCmsRepositoryLayer = (db: D1Database): Layer.Layer<CmsRepositor
           FROM cms_site_drafts WHERE id = 'site' LIMIT 1`
         if (rows.length === 0) {
           const now = new Date().toISOString()
-          const contentJson = JSON.stringify(publicContentSeed)
+          const legacyResumes = yield* sql<LegacyResumeRow>`SELECT data_json FROM resumes
+              WHERE is_canonical = 1 ORDER BY updated_at DESC LIMIT 1`
+          const content = yield* initialDraftContent(legacyResumes[0])
+          const contentJson = JSON.stringify(content)
           yield* sql`INSERT INTO cms_site_drafts
             (id, content_json, revision, created_at, updated_at, updated_by)
             VALUES ('site', ${contentJson}, 1, ${now}, ${now}, 'seed')
