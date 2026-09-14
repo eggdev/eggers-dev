@@ -90,8 +90,8 @@ The site is built and live at https://eggers.dev, so the primitives below descri
 The components live in `src/components/`:
 
 - `Rail.astro` — the persistent navigation rail: wordmark, the four section links (Work, How I work, About, Contact), and social links. Carries the scroll-driven active state.
-- `Hero.astro` — the opening claim, set in the largest type on the page.
-- `Work.astro` — the `#work` section; the hairline-separated, type-led work list.
+- `Strip.astro` — the opening identity strip and direct contact link.
+- `WorkStories.astro` — the `#work` section; the hairline-separated, type-led work list.
 - `HowIWork.astro` — the `#ai` section, which explains the method and embeds the diagram below.
 - `NightShift.astro` — a canvas diagram of the harness drawn as the loop it actually runs.
 - `About.astro` — the `#about` section; a short prose column, no timeline or skill-bar widgetry.

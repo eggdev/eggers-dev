@@ -1,0 +1,6 @@
+{
+  "name": "studio",
+  "projectType": "application",
+  "sourceRoot": "apps/studio/src",
+  "tags": ["type:app", "scope:studio"]
+}

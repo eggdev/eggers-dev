@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@web/*": ["./apps/web/src/*"],
+      "@studio/*": ["./apps/studio/src/*"],
+      "@home/*": ["./apps/home/src/*"],
+      "@repo/auth": ["./packages/auth/src/index.ts"],
+      "@repo/cms": ["./packages/cms/src/index.ts"],
+      "@repo/content": ["./packages/content/src/index.ts"],
+      "@repo/content/public-resume": ["./packages/content/src/public-resume.json"],
+      "@repo/content/resume": ["./packages/content/src/resume.ts"],
+      "@repo/content/resume-pdf": ["./packages/content/src/resume-pdf.tsx"],
+      "@repo/content/seed": ["./packages/content/src/seed.ts"],
+      "@repo/content/site": ["./packages/content/src/site.ts"],
+      "@repo/database": ["./packages/database/src/index.ts"],
+      "@repo/database/cms": ["./packages/database/src/queries/cms.ts"],
+      "@repo/database/home": ["./packages/database/src/queries/home.ts"],
+      "@repo/design": ["./packages/design/src/index.ts"],
+      "@repo/design/*": ["./packages/design/src/*"],
+      "@repo/home": ["./packages/home/src/index.ts"],
+      "@repo/ui/*": ["./packages/ui/src/*"],
+      "@repo/worker": ["./packages/worker/src/index.ts"]
+    }
+  }
+}

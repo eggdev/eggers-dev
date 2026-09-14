@@ -1,0 +1,6 @@
+{
+  "name": "@repo/content",
+  "projectType": "library",
+  "sourceRoot": "packages/content/src",
+  "tags": ["type:domain", "scope:content"]
+}

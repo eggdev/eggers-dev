@@ -1,0 +1,36 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "eggers-career-studio",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-09-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "studio.eggers.dev", "custom_domain": true }],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "eggers-apps",
+      "database_id": "REPLACE_WITH_EGGERS_APPS_D1_ID",
+      "migrations_dir": "../../packages/database/migrations"
+    }
+  ],
+  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "REPLACE_WITH_PUBLIC_CONTENT_KV_ID" }],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
+    "ACCESS_AUD": "630731b9de121ab10b8aa6bab3bba69da1df786fa7e82e4ff12f1b00a8a0c419",
+    "ALLOWED_EMAILS": "brendan@eggers.dev",
+    "ALLOW_LOCAL_AUTH_BYPASS": "true",
+    "PUBLIC_SITE_URL": "https://eggers.dev"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+  }
+}

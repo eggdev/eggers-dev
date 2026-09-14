@@ -1,0 +1,6 @@
+{
+  "name": "home",
+  "projectType": "application",
+  "sourceRoot": "apps/home/src",
+  "tags": ["type:app", "scope:home"]
+}

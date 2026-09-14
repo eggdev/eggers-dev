@@ -1,0 +1,120 @@
+---
+import type { PublicSiteContent } from '@repo/content'
+import NightShift from '@web/components/NightShift.astro'
+
+interface Props {
+  process: PublicSiteContent['process']
+}
+
+const { process } = Astro.props
+---
+
+<section id="ai" class="section ai">
+  <div class="container">
+    <header class="section-head">
+      <h2 class="h-section">{process.heading}</h2>
+      <p class="lede">{process.introduction}</p>
+    </header>
+
+    <div class="ai-system">
+      <NightShift caption={process.diagramCaption} />
+    </div>
+
+    <div class="ai-grid">
+      <ul class="ai-points">
+        {
+          process.points.map((point) => (
+            <li class="ai-point">
+              <h3 class="ai-point__h">{point.heading}</h3>
+              <p class="ai-point__p">{point.body}</p>
+            </li>
+          ))
+        }
+      </ul>
+
+      <figure class="ai-code">
+        <pre><code>{process.harnessCode}</code></pre>
+        <figcaption>
+          {process.harnessCaption}
+          {
+            process.harnessUrl && (
+              <a class="ai-code__link link-arrow" href={process.harnessUrl} target="_blank" rel="noopener">
+                See the harness
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M5 11L11 5M11 5H6M11 5V10"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </a>
+            )
+          }
+        </figcaption>
+      </figure>
+    </div>
+
+  </div>
+</section>
+
+<style>
+  .ai-system {
+    margin-bottom: clamp(2.5rem, 1.5rem + 3vw, 4.5rem);
+  }
+  .ai-grid {
+    display: grid;
+    gap: clamp(1.5rem, 0.8rem + 3vw, 3rem);
+    align-items: start;
+  }
+  @media (min-width: 56rem) {
+    .ai-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .ai-points {
+    display: grid;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+  .ai-point__h {
+    font-size: var(--text-lg);
+    font-weight: var(--w-semibold);
+    letter-spacing: -0.015em;
+  }
+  .ai-point__p {
+    margin-top: 0.4rem;
+    color: var(--muted);
+    max-width: 48ch;
+  }
+
+  .ai-code {
+    position: sticky;
+    top: 5rem;
+    min-width: 0;
+  }
+  .ai-code pre {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    padding: var(--space-4);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+  }
+  .ai-code figcaption {
+    margin-top: 0.75rem;
+    font-size: var(--text-sm);
+    color: var(--muted);
+  }
+  @media (max-width: 56rem) {
+    .ai-code {
+      position: static;
+    }
+  }
+
+</style>

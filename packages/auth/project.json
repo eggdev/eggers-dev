@@ -1,0 +1,6 @@
+{
+  "name": "@repo/auth",
+  "projectType": "library",
+  "sourceRoot": "packages/auth/src",
+  "tags": ["type:infrastructure", "scope:shared"]
+}

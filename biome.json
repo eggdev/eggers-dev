@@ -25,7 +25,11 @@
     }
   },
   "json": { "formatter": { "enabled": true } },
-  "css": { "formatter": { "enabled": true }, "linter": { "enabled": true } },
+  "css": {
+    "parser": { "tailwindDirectives": true },
+    "formatter": { "enabled": true },
+    "linter": { "enabled": true }
+  },
   "overrides": [
     {
       "includes": ["**/*.astro"],
@@ -39,27 +43,19 @@
       }
     },
     {
-      "includes": ["studio/src/styles.css"],
+      "includes": ["packages/ui/src/**/*.tsx"],
       "linter": {
         "rules": {
-          "style": {
-            "noDescendingSpecificity": "off"
-          }
+          "a11y": { "noLabelWithoutControl": "off" }
         }
       }
     },
     {
-      "includes": ["home/src/styles.css"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noDescendingSpecificity": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["studio/worker-configuration.d.ts", "home/worker-configuration.d.ts"],
+      "includes": [
+        "apps/studio/worker-configuration.d.ts",
+        "apps/home/worker-configuration.d.ts",
+        "apps/web/worker-configuration.d.ts"
+      ],
       "formatter": { "enabled": false },
       "linter": { "enabled": false },
       "assist": { "enabled": false }

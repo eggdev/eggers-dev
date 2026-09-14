@@ -1,0 +1,33 @@
+---
+import type { PublicSiteContent } from '@repo/content'
+
+interface Props {
+  about: PublicSiteContent['about']
+}
+
+const { about } = Astro.props
+---
+
+<section id="about" class="section about">
+  <div class="container">
+    <header class="section-head">
+      <h2 class="h-section">{about.heading}</h2>
+    </header>
+
+    <div class="about__prose">
+      {about.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+    </div>
+  </div>
+</section>
+
+<style>
+  .about__prose {
+    max-width: 60ch;
+    display: grid;
+    gap: 1.1em;
+    font-size: var(--text-lg);
+    line-height: 1.62;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+</style>

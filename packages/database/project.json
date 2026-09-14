@@ -1,0 +1,6 @@
+{
+  "name": "@repo/database",
+  "projectType": "library",
+  "sourceRoot": "packages/database/src",
+  "tags": ["type:infrastructure", "scope:shared"]
+}

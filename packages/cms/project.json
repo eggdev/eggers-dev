@@ -1,0 +1,6 @@
+{
+  "name": "@repo/cms",
+  "projectType": "library",
+  "sourceRoot": "packages/cms/src",
+  "tags": ["type:domain", "scope:cms"]
+}

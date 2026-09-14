@@ -19,8 +19,13 @@ npm-debug.log*
 .wrangler/
 
 # private Home imports and generated SQL
-/home/.private/
-/home/imports/
+/apps/home/.private/
+/apps/home/imports/
+
+# Nx task cache and Playwright output
+/.nx/
+/test-results/
+/playwright-report/
 
 # os
 .DS_Store

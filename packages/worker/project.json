@@ -1,0 +1,6 @@
+{
+  "name": "@repo/worker",
+  "projectType": "library",
+  "sourceRoot": "packages/worker/src",
+  "tags": ["type:infrastructure", "scope:shared"]
+}

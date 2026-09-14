@@ -1,0 +1,20 @@
+{
+  "name": "@repo/design",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "vitest run --config ../../vitest.config.ts --root . --passWithNoTests"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "nx": {
+    "tags": [
+      "type:foundation",
+      "scope:shared"
+    ]
+  }
+}

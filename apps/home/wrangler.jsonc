@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "eggers-home",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-09-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "home.eggers.dev", "custom_domain": true }],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "eggers-apps",
+      "database_id": "REPLACE_WITH_EGGERS_APPS_D1_ID",
+      "migrations_dir": "../../packages/database/migrations"
+    }
+  ],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
+    "ACCESS_AUD": "50c90203df572084f44c925fbbdfb8df3f0976805ec526283f2904d6bc20c15b",
+    "ALLOWED_EMAILS": "brendan@eggers.dev",
+    "ALLOW_LOCAL_AUTH_BYPASS": "true"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}

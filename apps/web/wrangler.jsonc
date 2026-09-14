@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "eggers-dev",
+  "compatibility_date": "2026-09-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "eggers.dev", "custom_domain": true }],
+  "assets": { "binding": "ASSETS", "directory": "./dist" },
+  "kv_namespaces": [{ "binding": "PUBLIC_CONTENT", "id": "REPLACE_WITH_PUBLIC_CONTENT_KV_ID" }],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://billowing-band-c396.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_WITH_WEB_PREVIEW_ACCESS_AUD",
+    "ALLOWED_EMAILS": "brendan@eggers.dev",
+    "ALLOW_LOCAL_AUTH_BYPASS": "true"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}

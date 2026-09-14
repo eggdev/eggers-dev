@@ -1,0 +1,50 @@
+{
+  "name": "home",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc -p tsconfig.json && wrangler types --check worker-configuration.d.ts",
+    "test": "vitest run --config ../../vitest.config.ts --root . --passWithNoTests",
+    "types": "wrangler types worker-configuration.d.ts",
+    "db:migrate:local": "wrangler d1 migrations apply eggers-apps --local",
+    "db:migrate:remote": "wrangler d1 migrations apply eggers-apps --remote",
+    "db:import": "bun run ./scripts/import-handoff.ts",
+    "db:import:hotels": "bun run ./scripts/import-hotel-research.ts",
+    "deploy": "vite build && wrangler deploy --config dist/eggers_home/wrangler.json"
+  },
+  "dependencies": {
+    "@cloudflare/vite-plugin": "catalog:",
+    "@fontsource-variable/mona-sans": "catalog:",
+    "@repo/auth": "workspace:*",
+    "@repo/database": "workspace:*",
+    "@repo/design": "workspace:*",
+    "@repo/home": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "@repo/worker": "workspace:*",
+    "effect": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/bun": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  },
+  "nx": {
+    "tags": [
+      "type:app",
+      "scope:home"
+    ]
+  }
+}
