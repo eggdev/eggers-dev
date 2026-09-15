@@ -32,6 +32,7 @@ const newExperience = (): ResumeExperience => ({
   id: crypto.randomUUID(),
   role: '',
   organization: '',
+  location: '',
   period: '',
   bullets: [],
 })
@@ -278,7 +279,10 @@ export function ResumeEditor({ resume, onChange }: Props) {
               <small className="block truncate text-xs text-muted-foreground">
                 {entry.hidden
                   ? 'Hidden'
-                  : entry.organization || entry.period || 'Empty fields are omitted'}
+                  : entry.organization ||
+                    entry.location ||
+                    entry.period ||
+                    'Empty fields are omitted'}
               </small>
             </span>
             <span aria-hidden="true" className="text-muted-foreground">
@@ -315,11 +319,12 @@ export function ResumeEditor({ resume, onChange }: Props) {
               </Button>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              {(['role', 'organization', 'period'] as const).map((key) => (
+              {(['role', 'organization', 'location', 'period'] as const).map((key) => (
                 <Label key={key} className="capitalize">
                   {key}
                   <Input
-                    value={entry[key]}
+                    placeholder={key === 'location' ? 'Remote, hybrid, or city' : undefined}
+                    value={entry[key] ?? ''}
                     onChange={(event) =>
                       updateExperience(index, { ...entry, [key]: event.target.value })
                     }

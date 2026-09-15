@@ -26,6 +26,18 @@ describe('resume content contract', () => {
     expect(result.data?.experience[0].bullets[0]).not.toHaveProperty('obsolete')
   })
 
+  test('accepts saved revisions created before job locations existed', () => {
+    const legacy = structuredClone(resumeSource) as {
+      experience: Array<{ location?: string }>
+    }
+    delete legacy.experience[0].location
+
+    const result = validateResume(legacy)
+
+    expect(result.errors).toEqual([])
+    expect(result.data?.experience[0].location).toBeUndefined()
+  })
+
   test('removes hidden content from the public projection', () => {
     const resume = validResume()
     const hiddenBullet = resume.experience[0].bullets[0]
@@ -45,6 +57,7 @@ describe('resume content contract', () => {
       ...resume.experience[0],
       role: '',
       organization: '',
+      location: ' ',
       period: '',
       note: ' ',
       bullets: [{ id: 'blank-bullet', text: '   ' }],
@@ -72,5 +85,12 @@ describe('resume content contract', () => {
       value: 'School',
       trailing: undefined,
     })
+  })
+
+  test('normalizes job locations for every renderer', () => {
+    const resume = validResume()
+    resume.experience[0].location = '  Remote  '
+
+    expect(makePublicResume(resume).experience[0].location).toBe('Remote')
   })
 })

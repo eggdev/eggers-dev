@@ -205,9 +205,9 @@ function Experience({ entry, density }: { entry: ResumeExperience; density: Resu
       wrap={false}
       style={brief ? densityStyles[density].briefEntry : densityStyles[density].entry}
     >
-      {entry.role || entry.organization || entry.period ? (
+      {entry.role || entry.organization || entry.location || entry.period ? (
         <View style={styles.entryHead}>
-          {entry.role || entry.organization ? (
+          {entry.role || entry.organization || entry.location ? (
             <Text
               style={[
                 styles.role,
@@ -215,12 +215,16 @@ function Experience({ entry, density }: { entry: ResumeExperience; density: Resu
               ]}
             >
               {entry.role}
-              {entry.role && entry.organization ? (
+              {entry.role && (entry.organization || entry.location) ? (
                 <Text style={styles.organizationSeparator}> · </Text>
               ) : null}
               {entry.organization ? (
                 <Text style={styles.organization}>{entry.organization}</Text>
               ) : null}
+              {entry.organization && entry.location ? (
+                <Text style={styles.organizationSeparator}> · </Text>
+              ) : null}
+              {entry.location ? <Text style={styles.organization}>{entry.location}</Text> : null}
             </Text>
           ) : null}
           {entry.period ? <Text style={styles.dates}>{entry.period}</Text> : null}

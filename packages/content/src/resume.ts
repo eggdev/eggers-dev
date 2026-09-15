@@ -28,6 +28,7 @@ export interface ResumeExperience {
   id: string
   role: string
   organization: string
+  location?: string
   period: string
   note?: string
   bullets: ResumeBullet[]
@@ -77,6 +78,7 @@ export const ResumeExperienceSchema = Schema.Struct({
   id,
   role: text(120),
   organization: text(120),
+  location: optionalText(120),
   period: text(80),
   note: optionalText(300),
   bullets: Schema.mutable(Schema.Array(ResumeBulletSchema).pipe(Schema.maxItems(20))),
@@ -144,6 +146,7 @@ export function makePublicResume(resume: ResumeContent): ResumeContent {
         ...entry,
         role: clean(entry.role),
         organization: clean(entry.organization),
+        location: cleanOptional(entry.location),
         period: clean(entry.period),
         note: cleanOptional(entry.note),
         bullets: entry.bullets
@@ -155,6 +158,7 @@ export function makePublicResume(resume: ResumeContent): ResumeContent {
         (entry) =>
           entry.role.length > 0 ||
           entry.organization.length > 0 ||
+          Boolean(entry.location) ||
           entry.period.length > 0 ||
           Boolean(entry.note) ||
           entry.bullets.length > 0

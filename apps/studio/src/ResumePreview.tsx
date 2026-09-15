@@ -259,9 +259,9 @@ export function ResumePreview({ resume, publicUrl, expanded, onExpandedChange, o
                         className={`break-inside-avoid ${brief ? 'mb-[4px]' : density.entry}`}
                         key={entry.id}
                       >
-                        {(entry.role || entry.organization || entry.period) && (
+                        {(entry.role || entry.organization || entry.location || entry.period) && (
                           <div className="flex items-baseline justify-between gap-3">
-                            {(entry.role || entry.organization) && (
+                            {(entry.role || entry.organization || entry.location) && (
                               <h3
                                 className={`m-0 leading-[1.25] text-[#151b24] ${
                                   brief
@@ -270,12 +270,20 @@ export function ResumePreview({ resume, publicUrl, expanded, onExpandedChange, o
                                 }`}
                               >
                                 {entry.role}
-                                {entry.role && entry.organization && (
+                                {entry.role && (entry.organization || entry.location) && (
                                   <span className="mx-[0.5em] font-bold text-[#c5ccd5]">·</span>
                                 )}
                                 {entry.organization && (
                                   <span className="font-[450] text-[#5c6675]">
                                     {entry.organization}
+                                  </span>
+                                )}
+                                {entry.organization && entry.location && (
+                                  <span className="mx-[0.5em] font-bold text-[#c5ccd5]">·</span>
+                                )}
+                                {entry.location && (
+                                  <span className="font-[450] text-[#5c6675]">
+                                    {entry.location}
                                   </span>
                                 )}
                               </h3>

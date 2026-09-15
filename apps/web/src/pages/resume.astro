@@ -62,14 +62,23 @@ const serializedResume = JSON.stringify(resume).replaceAll('<', '\\u003c')
             <div class="entries">
               {experiences.map((entry) => (
                 <article class:list={['entry', entry.bullets.length === 0 && 'entry--brief']}>
-                  {(entry.role || entry.organization || entry.period) && (
+                  {(entry.role || entry.organization || entry.location || entry.period) && (
                     <div class="entry__head">
-                      {(entry.role || entry.organization) && (
+                      {(entry.role || entry.organization || entry.location) && (
                         <h3>
                           {entry.role}
                           {entry.organization && (
                             <span class:list={[!entry.role && 'organization--only']}>
                               {entry.organization}
+                            </span>
+                          )}
+                          {entry.location && (
+                            <span
+                              class:list={[
+                                !entry.role && !entry.organization && 'organization--only',
+                              ]}
+                            >
+                              {entry.location}
                             </span>
                           )}
                         </h3>

@@ -30,6 +30,7 @@
       "id": "lv-collective",
       "role": "Director, Software Engineering",
       "organization": "LV Collective",
+      "location": "Remote",
       "period": "Oct 2024 – Present",
       "note": "Forward deployed engineer guiding the organization to the AI-Native frontier",
       "bullets": [
@@ -60,6 +61,7 @@
       "id": "bar-savvy",
       "role": "Technical Co-Founder & CTO",
       "organization": "Bar Savvy",
+      "location": "Remote",
       "period": "May 2023 – Present",
       "note": "Independent venture founded in 2023 and incubated at LV Collective since October 2024.",
       "bullets": [
@@ -89,6 +91,7 @@
       "id": "nba",
       "role": "Senior Software Engineer",
       "organization": "NBA, Direct-to-Consumer",
+      "location": "Remote",
       "period": "Mar 2022 – Oct 2024",
       "note": "Served as lead engineer for client-side authentication, subscription checkout, and third-party account linking across NBA digital properties.",
       "bullets": [
@@ -118,6 +121,7 @@
       "id": "orange-comet",
       "role": "Senior Frontend Engineer",
       "organization": "Orange Comet (contract, then full-time)",
+      "location": "Remote",
       "period": "Sep 2021 – May 2022",
       "bullets": []
     },
@@ -125,6 +129,7 @@
       "id": "openslate-return",
       "role": "Frontend Engineer",
       "organization": "OpenSlate; acquired by DoubleVerify",
+      "location": "Remote",
       "period": "Mar 2021 – Jan 2022",
       "bullets": []
     },
@@ -132,6 +137,7 @@
       "id": "makespace",
       "role": "Software Engineer",
       "organization": "MakeSpace",
+      "location": "Remote",
       "period": "Aug 2020 – Mar 2021",
       "bullets": []
     },
