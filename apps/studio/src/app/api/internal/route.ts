@@ -3,6 +3,16 @@ import { apiError, execute } from '@studio/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const allowed = new Set([
+  'map.get',
+  'map.catalog',
+  'map.labels',
+  'map.pending',
+  'map.capability',
+  'map.concept.save',
+  'map.capability.save',
+  'map.link',
+  'map.unlink',
+  'map.capability.delete',
   'settings',
   'context',
   'threads.get',

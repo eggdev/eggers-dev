@@ -126,4 +126,14 @@ UPDATE tracked_jobs SET stage_activity_id=(SELECT id FROM job_activities WHERE j
 UPDATE tracked_jobs SET stage_since=(SELECT happened_on FROM job_activities WHERE job_id=tracked_jobs.id AND kind='stage_change' ORDER BY recorded_at DESC,id DESC LIMIT 1);
 `,
   },
+  {
+    version: 7,
+    sql: `
+CREATE TABLE requirement_concepts (id text PRIMARY KEY,label text NOT NULL,description text NOT NULL DEFAULT '',revision integer NOT NULL DEFAULT 1);
+CREATE TABLE requirement_capabilities (id text PRIMARY KEY,label text NOT NULL,kind text NOT NULL,description text NOT NULL DEFAULT '',experience_guide text NOT NULL DEFAULT '',prompts jsonb NOT NULL DEFAULT '[]',distinctions text NOT NULL DEFAULT '',revision integer NOT NULL DEFAULT 1);
+CREATE TABLE requirement_capability_concepts (capability_id text REFERENCES requirement_capabilities(id) ON DELETE CASCADE,concept_id text REFERENCES requirement_concepts(id) ON DELETE CASCADE,PRIMARY KEY(capability_id,concept_id));
+CREATE TABLE requirement_links (listing_id text REFERENCES listings(id) ON DELETE CASCADE,requirement_key text NOT NULL,capability_id text REFERENCES requirement_capabilities(id) ON DELETE CASCADE,PRIMARY KEY(listing_id,requirement_key,capability_id));
+CREATE INDEX requirement_links_capability ON requirement_links(capability_id);
+`,
+  },
 ];

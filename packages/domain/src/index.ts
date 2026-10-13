@@ -10,6 +10,7 @@ import {
   TopicInput,
 } from '@repo/domain/contracts';
 import { DomainError } from '@repo/domain/errors';
+import { readTaxonomy, requirementTaxonomy } from '@repo/domain/requirement-taxonomy';
 import { canonicalUrl, contentHash, fetchDescription } from '@repo/domain/research';
 import { tracking } from '@repo/domain/tracking';
 import type {
@@ -26,12 +27,8 @@ import type {
 } from '@repo/domain/types';
 import { Effect, Schema } from 'effect';
 
-export type * from '@repo/domain/types';
-
-import { requirementMap } from '@repo/domain/requirements';
-
 export { DomainError } from '@repo/domain/errors';
-export { requirementMap } from '@repo/domain/requirements';
+export type * from '@repo/domain/types';
 
 function decode<T>(schema: Schema.Codec<T, any>, value: unknown): T {
   try {
@@ -50,6 +47,7 @@ const requiredId = (value: unknown): string => {
 export type Actor = 'owner' | 'eve';
 export function createCareerService(db: Database, retireSession?: (session: any) => Promise<void>) {
   const track = tracking(db);
+  const taxonomy = requirementTaxonomy(db);
   const settings = async (): Promise<Settings> =>
     (await db.query('SELECT value FROM settings WHERE id=$1', ['owner']))[0].value;
   const workspace = async (): Promise<Workspace> => {
@@ -72,7 +70,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
       entries,
       topics,
       listings: listings.map((listing) => ({ ...listing, requirements: [] })),
-      requirements: requirementMap(listings as Listing[]),
+      requirementHierarchy: (await readTaxonomy(db, listings as Listing[])).hierarchy,
       proposals,
       settings: prefs,
       storage: process.env.DATABASE_URL ? 'neon' : 'local',
@@ -167,6 +165,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         throw new DomainError('Job tracking changes require owner access.', 403);
       return track(action, raw);
     }
+    if (action.startsWith('map.')) return taxonomy(action, raw);
     switch (action) {
       case 'workspace':
         return workspace();
@@ -301,7 +300,12 @@ export function createCareerService(db: Database, retireSession?: (session: any)
             revision: e.revision,
           })),
           topics: state.topics,
-          requirements: state.requirements,
+          requirements: {
+            ...state.requirementHierarchy,
+            capabilities: state.requirementHierarchy.capabilities.map(
+              ({ experience_guide, prompts, distinctions, aliases, ...summary }) => summary,
+            ),
+          },
           messages: messages.reverse(),
         };
       }

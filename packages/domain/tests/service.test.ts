@@ -172,7 +172,8 @@ describe('research corpus', () => {
     await run('research.queue', { urls: ['https://another.example/jobs/123'] });
     const other = (await run('workspace')).listings.find((l: any) => l.id !== listing.id);
     expect((await run('research.capture', { id: other.id, description })).status).toBe('duplicate');
-    expect((await run('workspace')).requirements[0].count).toBe(1);
+    expect((await run('workspace')).requirementHierarchy.listingCount).toBe(1);
+    expect((await run('map.labels'))[0].label).toBe('React');
   });
   it('parses structured job pages consistently', () => {
     const page = parsePage(
@@ -257,7 +258,7 @@ describe('review and deletion across the bank', () => {
     expect(listing.description).toBe('');
     expect(listing.requirements).toEqual([]);
     expect((await run('research.get', { id: listing.id })).description.length).toBeGreaterThan(100);
-    expect(state.requirements.length).toBeGreaterThan(0);
+    expect(state.requirementHierarchy.totalRequirements).toBeGreaterThan(0);
   });
 });
 

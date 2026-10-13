@@ -40,7 +40,8 @@ it('repairs JSON encoded twice without changing existing structured data', async
     );
     const workspace = await run('workspace');
     expect(workspace.settings).toEqual(prefs);
-    expect(workspace.requirements).toMatchObject([{ label: 'React', count: 1 }]);
+    expect(workspace.requirementHierarchy.totalRequirements).toBe(1);
+    expect(await run('map.labels')).toMatchObject([{ label: 'React' }]);
     expect(workspace.threads[0].session).toEqual({ sessionId: 'existing', streamIndex: 42 });
     expect(workspace.threads[0].events).toEqual([{ type: 'existing-event' }]);
   } finally {

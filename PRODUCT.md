@@ -18,6 +18,13 @@ and technical product management, expanding as curiosity develops. NYC metro inc
 Fairfield County CT and remote roles available from NYC; no salary filter. Preserve the complete
 requirement map and decide together when coverage is sufficient. Research is not target selection.
 
+The requirement map organizes broad concepts → specific capabilities → original requirements.
+Merge genuine synonyms, keep related behaviors distinct, and allow cross-links and compound
+requirements. Counts use distinct listings at every level. Preserve source wording, alternatives,
+depth and required/preferred qualifiers. Capability definitions, experience guides, recall questions
+and distinctions support the interview; they never establish the owner's experience or guarantee
+an employer's assessment. The owner and Eve can correct the vocabulary and associations.
+
 The owner supplies bulk URLs or captures listings from a signed-in personal browser (TrueUp
 first). Fetch/extract is repeatable, deduplicated and inspectable. Extraction defaults to Luna;
 interview models are configurable. Private Eve may access the web. Imported pages never have

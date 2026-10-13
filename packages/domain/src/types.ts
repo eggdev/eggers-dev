@@ -1,3 +1,4 @@
+import type { RequirementHierarchy } from '@repo/domain/requirement-taxonomy-types';
 export interface Role {
   id: string;
   title: string;
@@ -91,18 +92,12 @@ export interface EntryInput {
   expectedRevision?: number;
 }
 export interface Workspace {
+  requirementHierarchy: RequirementHierarchy;
   roles: Role[];
   threads: Thread[];
   entries: Entry[];
   topics: Topic[];
   listings: Listing[];
-  requirements: {
-    label: string;
-    kind: string;
-    count: number;
-    families: string[];
-    listingIds: string[];
-  }[];
   proposals: Proposal[];
   settings: Settings;
   storage: 'neon' | 'local';

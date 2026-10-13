@@ -46,6 +46,9 @@ contracts. Do not restore the old Worker infrastructure, Home app, design system
   separate workflows. Tracking now records stages, timelines and next actions; never submit
   applications or infer unknown dates. Preserve original descriptions, excerpts, parser/model metadata,
   and deduplicate URLs/content. GPT-6 Luna is the default extraction model.
+- Organize research as concepts → capabilities → original requirements, with cross-links and
+  distinct-listing counts. Keep meaningful differences and source qualifiers. Experience guides
+  elicit real stories; they do not establish the owner's skills or require metrics.
 - Subscription-backed model access is local only. Do not copy subscription credentials into
   deployments. Remote interviews/voice are a separate milestone.
 - Use basic shadcn styling, accessible controls, responsive layouts, and reduced-motion support.

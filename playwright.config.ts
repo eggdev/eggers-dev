@@ -18,6 +18,7 @@ export default defineConfig({
       env: {
         LOCAL_DATA_DIR: `${root}/studio-${Date.now()}`,
         EVE_TEST_FIXTURE: '1',
+        STUDIO_INTERNAL_TOKEN: 'isolated-playwright-fixture',
         EVE_TELEMETRY_DISABLED: '1',
         EVE_TRACES: 'off',
       },

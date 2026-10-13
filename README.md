@@ -43,6 +43,10 @@ stores initialize automatically. Never place private content or secrets in Git.
 3. Add listing URLs in Job research. Choose **Process with Eve**, then send the prepared message.
    The extraction subagent uses Luna and continues batches. Blocked sources remain visible for
    browser capture or manual paste.
+   Choose **Organize with Eve** to consolidate extracted requirements into broad concepts and
+   specific capabilities. Search also matches original wording. Open a capability for recall
+   questions, an editable experience guide, and verbatim source excerpts. Related capabilities
+   can span concepts; counts always represent distinct listings. Unmapped requirements stay visible.
 4. Switch a role conversation to **Pass 2 · Dig deeper** when ready. Eve uses the full recurring
    requirement map as prompts, without treating missing stories as absent skills.
 

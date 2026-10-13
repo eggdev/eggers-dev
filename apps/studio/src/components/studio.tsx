@@ -5,6 +5,7 @@ import { MarkdownEditor } from '@repo/ui/editor';
 import { api } from '@studio/components/api';
 import { Chat } from '@studio/components/chat';
 import { JobTracker } from '@studio/components/job-tracker';
+import { RequirementMap } from '@studio/components/requirement-map';
 import { diffLines } from 'diff';
 import {
   ArrowUpRight,
@@ -354,6 +355,11 @@ export function Studio() {
                 setTrackedJobId(job.id);
                 setSection('jobs');
               }}
+              organize={() =>
+                createThread(
+                  'Organize the existing research requirements into broad concepts and specific capabilities using persisted requirement_map tools. Reuse existing vocabulary, preserve all original excerpts and distinctions, and write experience guides and recall prompts. Associate unmapped requirements only where the actual excerpt supports the capability; create missing capabilities instead of forcing unrelated meanings together. Audit the resulting associations before finishing. Do not modify the career bank or job tracking. Report remaining unmapped sources honestly.',
+                )
+              }
               process={() =>
                 createThread(
                   'Process the pending research corpus with the extractor. Collect the full requirement map with verbatim source excerpts. Continue in batches and tell me which listings need the browser importer.',
@@ -907,18 +913,20 @@ function Research({
   act,
   process,
   track,
+  organize,
 }: {
   state: Workspace;
   act: Act;
   process: () => Promise<void>;
   track: (listingId: string) => Promise<void>;
+  organize: () => Promise<void>;
 }) {
   const [urls, setUrls] = useState('');
   const [family, setFamily] = useState(families[0]);
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState('');
-  const requirements = state.requirements;
+  const requirements = state.requirementHierarchy;
   const [details, setDetails] = useState<Record<string, Listing>>({});
   const ready = state.listings.filter((l) => l.status === 'ready' && !l.duplicate_of).length;
   return (
@@ -976,7 +984,8 @@ function Research({
       </form>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {state.listings.length} sources · {ready} parsed · {requirements.length} requirements
+          {state.listings.length} sources · {ready} parsed · {requirements.totalRequirements} source
+          requirements
         </p>
         <Button
           variant="outline"
@@ -995,36 +1004,12 @@ function Research({
         For signed-in TrueUp pages, use <code>bun run import:browser</code> on this computer. The
         importer opens a dedicated browser profile and sends visible descriptions to Studio.
       </p>
-      {requirements.length > 0 && (
-        <details open className="rounded-lg border p-5">
-          <summary className="cursor-pointer text-sm font-medium">
-            Requirement map · {ready} unique listings
-          </summary>
-          <div className="mt-4 max-h-80 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b text-muted-foreground">
-                  <th className="py-2 font-normal">Requirement</th>
-                  <th className="font-normal">Listings</th>
-                  <th className="font-normal">Role families</th>
-                </tr>
-              </thead>
-              <tbody>
-                {requirements.map((r) => (
-                  <tr key={r.label} className="border-b">
-                    <td className="py-3 pr-4">
-                      {r.label}
-                      <span className="block text-xs text-muted-foreground">{r.kind}</span>
-                    </td>
-                    <td>{r.count}</td>
-                    <td className="text-xs text-muted-foreground">{r.families.join(', ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
+      <RequirementMap
+        map={requirements}
+        act={act}
+        organize={organize}
+        canOrganize={state.modelConnection !== 'disabled'}
+      />
       <Input
         aria-label="Filter listings"
         value={filter}
