@@ -1,0 +1,13 @@
+{
+  "name": "domain",
+  "sourceRoot": "packages/domain/src",
+  "projectType": "library",
+  "targets": {
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bunx tsc --noEmit -p packages/domain/tsconfig.json"
+      }
+    }
+  }
+}

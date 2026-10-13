@@ -1,58 +1,25 @@
-# build output
-dist/
-.astro/
-
-# dependencies
 node_modules/
-
-# generated types
+.next/
+.eve/
+.nx/
+.data/
+.vercel/
+.env*
+!.env.example
 *.tsbuildinfo
-
-# logs
 *.log
-npm-debug.log*
-
-# environment
-.env
-.env.production
-.dev.vars
-.wrangler/
-
-# private Home imports and generated SQL
-/apps/home/.private/
-/apps/home/imports/
-
-# Nx task cache and Playwright output
-/.nx/
-/test-results/
-/playwright-report/
-
-# os
+test-results/
+playwright-report/
 .DS_Store
-Thumbs.db
-
-# editor
-.vscode/*
-!.vscode/extensions.json
-.idea/
-.gstack/
-
-# research + raw source copy — NOT for the public repo
-# (dossiers carry self-reported metrics, named colleagues, internal notes)
-# leading slash anchors to repo root so src/content/ is NOT matched
-# content/drafts/ is the exception: voice-tested drafts with cleared-public facts only
+.wrangler/
+.dev.vars
 /_source/
-/content/*
-!/content/drafts/
-
-# agent / skill tooling installs — not portfolio code
-/.claude/
+/content/
 /.agents/
+/.claude/
 /.cursor/
-/.gemini/
-/.kiro/
 /.opencode/
-
-# impeccable tool state (critique snapshots, live config, design sidecar)
 /.impeccable/
-/.serena
+/.gstack/
+.output/
+next-env.d.ts

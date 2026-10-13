@@ -1,17 +1,4 @@
 {
   "extends": "./tsconfig.base.json",
-  "files": [],
-  "references": [
-    { "path": "./apps/web" },
-    { "path": "./apps/studio" },
-    { "path": "./apps/home" },
-    { "path": "./packages/auth" },
-    { "path": "./packages/cms" },
-    { "path": "./packages/content" },
-    { "path": "./packages/database" },
-    { "path": "./packages/design" },
-    { "path": "./packages/home" },
-    { "path": "./packages/ui" },
-    { "path": "./packages/worker" }
-  ]
+  "include": ["tools/**/*.ts", "e2e/**/*.ts", "*.config.ts"]
 }

@@ -1,6 +1,30 @@
 {
   "name": "web",
-  "projectType": "application",
   "sourceRoot": "apps/web/src",
-  "tags": ["type:app", "scope:web"]
+  "projectType": "application",
+  "implicitDependencies": ["domain", "database", "ui"],
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/run-app.mjs web"
+      },
+      "continuous": true,
+      "cache": false
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun run --cwd apps/web build"
+      },
+      "outputs": ["{workspaceRoot}/apps/web/.next"],
+      "cache": false
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bunx tsc --noEmit -p apps/web/tsconfig.json"
+      }
+    }
+  }
 }

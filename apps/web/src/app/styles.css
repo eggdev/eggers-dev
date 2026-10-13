@@ -1,0 +1,25 @@
+.construction {
+  display: grid;
+  grid-template-columns: repeat(3, 10px);
+  gap: 5px;
+  width: max-content;
+}
+.construction span {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--foreground);
+  animation: assemble 3s ease-in-out infinite;
+}
+@keyframes assemble {
+  0%,
+  70%,
+  100% {
+    opacity: 0.18;
+    transform: scale(0.8);
+  }
+  30%,
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

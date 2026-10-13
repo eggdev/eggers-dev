@@ -1,6 +1,13 @@
 {
-  "name": "@repo/ui",
-  "projectType": "library",
+  "name": "ui",
   "sourceRoot": "packages/ui/src",
-  "tags": ["type:ui", "scope:shared"]
+  "projectType": "library",
+  "targets": {
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bunx tsc --noEmit -p packages/ui/tsconfig.json"
+      }
+    }
+  }
 }

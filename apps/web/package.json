@@ -1,41 +1,23 @@
 {
-  "name": "web",
-  "version": "0.1.0",
+  "name": "@repo/web",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "wrangler dev",
-    "check": "astro check && wrangler types --check worker-configuration.d.ts",
-    "test": "vitest run --config ../../vitest.config.ts --root . --passWithNoTests",
-    "types": "wrangler types worker-configuration.d.ts",
-    "deploy": "astro build && wrangler deploy --config dist/server/wrangler.json"
+    "dev": "next dev --hostname 127.0.0.1 --port 3000",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3000"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "catalog:",
-    "@astrojs/sitemap": "catalog:",
-    "@fontsource-variable/mona-sans": "catalog:",
-    "@repo/auth": "workspace:*",
-    "@repo/cms": "workspace:*",
-    "@repo/content": "workspace:*",
-    "@repo/design": "workspace:*",
-    "@repo/worker": "workspace:*",
-    "astro": "catalog:",
-    "effect": "catalog:"
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "lucide-react": "catalog:",
+    "@repo/ui": "workspace:*",
+    "@repo/database": "workspace:*",
+    "@repo/domain": "workspace:*"
   },
   "devDependencies": {
-    "@astrojs/check": "catalog:",
-    "@tailwindcss/vite": "catalog:",
-    "tailwindcss": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:",
-    "wrangler": "catalog:"
-  },
-  "nx": {
-    "tags": [
-      "type:app",
-      "scope:web"
-    ]
+    "@tailwindcss/postcss": "catalog:",
+    "tailwindcss": "catalog:"
   }
 }

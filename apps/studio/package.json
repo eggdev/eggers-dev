@@ -1,47 +1,30 @@
 {
-  "name": "studio",
-  "version": "0.1.0",
+  "name": "@repo/studio",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "tsc -p tsconfig.json && wrangler types --check worker-configuration.d.ts",
-    "test": "vitest run --config ../../vitest.config.ts --root . --passWithNoTests",
-    "types": "wrangler types worker-configuration.d.ts",
-    "db:migrate:local": "wrangler d1 migrations apply eggers-apps --local",
-    "db:migrate:remote": "wrangler d1 migrations apply eggers-apps --remote",
-    "deploy": "vite build && wrangler deploy --config dist/eggers_career_studio/wrangler.json"
+    "dev": "next dev --hostname 127.0.0.1 --port 3001",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3001",
+    "build:eve": "eve build"
   },
   "dependencies": {
-    "@cloudflare/vite-plugin": "catalog:",
-    "@repo/auth": "workspace:*",
-    "@repo/cms": "workspace:*",
-    "@repo/content": "workspace:*",
-    "@repo/database": "workspace:*",
-    "@repo/design": "workspace:*",
-    "@repo/ui": "workspace:*",
-    "@repo/worker": "workspace:*",
-    "effect": "catalog:",
+    "next": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "lucide-react": "catalog:",
+    "@repo/ui": "workspace:*",
+    "@repo/database": "workspace:*",
+    "@repo/domain": "workspace:*",
+    "eve": "catalog:",
+    "ai": "catalog:",
+    "effect": "catalog:",
+    "react-markdown": "catalog:",
+    "remark-gfm": "catalog:",
+    "diff": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "catalog:",
-    "@types/react": "catalog:",
-    "@types/react-dom": "catalog:",
-    "@vitejs/plugin-react": "catalog:",
-    "tailwindcss": "catalog:",
-    "typescript": "catalog:",
-    "vite": "catalog:",
-    "vitest": "catalog:",
-    "wrangler": "catalog:"
-  },
-  "nx": {
-    "tags": [
-      "type:app",
-      "scope:studio"
-    ]
+    "@tailwindcss/postcss": "catalog:",
+    "tailwindcss": "catalog:"
   }
 }

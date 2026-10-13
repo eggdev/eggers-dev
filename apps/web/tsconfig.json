@@ -1,6 +1,21 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": [".astro/types.d.ts", "src/**/*", "astro.config.mjs", "worker-configuration.d.ts"],
-  "exclude": ["dist"],
-  "compilerOptions": { "strictNullChecks": true }
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "incremental": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "agent/**/*.ts",
+    "next.config.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".eve"]
 }

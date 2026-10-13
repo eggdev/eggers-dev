@@ -1,6 +1,0 @@
-{
-  "name": "@repo/design",
-  "projectType": "library",
-  "sourceRoot": "packages/design/src",
-  "tags": ["type:foundation", "scope:shared"]
-}

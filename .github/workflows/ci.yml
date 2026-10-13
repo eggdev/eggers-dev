@@ -1,40 +1,26 @@
-name: CI
-
+name: Verify
 on:
   pull_request:
   push:
     branches: [main]
-
 permissions:
-  actions: read
   contents: read
-
 jobs:
-  verify:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun ci
-
-      - name: Find affected projects
-        uses: nrwl/nx-set-shas@v5
-
-      - name: Enforce aliases
-        run: bun run lint:imports
-
-      - name: Verify affected projects
-        run: bunx nx affected -t lint,check,test,build
-
-      - name: Install Playwright Chromium
-        run: bunx playwright install --with-deps chromium
-
-      - name: Smoke-test all applications
-        run: bun run test:e2e
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build
+      - run: bun run build:eve
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:e2e

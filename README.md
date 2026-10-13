@@ -1,94 +1,107 @@
 # eggers.dev
 
-An Nx monorepo for Brendan Eggers' public portfolio and private tools. The layout follows the
-structural ideas in [next-forge](https://www.next-forge.com/docs/structure): independently
-deployable apps, shared implementation packages, app-owned environment composition, and enforced
-dependency boundaries. Nx replaces Turborepo as the workspace engine.
+A fresh career workspace for Brendan Eggers. Studio helps build a detailed career knowledge bank
+through conversations with Eve, then uses recurring job requirements to prompt deeper recall.
+Web is a minimal public holding page with a single launch-email signup.
 
-## Applications
+## Run locally
 
-| App | Host | Runtime | Access |
-| --- | --- | --- | --- |
-| `web` | `eggers.dev` | Astro SSR on Cloudflare Workers | Public; `/preview/*` requires Access |
-| `studio` | `studio.eggers.dev` | React/Vite + Worker | Entire app requires Access |
-| `home` | `home.eggers.dev` | React/Vite + Worker | Entire app requires Access |
+Requires Node 24+, Bun 1.4+, and the Codex CLI with a subscription sign-in for live interviews.
 
-Studio is the CMS for Web. It autosaves one structured whole-site draft to D1 and explicitly
-publishes one validated snapshot to Workers KV. Web reads that snapshot server-side and falls back
-to the checked-in seed when KV is empty or temporarily unavailable. Home and Studio share one D1
-database but use separate query modules and tables.
-
-## Develop
-
-```bash
+```sh
 bun install
-bun run dev             # all three apps
-bun run dev:web         # http://localhost:4321
-bun run dev:studio      # http://localhost:5173
-bun run dev:home        # http://localhost:5174
+bun run eve:login
+# Complete Codex sign-in in your browser.
+bun run dev
 ```
 
-Local Studio and Home setup:
+- Studio: http://127.0.0.1:3001
+- Web: http://127.0.0.1:3000
 
-```bash
-bun run --cwd apps/studio db:migrate:local
-bun run --cwd apps/home db:migrate:local
+`bun run dev:studio` and `bun run dev:web` start either app alone. The launcher generates a
+process-local internal token shared by Next and Eve. Use the launcher, not a bare `next dev`.
+No API key is necessary for local subscription mode. Interview and extraction model identifiers
+are editable in Studio Settings; the defaults are `gpt-6.1-sol` and `gpt-6-luna`. Availability
+depends on your account. Eve uses a conservative 128,000-token working context budget for
+local models; set `EVE_CONTEXT_WINDOW_TOKENS` if selecting a model with a smaller limit. Authentication failures are shown in the conversation, not replaced
+with simulated replies. This repository does not copy or store Codex credentials.
+
+Local data persists in each app’s `.data/postgres` directory using PGlite (PostgreSQL compiled
+to WASM). One Next process owns each directory; Eve accesses Studio’s internal API. Restarting
+keeps your bank. Do not run two app processes against the same directory. Use `LOCAL_DATA_DIR`
+for an isolated store. There is no historical content migration or seed.
+
+For Neon, set `DATABASE_URL` in the app’s `.env.local` or launch environment. Run
+`DATABASE_URL=… bun run db:migrate` once against a fresh database before deployment. Local
+stores initialize automatically. Never place private content or secrets in Git.
+
+## Working in Studio
+
+1. Add a role or start a focused conversation. Explore memories freely in **Pass 1 · Recall**.
+2. Eve saves narrative entries and builds an editable interview map. Review/correct them in
+   Knowledge bank. Revisions can be restored into the editor and saved as a new revision.
+3. Add listing URLs in Job research. Choose **Process with Eve**, then send the prepared message.
+   The extraction subagent uses Luna and continues batches. Blocked sources remain visible for
+   browser capture or manual paste.
+4. Switch a role conversation to **Pass 2 · Dig deeper** when ready. Eve uses the full recurring
+   requirement map as prompts, without treating missing stories as absent skills.
+
+The editor renders Markdown as you type or paste. Select text for formatting, or type `/` in an
+empty paragraph for headings, lists, quotes and code blocks. Messages sent to Eve are Markdown.
+
+**Automatic edits start on.** Enable “Review Eve’s edits” in Settings to queue diffs for entries, role details, and interview topics.
+Requested deletions happen directly. Entry deletion removes its revisions and linked transcript
+turns (including associated replies). Conversation deletion also removes entries sourced from that conversation. Runtime
+sessions are retired and event snapshots cleared to prevent replay of deleted source content.
+Deleting a source-linked entry can remove a message that also supported another entry; inspect
+and correct those related entries when needed. Semantic copies in unrelated narrative text are
+not automatically detected. There is no hidden trash or archival copy in the application.
+
+## Browser job capture
+
+```sh
+bunx playwright install chromium
+bun run import:browser
+# Or supply listing URLs:
+bun run import:browser /path/to/listings.txt
 ```
 
-Loopback requests use the explicit local Access bypass in each app's Wrangler configuration. Any
-non-loopback request fails closed without a valid Cloudflare Access assertion.
+Start Studio first. The importer opens a dedicated persistent browser profile in `.data/browser`.
+Sign into TrueUp yourself, navigate to saved jobs/search results, then follow the terminal prompt.
+Without a URL file it gathers listing links currently present on that page (scroll/load more
+before continuing). It captures rendered pages and preserves originals in Studio. Logged-in
+sessions remain on your personal computer. Use `BROWSER_CHANNEL=chrome` if you prefer installed
+Chrome. The importer does not assume a LinkedIn API or bypass login/paywall controls.
 
-## Quality gates
+Imports normalize tracking URLs, detect repeated descriptions, preserve failed retrievals,
+and retain verbatim requirement evidence. Re-fetching an unchanged parsed description avoids
+another extraction. Source-specific JSON-LD parsing is preferred; visible-page capture is the
+fallback. Review extracted location/family fields for relevance; ingestion does not silently
+filter or score candidates. Daily discovery and application tracking come later.
 
-```bash
-bun run lint             # Oxlint, Nx boundaries, and no-relative-import check
-bun run check            # TypeScript, Astro, and generated Wrangler binding drift
-bun run test             # Vitest plus Cloudflare Workers/D1 integration
-bun run test:e2e         # Playwright smoke coverage for all three apps
-bun run build            # Nx-cached production builds
+## Checks
+
+```sh
+bun run check
+bun run lint
+bun run test
+bun run test:e2e
+bun run build
+bun run build:eve
 ```
 
-All local source imports must use `@web/*`, `@studio/*`, `@home/*`, or `@repo/*`. Relative source
-imports are rejected by both Oxlint and the repository import check.
+Tests use empty disposable databases. Browser tests start local services with isolated stores;
+they do not send paid model requests. Live subscription access and a real Neon connection depend on your account/environment;
+the automated suite intentionally uses no model billing.
 
-## Structure
+## Deployment direction
 
-```text
-apps/
-├── web/                 public Astro renderer and preview route
-├── studio/              structured CMS and publishing Worker
-└── home/                private family workspace
-packages/
-├── auth/                Cloudflare Access identity service
-├── cms/                 draft, preview, and publication workflows
-├── content/             Effect Schema contracts and checked-in fallback
-├── database/            shared D1 migrations and domain query adapters
-├── design/              Tailwind v4 tokens and shared source styles
-├── home/                Home contracts and Effect services
-├── ui/                  customized shadcn-style React primitives
-└── worker/              shared Request → Effect → Response boundary
-```
+Two Vercel projects, rooted at `apps/web` and `apps/studio`; keep workspace dependencies available.
+See [deployment notes](docs/deployment.md). Nothing is deployed by local development or these
+checks. The existing Cloudflare production wiring must be explicitly disconnected during cutover.
+Do not merge/push assuming that the old production setup has already been removed.
 
-The applications never import one another. Domain packages describe policy and contracts;
-infrastructure packages implement Cloudflare and database concerns; apps compose those layers.
-See [Architecture](docs/architecture.md) for the dependency rules.
-
-## Deployment
-
-Deployment remains deliberately explicit—there is no deploy-all command:
-
-```bash
-bun run deploy:web
-bun run deploy:studio
-bun run deploy:home
-```
-
-The checked-in Wrangler files still contain IDs that must be replaced during the production
-cutover. Do not deploy until [Cloudflare cutover](docs/cloudflare-cutover.md) is complete.
-
-Anything that lands on `main` may ship through the existing Cloudflare Git integrations. CI only
-verifies; it does not deploy. Configure each Worker build independently and use app-specific watch
-paths. Commit, do not push, unless deployment is intended.
-
-Public visual constraints remain in [DESIGN.md](DESIGN.md). Repository rules for agents and
-contributors are in [AGENTS.md](AGENTS.md).
+Later milestones: live voice, remote private interviews, explicit public knowledge preparation,
+low-cost public Eve, targeted resumes and cover letters, job targets and application tracking,
+and scheduled discovery. Launch notifications are collected now; sending the single launch
+email is a separate explicit launch action, not an automatic development side effect.

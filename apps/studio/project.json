@@ -1,6 +1,30 @@
 {
   "name": "studio",
-  "projectType": "application",
   "sourceRoot": "apps/studio/src",
-  "tags": ["type:app", "scope:studio"]
+  "projectType": "application",
+  "implicitDependencies": ["domain", "database", "ui"],
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/run-app.mjs studio"
+      },
+      "continuous": true,
+      "cache": false
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun run --cwd apps/studio build"
+      },
+      "outputs": ["{workspaceRoot}/apps/studio/.next"],
+      "cache": false
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bunx tsc --noEmit -p apps/studio/tsconfig.json"
+      }
+    }
+  }
 }

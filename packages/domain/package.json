@@ -1,0 +1,14 @@
+{
+  "name": "@repo/domain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "cheerio": "catalog:",
+    "@repo/database": "workspace:*"
+  }
+}

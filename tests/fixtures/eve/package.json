@@ -1,0 +1,8 @@
+{
+  "name": "studio-eve-test-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "eve": "0.78.0"
+  }
+}

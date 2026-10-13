@@ -1,6 +1,0 @@
-{
-  "name": "@repo/home",
-  "projectType": "library",
-  "sourceRoot": "packages/home/src",
-  "tags": ["type:domain", "scope:home"]
-}
