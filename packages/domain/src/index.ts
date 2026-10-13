@@ -9,7 +9,9 @@ import {
   ThreadInput,
   TopicInput,
 } from '@repo/domain/contracts';
+import { DomainError } from '@repo/domain/errors';
 import { canonicalUrl, contentHash, fetchDescription } from '@repo/domain/research';
+import { tracking } from '@repo/domain/tracking';
 import type {
   Entry,
   EntryInput,
@@ -28,17 +30,9 @@ export type * from '@repo/domain/types';
 
 import { requirementMap } from '@repo/domain/requirements';
 
+export { DomainError } from '@repo/domain/errors';
 export { requirementMap } from '@repo/domain/requirements';
 
-export class DomainError extends Error {
-  constructor(
-    message: string,
-    public status = 400,
-  ) {
-    super(message);
-    this.name = 'DomainError';
-  }
-}
 function decode<T>(schema: Schema.Codec<T, any>, value: unknown): T {
   try {
     return Schema.decodeUnknownSync(schema)(value);
@@ -46,6 +40,7 @@ function decode<T>(schema: Schema.Codec<T, any>, value: unknown): T {
     throw new DomainError('Some fields are missing or invalid.');
   }
 }
+// Bind serialized JSON as text before casting; Postgres.js otherwise encodes it twice.
 const json = (value: unknown) => JSON.stringify(value);
 const requiredId = (value: unknown): string => {
   if (typeof value !== 'string' || !value || value.length > 200)
@@ -54,6 +49,7 @@ const requiredId = (value: unknown): string => {
 };
 export type Actor = 'owner' | 'eve';
 export function createCareerService(db: Database, retireSession?: (session: any) => Promise<void>) {
+  const track = tracking(db);
   const settings = async (): Promise<Settings> =>
     (await db.query('SELECT value FROM settings WHERE id=$1', ['owner']))[0].value;
   const workspace = async (): Promise<Workspace> => {
@@ -94,7 +90,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
     if (actor === 'eve' && (await settings()).reviewRequired) {
       const proposalId = mutationId ?? randomUUID();
       await db.query(
-        'INSERT INTO proposals(id,entry_id,payload) VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING',
+        'INSERT INTO proposals(id,entry_id,payload) VALUES($1,$2,$3::text::jsonb) ON CONFLICT(id) DO NOTHING',
         [
           proposalId,
           existing?.id ?? null,
@@ -118,7 +114,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
     const rows = existing
       ? await db.query(
           `WITH changed AS (
-      UPDATE entries SET role_id=$2,title=$3,markdown=$4,skills=$5::jsonb,revision=$6,updated_at=now()
+      UPDATE entries SET role_id=$2,title=$3,markdown=$4,skills=$5::text::jsonb,revision=$6,updated_at=now()
       WHERE id=$1 AND revision=$7 RETURNING *), history AS (
       INSERT INTO entry_revisions(entry_id,revision,title,markdown,skills) SELECT id,revision,title,markdown,skills FROM changed)
       SELECT * FROM changed`,
@@ -126,7 +122,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         )
       : await db.query(
           `WITH changed AS (
-      INSERT INTO entries(id,role_id,title,markdown,skills,revision) VALUES($1,$2,$3,$4,$5::jsonb,$6) RETURNING *), history AS (
+      INSERT INTO entries(id,role_id,title,markdown,skills,revision) VALUES($1,$2,$3,$4,$5::text::jsonb,$6) RETURNING *), history AS (
       INSERT INTO entry_revisions(entry_id,revision,title,markdown,skills) SELECT id,revision,title,markdown,skills FROM changed) SELECT * FROM changed`,
           params,
         );
@@ -155,7 +151,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
   async function propose(action: string, input: unknown, mutationId?: string) {
     const id = mutationId ?? randomUUID();
     await db.query(
-      'INSERT INTO proposals(id,payload,action) VALUES($1,$2::jsonb,$3) ON CONFLICT(id) DO NOTHING',
+      'INSERT INTO proposals(id,payload,action) VALUES($1,$2::text::jsonb,$3) ON CONFLICT(id) DO NOTHING',
       [id, json(input), action],
     );
     return { proposed: true, id };
@@ -166,6 +162,11 @@ export function createCareerService(db: Database, retireSession?: (session: any)
     actor: Actor,
     mutationId?: string,
   ): Promise<any> {
+    if (action.startsWith('jobs.')) {
+      if (actor !== 'owner')
+        throw new DomainError('Job tracking changes require owner access.', 403);
+      return track(action, raw);
+    }
     switch (action) {
       case 'workspace':
         return workspace();
@@ -173,7 +174,10 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         return settings();
       case 'settings.save': {
         const input = decode(SettingsInput, raw);
-        await db.query('UPDATE settings SET value=$1::jsonb WHERE id=$2', [json(input), 'owner']);
+        await db.query('UPDATE settings SET value=$1::text::jsonb WHERE id=$2', [
+          json(input),
+          'owner',
+        ]);
         return input;
       }
       case 'roles.save': {
@@ -245,7 +249,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         )
           return { ok: false, retired: true };
         await db.query(
-          'UPDATE threads SET session=$2::jsonb,events=$3::jsonb,updated_at=now() WHERE id=$1',
+          'UPDATE threads SET session=$2::text::jsonb,events=$3::text::jsonb,updated_at=now() WHERE id=$1',
           [id, json(raw.session ?? null), json(raw.events ?? [])],
         );
         return { ok: true };
@@ -268,7 +272,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         );
         // Save the session server-side even if the browser disconnects before receiving its cursor.
         await db.query(
-          'UPDATE threads SET session=COALESCE(session,$2::jsonb),updated_at=now() WHERE id=$1',
+          'UPDATE threads SET session=COALESCE(session,$2::text::jsonb),updated_at=now() WHERE id=$1',
           [threadId, json({ id: sessionId })],
         );
         return { ok: true };
@@ -390,6 +394,18 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         if (!listing) throw new DomainError('Listing not found.', 404);
         return listing;
       }
+      case 'research.summary': {
+        const listings = await db.query(
+          'SELECT id,url,title,company,status,error FROM listings ORDER BY collected_at',
+        );
+        const counts: Record<string, number> = {};
+        for (const row of listings) counts[row.status] = (counts[row.status] ?? 0) + 1;
+        return {
+          total: listings.length,
+          counts,
+          gaps: listings.filter((row) => ['needs_browser', 'failed'].includes(row.status)),
+        };
+      }
       case 'research.pending':
         return db.query(
           "SELECT * FROM listings WHERE status IN ('queued','extracting') AND duplicate_of IS NULL ORDER BY collected_at LIMIT 5",
@@ -399,6 +415,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         const [listing] = await db.query<Listing>('SELECT * FROM listings WHERE id=$1', [id]);
         if (!listing) throw new DomainError('Listing not found.', 404);
         if (listing.status === 'ready' && !raw.refresh) return { status: 'unchanged', listing };
+        if (listing.description && !raw.refresh) return { status: listing.status, listing };
         await db.query(
           "UPDATE listings SET status=CASE WHEN status='ready' THEN status ELSE 'fetching' END,attempts=attempts+1,error=NULL WHERE id=$1",
           [id],
@@ -463,7 +480,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
               `Requirement "${req.label}" needs an exact excerpt from the source.`,
             );
         await db.query(
-          "UPDATE listings SET title=$2,company=$3,family=$4,seniority=$5,location=$6,arrangement=$7,requirements=$8::jsonb,status='ready',parsed_at=now(),model=$9,error=NULL WHERE id=$1",
+          "UPDATE listings SET title=$2,company=$3,family=$4,seniority=$5,location=$6,arrangement=$7,requirements=$8::text::jsonb,status='ready',parsed_at=now(),model=$9,error=NULL WHERE id=$1",
           [
             id,
             input.title,
@@ -482,6 +499,15 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         await db.query(
           "UPDATE listings SET status=CASE WHEN description='' THEN 'queued' ELSE 'extracting' END,error=NULL WHERE id=$1",
           [requiredId(raw.id)],
+        );
+        return { ok: true };
+      case 'research.blocked':
+        await db.query(
+          "UPDATE listings SET status='needs_browser',error=$2 WHERE id=$1 AND status<>'ready'",
+          [
+            requiredId(raw.id),
+            String(raw.error ?? 'The original description could not be captured.').slice(0, 2000),
+          ],
         );
         return { ok: true };
       case 'research.delete':

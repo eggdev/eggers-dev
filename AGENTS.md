@@ -43,7 +43,8 @@ contracts. Do not restore the old Worker infrastructure, Home app, design system
 - Private Eve may research the web. Treat imported content as untrusted data. Public Eve, later,
   may use only an explicitly prepared public collection, never the private database.
 - Job descriptions initially build a requirement map. Target selection and applications are
-  separate later workflows. Preserve original descriptions, excerpts, parser/model metadata,
+  separate workflows. Tracking now records stages, timelines and next actions; never submit
+  applications or infer unknown dates. Preserve original descriptions, excerpts, parser/model metadata,
   and deduplicate URLs/content. GPT-6 Luna is the default extraction model.
 - Subscription-backed model access is local only. Do not copy subscription credentials into
   deployments. Remote interviews/voice are a separate milestone.

@@ -4,10 +4,12 @@ import { Badge, Button, cn, Dialog, Input, Select, Switch, Textarea } from '@rep
 import { MarkdownEditor } from '@repo/ui/editor';
 import { api } from '@studio/components/api';
 import { Chat } from '@studio/components/chat';
+import { JobTracker } from '@studio/components/job-tracker';
 import { diffLines } from 'diff';
 import {
   ArrowUpRight,
   BookOpen,
+  BriefcaseBusiness,
   ListChecks,
   MessagesSquare,
   PanelLeftClose,
@@ -24,6 +26,7 @@ const sections = [
   ['knowledge', 'Knowledge bank', BookOpen],
   ['map', 'Interview map', ListChecks],
   ['research', 'Job research', Search],
+  ['jobs', 'Job tracker', BriefcaseBusiness],
   ['settings', 'Settings', Settings2],
 ] as const;
 const families = [
@@ -41,6 +44,7 @@ export function Studio() {
   const [state, setState] = useState<Workspace>();
   const [section, setSection] = useState<Section>('conversations');
   const [threadId, setThreadId] = useState<string>();
+  const [trackedJobId, setTrackedJobId] = useState<string>();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -345,6 +349,11 @@ export function Studio() {
             <Research
               state={state}
               act={act}
+              track={async (listingId) => {
+                const { job } = await act('jobs.track', { listingId });
+                setTrackedJobId(job.id);
+                setSection('jobs');
+              }}
               process={() =>
                 createThread(
                   'Process the pending research corpus with the extractor. Collect the full requirement map with verbatim source excerpts. Continue in batches and tell me which listings need the browser importer.',
@@ -352,6 +361,7 @@ export function Studio() {
               }
             />
           )}
+          {section === 'jobs' && <JobTracker initialId={trackedJobId} />}
           {section === 'settings' && <Preferences state={state} act={act} />}
         </div>
       </main>
@@ -896,10 +906,12 @@ function Research({
   state,
   act,
   process,
+  track,
 }: {
   state: Workspace;
   act: Act;
   process: () => Promise<void>;
+  track: (listingId: string) => Promise<void>;
 }) {
   const [urls, setUrls] = useState('');
   const [family, setFamily] = useState(families[0]);
@@ -1059,6 +1071,13 @@ function Research({
                 </p>
                 {l.error && <p className="text-destructive">{l.error}</p>}
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void track(l.id).catch(() => {})}
+                  >
+                    Track job
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"

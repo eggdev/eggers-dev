@@ -14,6 +14,7 @@ const allowed = new Set([
   'topics.save',
   'topics.delete',
   'research.pending',
+  'research.summary',
   'research.queue',
   'research.fetch',
   'research.capture',

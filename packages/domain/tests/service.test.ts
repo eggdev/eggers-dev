@@ -139,6 +139,9 @@ describe('research corpus', () => {
     const description =
       'Build accessible interfaces with React. Collaborate with product managers and designers to improve customer workflows. Experience running A/B tests is helpful.';
     await run('research.capture', { id: listing.id, description, title: 'Frontend Engineer' });
+    const captured = await run('research.fetch', { id: listing.id });
+    expect(captured.status).toBe('extracting');
+    expect(captured.listing.description).toBe(description);
     const input = {
       id: listing.id,
       title: 'Frontend Engineer',

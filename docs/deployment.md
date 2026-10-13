@@ -26,7 +26,7 @@ launcher supplies a local internal token and loopback callback URL to Next and E
 the production environment file to launch local Eve.
 
 Interviews and model extraction still run locally using the Codex subscription. Remote Studio
-supports reading conversations and editing the bank, research, and settings. While local Eve
+supports reading conversations and editing the bank, research, job tracker, and settings. While local Eve
 sessions exist, delete career material from local Studio so its runtime context is purged too;
 remote Studio explains this instead of leaving deleted material in the local runtime.
 Remote interviews, voice, public Eve, and API-model budgets remain later work.

@@ -57,7 +57,34 @@ Deleting a source-linked entry can remove a message that also supported another 
 and correct those related entries when needed. Semantic copies in unrelated narrative text are
 not automatically detected. There is no hidden trash or archival copy in the application.
 
+## Job tracking
+
+Job tracker keeps a current stage (Saved, Applied, Interviewing, Offer, Rejected, Withdrawn,
+or Closed) and an editable timeline of applications, conversations, interviews, notes and
+follow-ups. Each job has a next action and optional due date; active overdue and upcoming
+follow-ups appear above the list. Completing an action records it in the timeline.
+Unknown historical dates stay blank. Removing a tracked job permanently removes its timeline;
+the separately collected research description remains available.
+
 ## Browser job capture
+
+For the complete TrueUp tracker, including its Saved, In Progress and Done tabs:
+
+```sh
+bun run import:trueup
+# Only when the owner confirms every “No offer” outcome was a rejection:
+bun run import:trueup --no-offer=rejected
+```
+
+Start local Studio first and sign in to the dedicated browser when prompted. The importer reads
+all three tabs, creates tracked jobs, and captures original descriptions for research. Re-running
+it adds new jobs without overwriting your stages, notes or timeline; unchanged parsed descriptions
+are skipped. “No offer” defaults to Closed unless explicitly mapped to Rejected. Relative saved
+ages are retained as source notes, never guessed application dates. Blocked or expired descriptions
+remain visible for another source or manual paste. Choose **Process with Eve** in Job research to
+extract the captured requirements using local subscription access.
+
+For arbitrary listing URLs or links on another browser page:
 
 ```sh
 bunx playwright install chromium
@@ -77,7 +104,7 @@ Imports normalize tracking URLs, detect repeated descriptions, preserve failed r
 and retain verbatim requirement evidence. Re-fetching an unchanged parsed description avoids
 another extraction. Source-specific JSON-LD parsing is preferred; visible-page capture is the
 fallback. Review extracted location/family fields for relevance; ingestion does not silently
-filter or score candidates. Daily discovery and application tracking come later.
+filter or score candidates. Scheduled discovery and source-status synchronization come later.
 
 ## Checks
 
@@ -104,6 +131,5 @@ The existing Cloudflare production wiring must be explicitly disconnected during
 Do not merge/push assuming that the old production setup has already been removed.
 
 Later milestones: live voice, remote private interviews, explicit public knowledge preparation,
-low-cost public Eve, targeted resumes and cover letters, job targets and application tracking,
-and scheduled discovery. Launch notifications are collected now; sending the single launch
+low-cost public Eve, targeted resumes and cover letters, job targeting and scheduled discovery. Launch notifications are collected now; sending the single launch
 email is a separate explicit launch action, not an automatic development side effect.

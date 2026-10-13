@@ -79,4 +79,38 @@ CREATE TABLE rate_limits (key text PRIMARY KEY, window_start timestamptz NOT NUL
     version: 3,
     sql: `ALTER TABLE proposals ADD COLUMN action text NOT NULL DEFAULT 'entries.save' CHECK(action IN ('entries.save','roles.save','topics.save'));`,
   },
+  {
+    version: 4,
+    sql: `
+CREATE TABLE tracked_jobs (
+  id text PRIMARY KEY, listing_id text UNIQUE REFERENCES listings(id) ON DELETE SET NULL,
+  url text NOT NULL UNIQUE, title text NOT NULL, company text NOT NULL DEFAULT '',
+  stage text NOT NULL DEFAULT 'saved' CHECK(stage IN ('saved','applied','interviewing','offer','rejected','withdrawn','closed')),
+  notes text NOT NULL DEFAULT '', next_action text NOT NULL DEFAULT '', next_due_on date,
+  revision integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE job_activities (
+  id text PRIMARY KEY, job_id text NOT NULL REFERENCES tracked_jobs(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK(kind IN ('stage_change','application','conversation','interview','offer','note','follow_up')),
+  title text NOT NULL, body text NOT NULL DEFAULT '', happened_on date,
+  stage text CHECK(stage IN ('saved','applied','interviewing','offer','rejected','withdrawn','closed')),
+  source text NOT NULL DEFAULT 'owner', revision integer NOT NULL DEFAULT 1,
+  recorded_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX job_activities_job ON job_activities(job_id, happened_on, recorded_at);
+`,
+  },
+  {
+    version: 5,
+    sql: `
+UPDATE settings SET value=(value #>> '{}')::jsonb WHERE jsonb_typeof(value)='string';
+UPDATE threads SET session=(session #>> '{}')::jsonb WHERE jsonb_typeof(session)='string';
+UPDATE threads SET events=(events #>> '{}')::jsonb WHERE jsonb_typeof(events)='string';
+UPDATE entries SET skills=(skills #>> '{}')::jsonb WHERE jsonb_typeof(skills)='string';
+UPDATE entry_revisions SET skills=(skills #>> '{}')::jsonb WHERE jsonb_typeof(skills)='string';
+UPDATE proposals SET payload=(payload #>> '{}')::jsonb WHERE jsonb_typeof(payload)='string';
+UPDATE listings SET requirements=(requirements #>> '{}')::jsonb WHERE jsonb_typeof(requirements)='string';
+`,
+  },
 ];

@@ -3,6 +3,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const allowed = new Set([
   'workspace',
+  'jobs.list',
+  'jobs.get',
+  'jobs.track',
+  'jobs.save',
+  'jobs.delete',
+  'jobs.activity.save',
+  'jobs.activity.delete',
+  'jobs.followup.complete',
   'settings.save',
   'roles.save',
   'roles.delete',
@@ -21,6 +29,7 @@ const allowed = new Set([
   'research.fetch',
   'research.capture',
   'research.retry',
+  'research.blocked',
   'research.delete',
   'proposals.accept',
   'proposals.reject',

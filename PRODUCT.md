@@ -24,7 +24,7 @@ interview models are configurable. Private Eve may access the web. Imported page
 authority to change the agent’s instructions.
 
 Architecture: Nx + Bun, Next for Web and Studio, Eve inside Studio, Effect 4 where it improves
-service reliability, PostgreSQL storage. Separate Vercel deployments eventually. Local
+service reliability, PostgreSQL storage. Separate Vercel deployments with separate Neon databases. Local
 subscription-backed conversations first; remote conversation auth/cost and real-time voice later.
 No historical Home app, contracts, content or custom design system retained for compatibility.
 
@@ -32,4 +32,10 @@ Web initially displays Brendan’s name, contact information, a construction ani
 single-launch-email signup. A later public knowledge collection will be deliberately prepared
 from public website content, projects and interests. Public Eve gets only that collection,
 with inexpensive inference and rate limits resolved in its own phase. Career targeting,
-resume/cover-letter generation, daily discovery and application tracking follow sequentially.
+resume/cover-letter generation and daily discovery follow sequentially.
+
+Application tracking is now part of Studio, separately from the research corpus. Import all
+TrueUp tracker tabs, preserve explicitly confirmed stages, and never infer application or
+rejection dates from relative saved ages. Jobs have editable dated timelines plus next actions
+and optional due dates. Imports are idempotent and do not overwrite owner tracking changes.
+The initial corpus comes from the owner’s saved/applied jobs; broader sampling follows.

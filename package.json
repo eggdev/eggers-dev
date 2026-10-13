@@ -63,6 +63,7 @@
     "test:e2e": "playwright test",
     "db:migrate": "tsx tools/migrate.ts",
     "import:browser": "tsx tools/import-browser.ts",
+    "import:trueup": "tsx tools/import-trueup.ts",
     "format": "biome format --write .",
     "build:eve": "bun run --cwd apps/studio build:eve"
   },
