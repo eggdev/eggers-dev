@@ -224,6 +224,11 @@ export function Studio() {
             </Button>
           </div>
         </header>
+        {state.modelConnection === 'disabled' && (
+          <p className="border-b bg-muted/40 px-6 py-3 text-sm text-muted-foreground">
+            Your bank is online. Interviews and job extraction run in local Studio for now.
+          </p>
+        )}
         {error && (
           <div
             role="alert"
@@ -245,6 +250,7 @@ export function Studio() {
             (thread ? (
               <Chat
                 key={`${thread.id}:${epoch}`}
+                interviewsEnabled={state.modelConnection !== 'disabled'}
                 thread={thread}
                 roles={state.roles}
                 topics={state.topics}
@@ -963,6 +969,7 @@ function Research({
         <Button
           variant="outline"
           disabled={
+            state.modelConnection === 'disabled' ||
             !state.listings.some(
               (l) => ['queued', 'extracting'].includes(l.status) && !l.duplicate_of,
             )
@@ -1210,7 +1217,11 @@ function Preferences({ state, act }: { state: Workspace; act: Act }) {
         </p>
         <p>
           Model connection:{' '}
-          {state.modelConnection === 'subscription' ? 'local Codex sign-in' : 'AI Gateway'}
+          {state.modelConnection === 'disabled'
+            ? 'interviews available in local Studio'
+            : state.modelConnection === 'subscription'
+              ? 'local Codex sign-in'
+              : 'AI Gateway'}
         </p>
         <p>Your knowledge is private. Public publishing is a separate, later step.</p>
       </div>

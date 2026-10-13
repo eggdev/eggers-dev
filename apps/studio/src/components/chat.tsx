@@ -10,6 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type Props = {
+  interviewsEnabled: boolean;
   thread: Thread;
   roles: Role[];
   topics: Topic[];
@@ -33,6 +34,22 @@ export function Chat(props: Props) {
       </p>
     );
   if (!loaded) return <p className="p-8 text-sm text-muted-foreground">Opening conversation…</p>;
+  if (!props.interviewsEnabled)
+    return (
+      <section className="flex-1 overflow-auto p-6 md:p-8">
+        <div className="mx-auto max-w-3xl space-y-8">
+          <h2 className="text-xl font-semibold">{loaded.thread.title}</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Interviews run in Studio on your computer for now. You can read the saved conversation
+            here.
+          </p>
+          {loaded.messages.map((message) => (
+            <MessageView key={message.id} role={message.kind} text={message.body} />
+          ))}
+          {!loaded.messages.length && <p className="text-sm">No messages yet.</p>}
+        </div>
+      </section>
+    );
   return <ConnectedChat {...props} loaded={loaded} />;
 }
 function ConnectedChat({

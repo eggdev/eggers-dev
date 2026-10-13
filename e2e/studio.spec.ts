@@ -6,6 +6,32 @@ import { expect, test } from '@playwright/test';
 import { Client } from 'eve/client';
 
 const base = 'http://127.0.0.1:3001';
+test('remote Studio reads conversations without starting a local-only interview', async ({
+  page,
+  request,
+}) => {
+  const response = await request.post(`${base}/api/studio/threads.create`, {
+    data: { title: 'Remote reading check' },
+  });
+  expect(response.ok()).toBeTruthy();
+  await page.route('**/api/studio/workspace', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ json: { ...(await response.json()), modelConnection: 'disabled' } });
+  });
+  const agentRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/eve/v1/')) agentRequests.push(request.url());
+  });
+  await page.goto(base);
+  await expect(page.getByText('Your bank is online.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Remote reading check', exact: true }).first().click();
+  await expect(
+    page.getByText('You can read the saved conversation here.', { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toHaveCount(0);
+  expect(agentRequests).toEqual([]);
+});
+
 test('owner can build and correct the bank; layout works on mobile', async ({ page }) => {
   await page.goto(base);
   await expect(page.getByRole('heading', { name: 'Start with what you remember.' })).toBeVisible();

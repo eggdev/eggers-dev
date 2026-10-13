@@ -14,7 +14,12 @@ export async function execute(
     if (!id) return;
     const client = new Client({
       host: process.env.STUDIO_INTERNAL_URL ?? 'http://127.0.0.1:3001',
-      headers: { 'x-studio-internal-token': process.env.STUDIO_INTERNAL_TOKEN ?? '' },
+      headers: {
+        'x-studio-internal-token': process.env.STUDIO_INTERNAL_TOKEN ?? '',
+        ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
+          : {}),
+      },
     });
     await client.sessions.attach(id).reset({ reason: 'Owner requested deletion' });
   });

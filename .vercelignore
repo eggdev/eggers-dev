@@ -1,0 +1,27 @@
+# Explicit upload boundary: local stores, sessions and credentials stay on this computer.
+**/node_modules
+**/.next
+**/.eve
+**/.nx
+**/.data
+**/.vercel
+**/.output
+**/.env*
+**/.dev.vars*
+**/.wrangler
+**/*.tsbuildinfo
+**/*.log
+.git
+_source
+content
+.agents
+.claude
+.codex
+.cursor
+.opencode
+.impeccable
+.gstack
+test-results
+playwright-report
+plans
+.vscode

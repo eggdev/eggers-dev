@@ -80,7 +80,11 @@ export function createCareerService(db: Database, retireSession?: (session: any)
       proposals,
       settings: prefs,
       storage: process.env.DATABASE_URL ? 'neon' : 'local',
-      modelConnection: process.env.EVE_MODEL_CONNECTION === 'gateway' ? 'gateway' : 'subscription',
+      modelConnection: process.env.VERCEL
+        ? 'disabled'
+        : process.env.EVE_MODEL_CONNECTION === 'gateway'
+          ? 'gateway'
+          : 'subscription',
     };
   };
   async function saveEntry(raw: unknown, actor: Actor, mutationId?: string) {

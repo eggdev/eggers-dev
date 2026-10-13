@@ -106,5 +106,5 @@ export interface Workspace {
   proposals: Proposal[];
   settings: Settings;
   storage: 'neon' | 'local';
-  modelConnection: 'subscription' | 'gateway';
+  modelConnection: 'subscription' | 'gateway' | 'disabled';
 }
