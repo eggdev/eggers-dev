@@ -59,12 +59,24 @@ not automatically detected. There is no hidden trash or archival copy in the app
 
 ## Job tracking
 
-Job tracker keeps a current stage (Saved, Applied, Interviewing, Offer, Rejected, Withdrawn,
-or Closed) and an editable timeline of applications, conversations, interviews, notes and
-follow-ups. Each job has a next action and optional due date; active overdue and upcoming
-follow-ups appear above the list. Completing an action records it in the timeline.
-Unknown historical dates stay blank. Removing a tracked job permanently removes its timeline;
-the separately collected research description remains available.
+Job tracker groups jobs into **Saved**, **In Progress**, and **Done**, with counts, inline status
+changes, direct listing links, and removal from each row. **Notes & timeline** opens the detailed
+record. In Progress includes Applied, Interviewing, Offer, and Negotiating; Done includes Offer
+accepted, Offer declined, No response, Ghosted, Rejected, Withdrawn, and Closed.
+
+After **14 calendar days in Applied**, a dated application automatically appears as **Ghosted**
+in Done. This is calculated from the current application date in the owner's New York time zone;
+it does not need a scheduled task or overwrite the original application history. Unknown dates
+stay blank and do not age into Ghosted. Correct the stage date in the job editor or current stage
+timeline event; ordinary notes and follow-ups do not restart the clock. Selecting Applied again
+from Ghosted starts a new period from today, with a timeline event. Other active stages reopen
+it normally.
+
+Each job has an editable timeline, a next action and optional due date. Active overdue and
+upcoming follow-ups appear above the list. Completing an action records it in the timeline.
+Removing a tracked job permanently removes its timeline; the separately collected research
+description remains available. “Tracked” is when it was added to Studio, not a guessed TrueUp
+saved or application date.
 
 ## Browser job capture
 

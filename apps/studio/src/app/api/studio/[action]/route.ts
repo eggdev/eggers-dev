@@ -7,6 +7,7 @@ const allowed = new Set([
   'jobs.get',
   'jobs.track',
   'jobs.save',
+  'jobs.stage',
   'jobs.delete',
   'jobs.activity.save',
   'jobs.activity.delete',

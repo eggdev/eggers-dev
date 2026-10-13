@@ -1,21 +1,26 @@
 'use client';
 import {
   activityKinds,
+  effectiveStage,
   type JobActivity,
   type JobStage,
   jobStages,
   type TrackedJob,
   type TrackedJobDetail,
+  type TrackerGroup,
+  trackerGroup,
+  trackerGroups,
+  trackingToday,
 } from '@repo/domain/tracking-types';
-import { Badge, Button, Dialog, Input, Select, Textarea } from '@repo/ui';
+import { Badge, Button, cn, Dialog, Input, Select, Textarea } from '@repo/ui';
 import { api } from '@studio/components/api';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
-const today = () => new Date().toLocaleDateString('en-CA');
+const today = trackingToday;
 const displayDate = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString();
-const closed = new Set<JobStage>(['rejected', 'withdrawn', 'closed']);
+const groupNames = { saved: 'Saved', in_progress: 'In Progress', done: 'Done' };
 const field = 'block space-y-2 text-sm';
 export function JobTracker({ initialId }: { initialId?: string }) {
   const [jobs, setJobs] = useState<TrackedJob[]>([]);
@@ -25,7 +30,9 @@ export function JobTracker({ initialId }: { initialId?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [stage, setStage] = useState('all');
+  const [group, setGroup] = useState<TrackerGroup>('saved');
+  const [clock, setClock] = useState(today);
+  const [notice, setNotice] = useState('');
   const [adding, setAdding] = useState(false);
   const refresh = useCallback(async () => {
     setJobs(await api<TrackedJob[]>('jobs.list'));
@@ -65,8 +72,39 @@ export function JobTracker({ initialId }: { initialId?: string }) {
       setBusy(false);
     }
   };
+  useEffect(() => {
+    const tick = () => setClock(today());
+    const timer = window.setInterval(tick, 60_000);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
+  const counts = Object.fromEntries(
+    trackerGroups.map((g) => [g, jobs.filter((job) => trackerGroup(job, clock) === g).length]),
+  );
+  const visible = jobs.filter(
+    (job) =>
+      trackerGroup(job, clock) === group &&
+      `${job.title} ${job.company} ${job.location}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const changeStage = async (job: TrackedJob, stage: JobStage) => {
+    try {
+      const updated: TrackedJob = await run(
+        'jobs.stage',
+        { id: job.id, expectedRevision: job.revision, stage },
+        '',
+      );
+      const destination = trackerGroup(updated, clock);
+      if (destination !== group) document.getElementById(`tracker-tab-${group}`)?.focus();
+      setNotice(
+        `${job.company || job.title}: ${label(stage)}${destination !== group ? ` · moved to ${groupNames[destination]}` : ''}.`,
+      );
+    } catch {}
+  };
   const due = jobs
-    .filter((job) => job.next_due_on && job.next_action && !closed.has(job.stage))
+    .filter((job) => job.next_due_on && job.next_action && trackerGroup(job, clock) !== 'done')
     .sort((a, b) => (a.next_due_on ?? '').localeCompare(b.next_due_on ?? ''));
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6 md:p-8">
@@ -77,11 +115,17 @@ export function JobTracker({ initialId }: { initialId?: string }) {
             Keep the process, the conversations, and the next step together.
           </p>
         </div>
-        <Button onClick={() => setAdding(true)}>
-          <Plus />
-          Add job
-        </Button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">{jobs.length} tracked</span>
+          <Button onClick={() => setAdding(true)}>
+            <Plus />
+            Add job
+          </Button>
+        </div>
       </header>
+      <p role="status" className={notice ? 'text-sm text-muted-foreground' : 'sr-only'}>
+        {notice}
+      </p>
       {error && (
         <div role="alert" className="space-y-2 rounded-md border p-3 text-sm text-destructive">
           <p>{error}</p>
@@ -163,6 +207,54 @@ export function JobTracker({ initialId }: { initialId?: string }) {
               </div>
             </section>
           )}
+          <div
+            className="flex w-full gap-1 rounded-lg bg-muted p-1 sm:w-fit"
+            role="tablist"
+            aria-label="Job stages"
+          >
+            {trackerGroups.map((g, index) => (
+              <button
+                key={g}
+                type="button"
+                role="tab"
+                id={`tracker-tab-${g}`}
+                aria-selected={group === g}
+                aria-controls="tracker-jobs-panel"
+                tabIndex={group === g ? 0 : -1}
+                className={cn(
+                  'flex min-w-0 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none',
+                  group === g
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => {
+                  setGroup(g);
+                  setNotice('');
+                }}
+                onKeyDown={(e) => {
+                  const next =
+                    e.key === 'ArrowRight'
+                      ? (index + 1) % 3
+                      : e.key === 'ArrowLeft'
+                        ? (index + 2) % 3
+                        : e.key === 'Home'
+                          ? 0
+                          : e.key === 'End'
+                            ? 2
+                            : -1;
+                  if (next < 0) return;
+                  e.preventDefault();
+                  setGroup(trackerGroups[next]);
+                  e.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                    [next]?.focus();
+                }}
+              >
+                {groupNames[g]}
+                <span className="text-xs tabular-nums text-muted-foreground">{counts[g]}</span>
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-3">
             <Input
               aria-label="Search tracked jobs"
@@ -171,19 +263,6 @@ export function JobTracker({ initialId }: { initialId?: string }) {
               onChange={(e) => setSearch(e.target.value)}
               className="max-w-md"
             />
-            <Select
-              aria-label="Filter by stage"
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-            >
-              <option value="all">All stages</option>
-              {jobStages.map((s) => (
-                <option key={s} value={s}>
-                  {label(s)}
-                </option>
-              ))}
-            </Select>
-            <span className="self-center text-sm text-muted-foreground">{jobs.length} tracked</span>
           </div>
           {loading && <p className="text-sm">Loading jobs…</p>}
           {!loading && !jobs.length && (
@@ -191,36 +270,109 @@ export function JobTracker({ initialId }: { initialId?: string }) {
               Track a listing from Job research, import your TrueUp tracker, or add a job by URL.
             </p>
           )}
-          <div className="divide-y">
-            {jobs
-              .filter(
-                (job) =>
-                  (stage === 'all' || job.stage === stage) &&
-                  `${job.title} ${job.company}`.toLowerCase().includes(search.toLowerCase()),
-              )
-              .map((job) => (
-                <button
-                  type="button"
+          <section
+            id="tracker-jobs-panel"
+            role="tabpanel"
+            aria-labelledby={`tracker-tab-${group}`}
+            className="space-y-3"
+          >
+            {!loading && !visible.length && jobs.length > 0 && (
+              <p className="py-12 text-sm text-muted-foreground">
+                {search ? 'No matching jobs in this tab.' : `No jobs in ${groupNames[group]} yet.`}
+              </p>
+            )}
+            {visible.map((job) => {
+              const stage = effectiveStage(job, clock);
+              return (
+                <article
                   key={job.id}
-                  className="flex w-full flex-wrap items-center justify-between gap-3 py-5 text-left break-words"
-                  onClick={() => setSelected(job.id)}
+                  aria-label={`${job.company} · ${job.title}`}
+                  className="grid items-start gap-4 rounded-lg border p-4 md:grid-cols-[minmax(0,1fr)_180px_100px_auto] md:p-5"
                 >
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold">{job.title}</span>
-                    <span className="mt-1 block text-sm text-muted-foreground">
-                      {job.company || new URL(job.url).hostname}
-                    </span>
+                  <div className="min-w-0 space-y-2">
+                    <a
+                      href={job.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-semibold break-words hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {job.title}
+                      <ArrowUpRight className="ml-1 inline size-3.5" />
+                    </a>
+                    <p className="text-sm text-muted-foreground break-words">
+                      <span className="font-medium text-foreground">
+                        {job.company || new URL(job.url).hostname}
+                      </span>
+                      {job.location && ` · ${job.location}`}
+                    </p>
                     {job.next_action && (
-                      <span className="mt-2 block text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground break-words">
                         Next: {job.next_action}
                         {job.next_due_on ? ` · ${displayDate(job.next_due_on)}` : ''}
-                      </span>
+                      </p>
                     )}
-                  </span>
-                  <Badge>{label(job.stage)}</Badge>
-                </button>
-              ))}
-          </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3"
+                      aria-label={`Details for ${job.title} at ${job.company}`}
+                      onClick={() => setSelected(job.id)}
+                    >
+                      Notes & timeline
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <label
+                      htmlFor={`stage-${job.id}`}
+                      className="block text-xs font-medium text-muted-foreground"
+                    >
+                      Status
+                    </label>
+                    <Select
+                      id={`stage-${job.id}`}
+                      aria-label={`Status for ${job.title} at ${job.company}`}
+                      className="w-full"
+                      value={stage}
+                      disabled={busy}
+                      onChange={(e) => void changeStage(job, e.target.value as JobStage)}
+                    >
+                      {jobStages.map((s) => (
+                        <option key={s} value={s}>
+                          {label(s)}
+                        </option>
+                      ))}
+                    </Select>
+                    {stage === 'ghosted' && job.stage === 'applied' && (
+                      <p className="text-xs text-muted-foreground">14+ days in Applied</p>
+                    )}
+                    {job.stage === 'applied' && !job.stage_since && (
+                      <p className="text-xs text-muted-foreground">Application date unknown</p>
+                    )}
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <span className="block text-xs font-medium text-muted-foreground">Tracked</span>
+                    <time dateTime={job.created_at}>
+                      {new Date(job.created_at).toLocaleDateString()}
+                    </time>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Remove ${job.title} at ${job.company} from tracker`}
+                    title="Remove job and timeline"
+                    disabled={busy}
+                    onClick={() =>
+                      void run('jobs.delete', { id: job.id }, '')
+                        .then(() => setNotice(`Removed ${job.title} from the tracker.`))
+                        .catch(() => {})
+                    }
+                  >
+                    <Trash2 />
+                  </Button>
+                </article>
+              );
+            })}
+          </section>
         </>
       )}
       <Dialog
@@ -306,8 +458,9 @@ function JobDetail({
   remove: () => void;
 }) {
   const { job, activities } = detail;
-  const [draft, setDraft] = useState(job);
-  const [stageDate, setStageDate] = useState(today());
+  const [currentStage] = useState(() => effectiveStage(job));
+  const [draft, setDraft] = useState({ ...job, stage: currentStage });
+  const [stageDate, setStageDate] = useState(job.stage_since ?? '');
   const [edit, setEdit] = useState<JobActivity>();
   const [adding, setAdding] = useState(false);
   const save = (e: React.FormEvent) => {
@@ -317,7 +470,8 @@ function JobDetail({
       expectedRevision: job.revision,
       title: draft.title,
       company: draft.company,
-      stage: draft.stage,
+      stage: draft.stage === currentStage ? job.stage : draft.stage,
+      restartStage: draft.stage !== currentStage && draft.stage === job.stage,
       notes: draft.notes,
       nextAction: draft.next_action,
       nextDueOn: draft.next_due_on,
@@ -366,7 +520,10 @@ function JobDetail({
               id="tracker-field-8"
               className="w-full"
               value={draft.stage}
-              onChange={(e) => setDraft({ ...draft, stage: e.target.value as JobStage })}
+              onChange={(e) => {
+                setDraft({ ...draft, stage: e.target.value as JobStage });
+                setStageDate(today());
+              }}
             >
               {jobStages.map((s) => (
                 <option key={s} value={s}>
@@ -375,20 +532,20 @@ function JobDetail({
               ))}
             </Select>
           </div>
-          {draft.stage !== job.stage && (
-            <div className={field}>
-              <label htmlFor="tracker-field-9">Stage date, if known</label>
-              <Input
-                id="tracker-field-9"
-                type="date"
-                value={stageDate}
-                onChange={(e) => setStageDate(e.target.value)}
-              />
-              <span className="block text-xs text-muted-foreground">
-                Clear the date if you don’t remember when the stage changed.
-              </span>
-            </div>
-          )}
+          <div className={field}>
+            <label htmlFor="tracker-field-9">Stage date, if known</label>
+            <Input
+              id="tracker-field-9"
+              type="date"
+              value={stageDate}
+              onChange={(e) => setStageDate(e.target.value)}
+            />
+            <span className="block text-xs text-muted-foreground">
+              {job.stage === 'applied'
+                ? 'Applied jobs move to Done as Ghosted after 14 days. Leave an unknown application date blank.'
+                : 'Leave the date blank if you don’t remember when the stage changed.'}
+            </span>
+          </div>
           <div className={field}>
             <label htmlFor="tracker-field-10">Next action</label>
             <Input

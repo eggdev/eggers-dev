@@ -39,3 +39,9 @@ TrueUp tracker tabs, preserve explicitly confirmed stages, and never infer appli
 rejection dates from relative saved ages. Jobs have editable dated timelines plus next actions
 and optional due dates. Imports are idempotent and do not overwrite owner tracking changes.
 The initial corpus comes from the owner’s saved/applied jobs; broader sampling follows.
+
+The tracker follows TrueUp’s Saved / In Progress / Done grouping with inline status changes.
+Negotiating, Offer accepted, Offer declined and No response supplement the original stages.
+After 14 calendar days in Applied, jobs display as Ghosted under Done. Unknown application dates
+do not trigger aging; notes and follow-ups do not reset the clock. The owner can correct dates
+or reopen the job from the status selector.

@@ -3,6 +3,11 @@ export const jobStages = [
   'applied',
   'interviewing',
   'offer',
+  'negotiating',
+  'offer_accepted',
+  'offer_declined',
+  'no_response',
+  'ghosted',
   'rejected',
   'withdrawn',
   'closed',
@@ -24,6 +29,8 @@ export interface TrackedJob {
   title: string;
   company: string;
   stage: JobStage;
+  stage_since: string | null;
+  location: string;
   notes: string;
   next_action: string;
   next_due_on: string | null;
@@ -46,4 +53,33 @@ export interface JobActivity {
 export interface TrackedJobDetail {
   job: TrackedJob;
   activities: JobActivity[];
+}
+
+export const trackerGroups = ['saved', 'in_progress', 'done'] as const;
+export type TrackerGroup = (typeof trackerGroups)[number];
+const finishedStages = new Set<JobStage>([
+  'offer_accepted',
+  'offer_declined',
+  'no_response',
+  'ghosted',
+  'rejected',
+  'withdrawn',
+  'closed',
+]);
+export const trackingToday = (now = new Date()) =>
+  now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+export function effectiveStage(
+  job: Pick<TrackedJob, 'stage' | 'stage_since'>,
+  today = trackingToday(),
+): JobStage {
+  if (job.stage !== 'applied' || !job.stage_since) return job.stage;
+  const elapsed = Date.parse(`${today}T00:00:00Z`) - Date.parse(`${job.stage_since}T00:00:00Z`);
+  return elapsed >= 14 * 86400000 ? 'ghosted' : job.stage;
+}
+export function trackerGroup(
+  job: Pick<TrackedJob, 'stage' | 'stage_since'>,
+  today = trackingToday(),
+): TrackerGroup {
+  const stage = effectiveStage(job, today);
+  return stage === 'saved' ? 'saved' : finishedStages.has(stage) ? 'done' : 'in_progress';
 }

@@ -113,4 +113,17 @@ UPDATE proposals SET payload=(payload #>> '{}')::jsonb WHERE jsonb_typeof(payloa
 UPDATE listings SET requirements=(requirements #>> '{}')::jsonb WHERE jsonb_typeof(requirements)='string';
 `,
   },
+  {
+    version: 6,
+    sql: `
+ALTER TABLE tracked_jobs DROP CONSTRAINT tracked_jobs_stage_check;
+ALTER TABLE tracked_jobs ADD CONSTRAINT tracked_jobs_stage_check CHECK(stage IN ('saved','applied','interviewing','offer','negotiating','offer_accepted','offer_declined','no_response','ghosted','rejected','withdrawn','closed'));
+ALTER TABLE job_activities DROP CONSTRAINT job_activities_stage_check;
+ALTER TABLE job_activities ADD CONSTRAINT job_activities_stage_check CHECK(stage IN ('saved','applied','interviewing','offer','negotiating','offer_accepted','offer_declined','no_response','ghosted','rejected','withdrawn','closed'));
+ALTER TABLE tracked_jobs ADD COLUMN stage_since date;
+ALTER TABLE tracked_jobs ADD COLUMN stage_activity_id text;
+UPDATE tracked_jobs SET stage_activity_id=(SELECT id FROM job_activities WHERE job_id=tracked_jobs.id AND kind='stage_change' ORDER BY recorded_at DESC,id DESC LIMIT 1);
+UPDATE tracked_jobs SET stage_since=(SELECT happened_on FROM job_activities WHERE job_id=tracked_jobs.id AND kind='stage_change' ORDER BY recorded_at DESC,id DESC LIMIT 1);
+`,
+  },
 ];

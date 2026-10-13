@@ -120,3 +120,107 @@ describe('job tracking', () => {
     await expect(run('jobs.get', { id: job.id })).rejects.toThrow('not found');
   });
 });
+
+describe('TrueUp stages and application aging', () => {
+  it('moves Applied to Done as Ghosted at 14 calendar days, including across daylight saving time', async () => {
+    const { effectiveStage, trackerGroup } = await import('@repo/domain/tracking-types');
+    const applied = { stage: 'applied' as const, stage_since: '2026-10-25' };
+    expect(effectiveStage(applied, '2026-11-07')).toBe('applied');
+    expect(effectiveStage(applied, '2026-11-08')).toBe('ghosted');
+    expect(trackerGroup(applied, '2026-11-08')).toBe('done');
+    expect(effectiveStage({ ...applied, stage_since: null }, '2026-11-08')).toBe('applied');
+    expect(effectiveStage({ ...applied, stage_since: '2026-11-09' }, '2026-11-08')).toBe('applied');
+    for (const stage of ['interviewing', 'offer', 'negotiating'] as const)
+      expect(trackerGroup({ ...applied, stage }, '2026-11-08')).toBe('in_progress');
+    for (const stage of [
+      'offer_accepted',
+      'offer_declined',
+      'no_response',
+      'rejected',
+      'withdrawn',
+      'closed',
+      'ghosted',
+    ] as const)
+      expect(trackerGroup({ ...applied, stage }, '2026-11-08')).toBe('done');
+  });
+  it('keeps the application clock through notes and follow-ups, supports correction and reopening, and rejects stale changes', async () => {
+    const { effectiveStage } = await import('@repo/domain/tracking-types');
+    const { job } = await run('jobs.track', {
+      url: 'https://example.com/jobs/aging',
+      title: 'Aging application',
+      stage: 'applied',
+      happenedOn: '2026-09-01',
+    });
+    expect(job.stage_since).toBe('2026-09-01');
+    const noted = await save(job, { notes: 'Updated context', nextAction: 'Follow up' });
+    expect(noted.stage_since).toBe('2026-09-01');
+    await run('jobs.followup.complete', {
+      id: job.id,
+      expectedRevision: noted.revision,
+      happenedOn: '2026-09-12',
+    });
+    let detail = await run('jobs.get', { id: job.id });
+    expect(effectiveStage(detail.job, '2026-09-15')).toBe('ghosted');
+    const corrected = await save(detail.job, { happenedOn: '2026-09-10' });
+    expect(effectiveStage(corrected, '2026-09-15')).toBe('applied');
+    detail = await run('jobs.get', { id: job.id });
+    const stageEvent = detail.activities.find((a: any) => a.kind === 'stage_change');
+    expect(stageEvent.happened_on).toBe('2026-09-10');
+    await run('jobs.activity.save', {
+      id: stageEvent.id,
+      jobId: job.id,
+      expectedRevision: stageEvent.revision,
+      kind: 'stage_change',
+      title: stageEvent.title,
+      body: '',
+      happenedOn: '2026-08-01',
+    });
+    detail = await run('jobs.get', { id: job.id });
+    expect(detail.job.stage_since).toBe('2026-08-01');
+    expect(detail.job.revision).toBeGreaterThan(corrected.revision);
+    await expect(
+      run('jobs.stage', {
+        id: job.id,
+        expectedRevision: corrected.revision,
+        stage: 'interviewing',
+      }),
+    ).rejects.toThrow('changed');
+    const reopened = await run('jobs.stage', {
+      id: job.id,
+      expectedRevision: detail.job.revision,
+      stage: 'applied',
+      happenedOn: '2026-10-13',
+    });
+    expect(effectiveStage(reopened, '2026-10-13')).toBe('applied');
+    expect(reopened.notes).toBe('Updated context');
+    detail = await run('jobs.get', { id: job.id });
+    const latest = detail.activities.find(
+      (a: any) => a.kind === 'stage_change' && a.happened_on === '2026-10-13',
+    );
+    await run('jobs.activity.delete', { id: latest.id, jobId: job.id });
+    detail = await run('jobs.get', { id: job.id });
+    expect(detail.job.stage_since).toBeNull();
+    await save(detail.job, { notes: 'Still unknown' });
+    detail = await run('jobs.get', { id: job.id });
+    expect(detail.activities.find((a: any) => a.id === stageEvent.id).happened_on).toBe(
+      '2026-08-01',
+    );
+    expect(detail.job.stage_since).toBeNull();
+    for (const stage of [
+      'negotiating',
+      'offer_accepted',
+      'offer_declined',
+      'no_response',
+      'ghosted',
+    ] as const) {
+      const changed = await run('jobs.stage', {
+        id: job.id,
+        expectedRevision: detail.job.revision,
+        stage,
+        happenedOn: '2026-10-13',
+      });
+      expect(changed.stage).toBe(stage);
+      detail = await run('jobs.get', { id: job.id });
+    }
+  });
+});
