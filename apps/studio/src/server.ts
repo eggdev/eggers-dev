@@ -9,7 +9,17 @@ export async function execute(
   actor: 'owner' | 'eve' = 'owner',
   mutationId?: string,
 ) {
-  const service = createCareerService(await database(), async (session) => {
+  const db = await database();
+  if (
+    process.env.VERCEL &&
+    ['entries.delete', 'threads.delete', 'roles.delete'].includes(action) &&
+    (await db.query('SELECT id FROM threads WHERE session IS NOT NULL LIMIT 1')).length
+  )
+    throw new DomainError(
+      'Delete career material from local Studio while interviews run on your computer, so Eve’s local conversation context is removed too.',
+      409,
+    );
+  const service = createCareerService(db, async (session) => {
     const id = session?.id ?? session?.sessionId;
     if (!id) return;
     const client = new Client({

@@ -94,11 +94,13 @@ Tests use empty disposable databases. Browser tests start local services with is
 they do not send paid model requests. Live subscription access and a real Neon connection depend on your account/environment;
 the automated suite intentionally uses no model billing.
 
-## Deployment direction
+## Deployments
 
-Two Vercel projects, rooted at `apps/web` and `apps/studio`; keep workspace dependencies available.
-See [deployment notes](docs/deployment.md). Nothing is deployed by local development or these
-checks. The existing Cloudflare production wiring must be explicitly disconnected during cutover.
+Web is live at https://eggers-web.vercel.app and private Studio at https://eggers-studio.vercel.app.
+Each has its own Neon database. This computer's app-local environment files connect local Studio
+to the remote career bank; interviews still run locally. See [deployment notes](docs/deployment.md)
+for commands and the current remote limitations. Nothing is deployed by local development or checks.
+The existing Cloudflare production wiring must be explicitly disconnected during domain cutover.
 Do not merge/push assuming that the old production setup has already been removed.
 
 Later milestones: live voice, remote private interviews, explicit public knowledge preparation,

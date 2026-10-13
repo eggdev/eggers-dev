@@ -1,31 +1,76 @@
-# Vercel cutover (later, explicit action)
+# Vercel deployments
 
-Local development is the first release. No cloud resources have been provisioned by this rewrite.
+Deployed October 13, 2026 to the personal `brendan-eggers-projects` workspace.
 
-1. Create separate Vercel projects for `apps/web` and `apps/studio`, with Node 24 and Bun.
-   Install at workspace root with `bun install --frozen-lockfile`; build each app’s `bun run build`.
-   Allow monorepo source outside the project root. Studio’s `withEve` integration owns `/eve/v1`.
-2. Provision Neon databases. Use a private Studio database and a separate public signup database.
-   The schema is shared, but Web must never get credentials to the private bank. Set each project’s
-   `DATABASE_URL`. Migrate each database using `bun run db:migrate` before serving traffic.
-3. Enable **Vercel Authentication → All Deployments** on Studio (including production), and
-   confirm unauthenticated requests cannot reach pages, API routes or Eve. Only then set
-   `STUDIO_DEPLOYMENT_PROTECTED=true`. The flag is a fail-closed deployment assertion, not an
-   authentication system. Local Studio accepts loopback requests only.
-4. Set a strong random `STUDIO_INTERNAL_TOKEN` and the deployment’s `STUDIO_INTERNAL_URL`.
-   Internal Eve callbacks require the token; protected self-requests may additionally need
-   `VERCEL_AUTOMATION_BYPASS_SECRET`. Never put these values in NEXT_PUBLIC variables.
-5. Remote interviews remain disabled until an authenticated Eve browser channel is implemented
-   and tested behind the chosen production gate. Local subscription credentials must not move to
-   Vercel. If remote work is enabled later, configure an API/Gateway model connection and its
-   budget independently. The current model resolver supports `EVE_MODEL_CONNECTION=gateway`
-   for controlled development, but that is not a complete remote-auth rollout.
-6. Verify the public signup with its own database. Sending one launch notification is a separate
-   explicit launch task; use an email provider, include unsubscribe tokens and record sent_at to
-   prevent repeat sends. Do not send launch mail during previews or builds.
-7. Disconnect the legacy Cloudflare Git deployment before changing production domains. Assign
-   `eggers.dev` to Web and `studio.eggers.dev` to Studio only after access checks pass.
+| App | Production URL | Project root | Neon resource |
+| --- | --- | --- | --- |
+| Web | https://eggers-web.vercel.app | `apps/web` | `eggers-web-signups` |
+| Studio | https://eggers-studio.vercel.app | `apps/studio` | `eggers-studio-bank` |
 
-There is no deployment command or migration of old D1/KV content. Existing Cloudflare resources
-have not been destroyed. Local PGlite is for one process on the personal computer; it is not a
-Vercel persistence strategy. The apps reject missing DATABASE_URL on Vercel.
+Both projects use Next.js, Node 24, Bun, and workspace dependencies outside their app root.
+Studio's `withEve` integration builds Next and Eve together in one Vercel deployment.
+Both Neon resources use the existing Free integration, in `iad1`, with separate credentials.
+Schemas are applied. No historical D1/KV content was imported.
+
+## Access and environment
+
+Studio uses **Vercel Authentication → All Deployments**, including production. Keep this enabled.
+`STUDIO_DEPLOYMENT_PROTECTED=true` is an assertion checked by the app, not an authentication system.
+Anonymous access to Studio pages, APIs, and `/eve/v1` has been checked. Internal callbacks also
+require `STUDIO_INTERNAL_TOKEN`; the project has an automation bypass for protected self-requests.
+No subscription credentials or public-prefixed secrets are deployed.
+
+Each app's ignored `.env.local` contains its Neon development connection. Local Studio therefore
+works against the same career bank as deployed Studio. Start it with `bun run dev:studio`; the
+launcher supplies a local internal token and loopback callback URL to Next and Eve. Do not use
+the production environment file to launch local Eve.
+
+Interviews and model extraction still run locally using the Codex subscription. Remote Studio
+supports reading conversations and editing the bank, research, and settings. While local Eve
+sessions exist, delete career material from local Studio so its runtime context is purged too;
+remote Studio explains this instead of leaving deleted material in the local runtime.
+Remote interviews, voice, public Eve, and API-model budgets remain later work.
+
+`LOCAL_DATA_DIR` selects an isolated local store and overrides the app-local Neon connection in
+the development launcher. Playwright uses this to keep tests out of the real databases.
+The apps reject missing `DATABASE_URL` on Vercel. `.vercelignore` excludes credentials, local
+databases, sessions, and private source directories from deployment uploads.
+
+## Deploy again
+
+Run from the repository root after checks:
+
+```sh
+bunx vercel deploy --project eggers-web --scope brendan-eggers-projects --prod --yes
+bunx vercel deploy --project eggers-studio --scope brendan-eggers-projects --prod --yes
+```
+
+Each command publishes only its named app. Projects are linked locally in each app's `.vercel`
+directory. CLI deployments do not require pushing Git. No Git deployment connection was added.
+
+To refresh an app's local connection:
+
+```sh
+bunx vercel env pull .env.local --cwd apps/studio --scope brendan-eggers-projects
+# Replace apps/studio with apps/web for the public signup database.
+```
+
+To apply migrations with production credentials, without printing them:
+
+```sh
+bunx vercel env pull .vercel/.env.production.local --environment production --yes --cwd apps/studio
+bun --env-file=apps/studio/.vercel/.env.production.local run db:migrate
+# Repeat for apps/web when shared schema migrations change.
+```
+
+## Domains and launch mail
+
+`eggers.dev` and `studio.eggers.dev` have not been moved. The legacy Cloudflare resources and
+Git deployment connection remain in place. Disconnect that deployment connection before a
+domain cutover, then assign the domains to the corresponding Vercel projects and recheck access.
+Do not merge into or push `main` assuming the old production wiring is inert.
+
+The public signup persists one launch-email subscription per address. A live signup write/read
+was verified and its test row removed. No mail was sent. Sending the single launch notification
+is a separate explicit launch task: configure a mail provider, honor unsubscribe tokens, and
+record `sent_at` to avoid duplicate sends.

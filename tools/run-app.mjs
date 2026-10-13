@@ -6,6 +6,8 @@ const app = process.argv[2];
 if (!['studio', 'web'].includes(app)) throw new Error('Choose studio or web');
 const env = {
   ...process.env,
+  // An explicit disposable store must win over app-local Neon environment files.
+  ...(process.env.LOCAL_DATA_DIR ? { DATABASE_URL: '' } : {}),
   STUDIO_INTERNAL_TOKEN: process.env.STUDIO_INTERNAL_TOKEN ?? randomBytes(32).toString('hex'),
   STUDIO_INTERNAL_URL: process.env.STUDIO_INTERNAL_URL ?? 'http://127.0.0.1:3001',
   EVE_TELEMETRY_DISABLED: '1',
