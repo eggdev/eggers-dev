@@ -39,8 +39,8 @@ databases, sessions, and private source directories from deployment uploads.
 ## Git deployments and previews
 
 Both projects deploy from `eggdev/eggers-dev`. A merge to `main` deploys production. Other
-branches deploy previews behind Vercel Authentication. Each app's `vercel.json` skips a build
-when nothing under the app, `packages/`, or the root manifests changed since the last deployment.
+branches deploy previews behind Vercel Authentication. `.vercelignore` removes `.git` from the
+build checkout, so build-skip commands cannot use `git diff`.
 
 Each preview uses its own Neon branch of that app's production database. A branch is a
 copy-on-write copy of production data at its creation, not mock data. Pending migrations run on
