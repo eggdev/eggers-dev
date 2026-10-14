@@ -36,17 +36,23 @@ the development launcher. Playwright uses this to keep tests out of the real dat
 The apps reject missing `DATABASE_URL` on Vercel. `.vercelignore` excludes credentials, local
 databases, sessions, and private source directories from deployment uploads.
 
-## Deploy again
+## Git deployments and previews
 
-Run from the repository root after checks:
+Both projects deploy from `eggdev/eggers-dev`. A merge to `main` deploys production. Other
+branches deploy previews behind Vercel Authentication. Each app's `vercel.json` skips a build
+when nothing under the app, `packages/`, or the root manifests changed since the last deployment.
+
+Each preview uses its own Neon branch of that app's production database. A branch is a
+copy-on-write copy of production data at its creation, not mock data. Pending migrations run on
+the branch, not on production. Writes in a preview stay in that branch and never return to
+production, so edit real career material only in production or local Studio.
+
+A manual production deployment remains available from the repository root:
 
 ```sh
 bunx vercel deploy --project eggers-web --scope brendan-eggers-projects --prod --yes
 bunx vercel deploy --project eggers-studio --scope brendan-eggers-projects --prod --yes
 ```
-
-Each command publishes only its named app. Projects are linked locally in each app's `.vercel`
-directory. CLI deployments do not require pushing Git. No Git deployment connection was added.
 
 To refresh an app's local connection:
 
