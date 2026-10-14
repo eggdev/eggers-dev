@@ -28,6 +28,8 @@ test('requirement hierarchy preserves evidence, supports corrections and fits mo
         company: 'Fixture',
         family: 'Software',
         seniority: 'Senior',
+        level: 'senior',
+        track: 'software',
         location: 'NYC',
         arrangement: 'Hybrid',
         requirements: [
@@ -63,8 +65,9 @@ test('requirement hierarchy preserves evidence, supports corrections and fits mo
     ],
   });
   await page.goto(base);
-  await page.getByRole('button', { name: 'Job research', exact: true }).click();
+  await page.getByRole('button', { name: 'Requirement map', exact: true }).click();
   const map = page.getByRole('region', { name: 'Requirement map', exact: true });
+  await map.getByRole('button', { name: 'List', exact: true }).click();
   await map
     .getByRole('textbox', { name: 'Search requirement concepts and capabilities' })
     .fill('agent-friendly');
@@ -97,4 +100,68 @@ test('requirement hierarchy preserves evidence, supports corrections and fits mo
   await map.getByRole('button', { name: 'Show unmapped requirements' }).click();
   await expect(page.getByRole('dialog').getByText(quote, { exact: true })).toBeVisible();
   expect((await op('research.get', { id: listing.id })).requirements[0].quote).toBe(quote);
+});
+
+test('graph view links stories to capabilities and shows unexplored demand by role', async ({
+  page,
+  request,
+}) => {
+  const op = async (action: string, input: unknown = {}) => {
+    const response = await request.post(`${base}/api/studio/${action}`, { data: input });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  };
+  const listing = (await op('workspace')).listings.find((l: any) =>
+    l.url.endsWith('requirement-map-fixture'),
+  );
+  const source = (await op('map.labels')).find((r: any) => r.listingId === listing.id);
+  await op('map.link', {
+    mappings: [
+      {
+        listingId: listing.id,
+        requirementKey: source.requirementKey,
+        capabilityIds: ['fixture-agent-ready'],
+      },
+    ],
+  });
+  await op('entries.save', {
+    title: 'Agent context cleanup',
+    markdown: 'Documented repository conventions for coding agents.',
+    skills: [],
+    sourceMessageIds: [],
+  });
+  await page.goto(base);
+  await page.getByRole('button', { name: 'Requirement map', exact: true }).click();
+  const map = page.getByRole('region', { name: 'Requirement map', exact: true });
+  await expect(map.getByTestId('requirement-graph').locator('canvas').first()).toBeVisible();
+  const panel = map.getByRole('complementary', { name: 'Map details' });
+  const unexplored = panel.getByRole('region', { name: 'Most requested, still unexplored' });
+  await expect(unexplored.getByRole('button', { name: /Agent-ready repositories/ })).toBeVisible();
+  await map.getByRole('combobox', { name: 'Role track' }).selectOption('software');
+  await expect(unexplored.getByRole('button', { name: /Agent-ready repositories/ })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Software engineering' })).toBeVisible();
+  await map.getByRole('combobox', { name: 'Role track' }).selectOption('');
+  await map
+    .getByRole('textbox', { name: 'Search requirement concepts and capabilities' })
+    .fill('agent-ready');
+  await map
+    .getByRole('textbox', { name: 'Search requirement concepts and capabilities' })
+    .press('Enter');
+  await expect(panel.getByRole('heading', { name: 'Agent-ready repositories' })).toBeVisible();
+  await expect(panel.getByText('Software engineering')).toBeVisible();
+  await panel.getByRole('combobox', { name: 'Link a story' }).selectOption({
+    label: 'Agent context cleanup',
+  });
+  await expect(
+    panel.getByRole('button', { name: 'Agent context cleanup', exact: true }),
+  ).toBeVisible();
+  const entry = (await op('workspace')).entries.find(
+    (e: any) => e.title === 'Agent context cleanup',
+  );
+  expect(entry.capability_ids).toEqual(['fixture-agent-ready']);
+  await panel.getByRole('button', { name: 'Clear selection' }).click();
+  await expect(unexplored).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await op('entries.delete', { id: entry.id });
 });

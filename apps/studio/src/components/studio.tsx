@@ -1,4 +1,10 @@
 'use client';
+import {
+  roleLevelIds,
+  roleLevelLabels,
+  roleTrackIds,
+  roleTrackLabels,
+} from '@repo/domain/requirement-taxonomy-types';
 import type { Entry, EntryInput, Listing, Role, Workspace } from '@repo/domain/types';
 import { Badge, Button, cn, Dialog, Input, Select, Switch, Textarea } from '@repo/ui';
 import { MarkdownEditor } from '@repo/ui/editor';
@@ -13,6 +19,7 @@ import {
   BriefcaseBusiness,
   ListChecks,
   MessagesSquare,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -27,6 +34,7 @@ const sections = [
   ['knowledge', 'Knowledge bank', BookOpen],
   ['map', 'Interview map', ListChecks],
   ['research', 'Job research', Search],
+  ['requirements', 'Requirement map', Network],
   ['jobs', 'Job tracker', BriefcaseBusiness],
   ['settings', 'Settings', Settings2],
 ] as const;
@@ -96,9 +104,9 @@ export function Studio() {
   const run = (fn: () => Promise<unknown>) => {
     void fn().catch(() => {});
   };
-  const createThread = async (message?: string) => {
+  const createThread = async (message?: string, threadTitle?: string) => {
     const thread = await act('threads.create', {
-      title: message ? 'Process job research' : title.trim() || 'New conversation',
+      title: threadTitle ?? (title.trim() || 'New conversation'),
       roleId: roleId || null,
     });
     setThreadId(thread.id);
@@ -355,17 +363,43 @@ export function Studio() {
                 setTrackedJobId(job.id);
                 setSection('jobs');
               }}
-              organize={() =>
-                createThread(
-                  'Organize the existing research requirements into broad concepts and specific capabilities using persisted requirement_map tools. Reuse existing vocabulary, preserve all original excerpts and distinctions, and write experience guides and recall prompts. Associate unmapped requirements only where the actual excerpt supports the capability; create missing capabilities instead of forcing unrelated meanings together. Audit the resulting associations before finishing. Do not modify the career bank or job tracking. Report remaining unmapped sources honestly.',
-                )
-              }
+              openMap={() => setSection('requirements')}
               process={() =>
                 createThread(
                   'Process the pending research corpus with the extractor. Collect the full requirement map with verbatim source excerpts. Continue in batches and tell me which listings need the browser importer.',
+                  'Process job research',
                 )
               }
             />
+          )}
+          {section === 'requirements' && (
+            <div className="mx-auto max-w-[1400px] space-y-6 p-6 md:p-8">
+              <Intro
+                title="Where the market meets your stories."
+                description="Concepts group the capabilities that job listings ask for. Larger nodes are requested more often. Color shows how many of your stories link to each capability."
+              />
+              <RequirementMap
+                map={state.requirementHierarchy}
+                entries={state.entries}
+                act={act}
+                canOrganize={state.modelConnection !== 'disabled'}
+                organize={() =>
+                  createThread(
+                    'Organize the existing research requirements into broad concepts and specific capabilities using persisted requirement_map tools. Reuse existing vocabulary, preserve all original excerpts and distinctions, and write experience guides and recall prompts. Associate unmapped requirements only where the actual excerpt supports the capability; create missing capabilities instead of forcing unrelated meanings together. Audit the resulting associations before finishing. Do not modify the career bank or job tracking. Report remaining unmapped sources honestly.',
+                    'Organize requirement map',
+                  )
+                }
+                explore={
+                  state.modelConnection === 'disabled'
+                    ? undefined
+                    : (capability) =>
+                        createThread(
+                          `Let's explore my experience with "${capability.label}" (requirement-map capability ${capability.id}). Read its experience guide and original excerpts with requirement_map first, then ask me one open question. When you save an entry, link this capability only if my story shows it.`,
+                          `Explore: ${capability.label}`,
+                        )
+                }
+              />
+            </div>
           )}
           {section === 'jobs' && <JobTracker initialId={trackedJobId} />}
           {section === 'settings' && <Preferences state={state} act={act} />}
@@ -571,10 +605,11 @@ function Knowledge({ state, act }: { state: Workspace; act: Act }) {
             roleId: entry.role_id,
             markdown: entry.markdown,
             skills: entry.skills,
+            capabilityIds: entry.capability_ids,
             sourceMessageIds: entry.source_message_ids ?? [],
             expectedRevision: entry.revision,
           }
-        : { title: '', markdown: '', skills: [], sourceMessageIds: [] },
+        : { title: '', markdown: '', skills: [], capabilityIds: [], sourceMessageIds: [] },
     );
   };
   return (
@@ -599,8 +634,22 @@ function Knowledge({ state, act }: { state: Workspace; act: Act }) {
                 : p.action === 'roles.save'
                   ? state.roles.find((r) => r.id === p.payload.id)
                   : state.topics.find((t) => t.id === p.payload.id);
-            const beforeText = before ? proposalText(p.action, before, state.roles) : '';
-            const afterText = proposalText(p.action, p.payload, state.roles);
+            const capabilities = state.requirementHierarchy.capabilities;
+            const beforeText = before
+              ? proposalText(p.action, before, state.roles, capabilities)
+              : '';
+            // An entry proposal without capabilityIds keeps the current links.
+            const afterText = proposalText(
+              p.action,
+              {
+                ...p.payload,
+                capabilityIds:
+                  p.payload.capabilityIds ??
+                  (before && 'capability_ids' in before ? before.capability_ids : []),
+              },
+              state.roles,
+              capabilities,
+            );
             return (
               <div key={p.id} className="rounded-lg border p-4">
                 <h4 className="font-medium">{p.payload.title ?? p.payload.label}</h4>
@@ -745,6 +794,11 @@ function Knowledge({ state, act }: { state: Workspace; act: Act }) {
                 }
               />
             </Field>
+            <CapabilityLinks
+              capabilities={state.requirementHierarchy.capabilities}
+              value={selected.capabilityIds ?? []}
+              onChange={(capabilityIds) => setSelected({ ...selected, capabilityIds })}
+            />
             <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save entry'}
@@ -913,13 +967,13 @@ function Research({
   act,
   process,
   track,
-  organize,
+  openMap,
 }: {
   state: Workspace;
   act: Act;
   process: () => Promise<void>;
   track: (listingId: string) => Promise<void>;
-  organize: () => Promise<void>;
+  openMap: () => void;
 }) {
   const [urls, setUrls] = useState('');
   const [family, setFamily] = useState(families[0]);
@@ -1004,12 +1058,16 @@ function Research({
         For signed-in TrueUp pages, use <code>bun run import:browser</code> on this computer. The
         importer opens a dedicated browser profile and sends visible descriptions to Studio.
       </p>
-      <RequirementMap
-        map={requirements}
-        act={act}
-        organize={organize}
-        canOrganize={state.modelConnection !== 'disabled'}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
+        <p className="text-sm text-muted-foreground">
+          {requirements.concepts.length} concepts and {requirements.capabilities.length}{' '}
+          capabilities organized from these listings.
+        </p>
+        <Button size="sm" variant="outline" onClick={openMap}>
+          <Network />
+          Open requirement map
+        </Button>
+      </div>
       <Input
         aria-label="Filter listings"
         value={filter}
@@ -1027,7 +1085,13 @@ function Research({
         )
         .map((summary) => {
           const l = details[summary.id]
-            ? { ...details[summary.id], status: summary.status, error: summary.error }
+            ? {
+                ...details[summary.id],
+                status: summary.status,
+                error: summary.error,
+                track: summary.track,
+                level: summary.level,
+              }
             : summary;
           return (
             <details
@@ -1054,6 +1118,46 @@ function Research({
                 <p className="text-muted-foreground">
                   {[l.family, l.seniority, l.location, l.arrangement].filter(Boolean).join(' · ')}
                 </p>
+                {l.status === 'ready' && (
+                  <div className="flex flex-wrap gap-2">
+                    <Select
+                      aria-label="Role track for the requirement map"
+                      className="w-auto"
+                      value={l.track}
+                      onChange={(e) =>
+                        void act('research.classify', {
+                          id: l.id,
+                          track: e.target.value,
+                          level: l.level,
+                        }).catch(() => {})
+                      }
+                    >
+                      {roleTrackIds.map((t) => (
+                        <option key={t} value={t}>
+                          {roleTrackLabels[t]}
+                        </option>
+                      ))}
+                    </Select>
+                    <Select
+                      aria-label="Level for the requirement map"
+                      className="w-auto"
+                      value={l.level}
+                      onChange={(e) =>
+                        void act('research.classify', {
+                          id: l.id,
+                          track: l.track,
+                          level: e.target.value,
+                        }).catch(() => {})
+                      }
+                    >
+                      {roleLevelIds.map((v) => (
+                        <option key={v} value={v}>
+                          {roleLevelLabels[v]}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
                 {l.error && <p className="text-destructive">{l.error}</p>}
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1233,10 +1337,91 @@ function Preferences({ state, act }: { state: Workspace; act: Act }) {
   );
 }
 
-function proposalText(action: string, data: any, roles: Role[]): string {
+function CapabilityLinks({
+  capabilities,
+  value,
+  onChange,
+}: {
+  capabilities: { id: string; label: string }[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const id = useId();
+  if (!capabilities.length) return null;
+  const add = (label: string) => {
+    const match = capabilities.find((c) => c.label.toLowerCase() === label.trim().toLowerCase());
+    if (match && !value.includes(match.id)) onChange([...value, match.id]);
+    if (match) setDraft('');
+  };
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="text-sm">
+        Linked capabilities
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Requirement-map capabilities this story shows. They place the story on the map.
+      </p>
+      {value.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {value.map((capabilityId) => {
+            const label = capabilities.find((c) => c.id === capabilityId)?.label ?? capabilityId;
+            return (
+              <li key={capabilityId}>
+                <Badge className="gap-1 pr-1">
+                  {label}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${label}`}
+                    className="rounded-sm px-1 hover:bg-accent"
+                    onClick={() => onChange(value.filter((x) => x !== capabilityId))}
+                  >
+                    ×
+                  </button>
+                </Badge>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Input
+        id={id}
+        list={`${id}-options`}
+        placeholder="Type to find a capability…"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          add(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            add(draft);
+          }
+        }}
+      />
+      <datalist id={`${id}-options`}>
+        {capabilities
+          .filter((c) => !value.includes(c.id))
+          .map((c) => (
+            <option key={c.id} value={c.label} />
+          ))}
+      </datalist>
+    </div>
+  );
+}
+function proposalText(
+  action: string,
+  data: any,
+  roles: Role[],
+  capabilities: { id: string; label: string }[],
+): string {
   const role = roles.find((r) => r.id === (data.roleId ?? data.role_id));
+  const linked = ((data.capabilityIds ?? data.capability_ids ?? []) as string[])
+    .map((id) => capabilities.find((c) => c.id === id)?.label ?? id)
+    .join(', ');
   if (action === 'entries.save')
-    return `Title: ${data.title}\nRole: ${role?.title ?? 'Across roles'}\nSkills: ${(data.skills ?? []).join(', ')}\n\n${data.markdown ?? ''}`;
+    return `Title: ${data.title}\nRole: ${role?.title ?? 'Across roles'}\nSkills: ${(data.skills ?? []).join(', ')}\nCapabilities: ${linked || 'None'}\n\n${data.markdown ?? ''}`;
   if (action === 'roles.save')
     return `Role: ${data.title}\nCompany: ${data.company ?? ''}\nWhen: ${data.dates ?? ''}\n\n${data.context ?? ''}`;
   return `Topic: ${data.label}\nRole: ${role?.title ?? 'Across roles'}\nProgress: ${data.status}\n\n${data.notes ?? ''}`;

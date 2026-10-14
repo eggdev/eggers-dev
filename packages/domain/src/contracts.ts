@@ -1,5 +1,8 @@
+import { roleLevelIds, roleTrackIds } from '@repo/domain/requirement-taxonomy-types';
 import { Schema } from 'effect';
 
+export const Track = Schema.Literals(roleTrackIds);
+export const Level = Schema.Literals(roleLevelIds);
 const text = Schema.String.check(Schema.isMaxLength(100_000));
 const label = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500));
 export const RoleInput = Schema.Struct({
@@ -18,6 +21,7 @@ export const EntryInputSchema = Schema.Struct({
   title: label,
   markdown: text,
   skills: Schema.Array(Schema.String),
+  capabilityIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(40))),
   sourceMessageIds: Schema.Array(Schema.String),
   expectedRevision: Schema.optional(Schema.Number),
 });
@@ -41,7 +45,9 @@ export const ExtractionInput = Schema.Struct({
   title: label,
   company: Schema.String,
   family: Schema.String,
+  track: Track,
   seniority: Schema.String,
+  level: Level,
   location: Schema.String,
   arrangement: Schema.String,
   requirements: Schema.Array(
@@ -59,4 +65,9 @@ export const ExtractionInput = Schema.Struct({
       quote: text,
     }),
   ),
+});
+export const ClassifyInput = Schema.Struct({
+  id: label,
+  track: Track,
+  level: Level,
 });

@@ -53,6 +53,8 @@ it('retains source distinctions and counts distinct listings through cross-linke
       company: suffix,
       family: 'Frontend',
       seniority: 'Senior',
+      level: 'senior',
+      track: 'frontend',
       location: 'NYC',
       arrangement: 'Hybrid',
       requirements,
@@ -118,6 +120,70 @@ it('rejects stale source keys and vocabulary writes without partial links', asyn
     capabilityId: 'react',
   });
   expect((await run('map.pending')).remaining).toBe(1);
+});
+it('links stories to capabilities with revision history and per-track listings', async () => {
+  const entry = await run('entries.save', {
+    title: 'Design system migration',
+    markdown: 'Moved shared components to typed React primitives.',
+    skills: [],
+    capabilityIds: ['react', 'typescript', 'react'],
+    sourceMessageIds: [],
+  });
+  expect(entry.capability_ids).toEqual(['react', 'typescript']);
+  let map = await run('map.get');
+  expect(map.capabilities.find((c: any) => c.id === 'react').entryIds).toEqual([entry.id]);
+  expect(map.listings.map((l: any) => l.track)).toEqual(['frontend', 'frontend']);
+  // Omitting capabilityIds keeps the links; a supplied list replaces them.
+  const kept = await run('entries.save', {
+    id: entry.id,
+    title: 'Design system migration',
+    markdown: 'More detail.',
+    skills: [],
+    sourceMessageIds: [],
+    expectedRevision: 1,
+  });
+  expect(kept.capability_ids).toEqual(['react', 'typescript']);
+  await run('entries.save', {
+    id: entry.id,
+    title: 'Design system migration',
+    markdown: 'More detail.',
+    skills: [],
+    capabilityIds: ['typescript'],
+    sourceMessageIds: [],
+    expectedRevision: 2,
+  });
+  map = await run('map.get');
+  expect(map.capabilities.find((c: any) => c.id === 'react').entryIds).toEqual([]);
+  const history = await run('entries.history', { id: entry.id });
+  expect(history.map((r: any) => r.capability_ids)).toEqual([
+    ['typescript'],
+    ['react', 'typescript'],
+    ['react', 'typescript'],
+  ]);
+  await expect(
+    run('entries.save', {
+      id: entry.id,
+      title: 'Design system migration',
+      markdown: 'More detail.',
+      skills: [],
+      capabilityIds: ['invented'],
+      sourceMessageIds: [],
+      expectedRevision: 3,
+    }),
+  ).rejects.toThrow('existing requirement-map capabilities');
+  expect((await run('workspace')).entries[0].capability_ids).toEqual(['typescript']);
+  await run('research.classify', { id: ids[1], track: 'full_stack', level: 'staff' });
+  map = await run('map.get');
+  expect(map.listings.find((l: any) => l.id === ids[1])).toMatchObject({
+    track: 'full_stack',
+    level: 'staff',
+  });
+  await expect(
+    run('research.classify', { id: ids[1], track: 'astronaut', level: '' }),
+  ).rejects.toThrow('invalid');
+  await run('map.capability.delete', { id: 'typescript' });
+  expect((await run('workspace')).entries[0].capability_ids).toEqual([]);
+  await run('entries.delete', { id: entry.id });
 });
 it('does not count deleted, changed or duplicate sources and permits permanent capability removal', async () => {
   await db.query('UPDATE listings SET duplicate_of=$2 WHERE id=$1', [ids[1], ids[0]]);

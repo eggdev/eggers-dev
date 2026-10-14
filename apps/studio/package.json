@@ -21,7 +21,11 @@
     "effect": "catalog:",
     "react-markdown": "catalog:",
     "remark-gfm": "catalog:",
-    "diff": "catalog:"
+    "diff": "catalog:",
+    "sigma": "catalog:",
+    "graphology": "catalog:",
+    "graphology-layout-forceatlas2": "catalog:",
+    "graphology-types": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "catalog:",

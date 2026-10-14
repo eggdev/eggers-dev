@@ -62,7 +62,7 @@ export const requirementKey = (requirement: Requirement) =>
 const evidenceKey = (listingId: string, key: string) => `${listingId}:${key}`;
 type Link = { listing_id: string; requirement_key: string; capability_id: string };
 export async function readTaxonomy(db: Database, suppliedListings?: Listing[]) {
-  const [concepts, capabilities, memberships, links, listings] = await Promise.all([
+  const [concepts, capabilities, memberships, links, stories, listings] = await Promise.all([
     db.query<RequirementConcept>('SELECT * FROM requirement_concepts ORDER BY label'),
     db.query<Omit<RequirementCapability, 'conceptIds'>>(
       'SELECT * FROM requirement_capabilities ORDER BY label',
@@ -71,10 +71,11 @@ export async function readTaxonomy(db: Database, suppliedListings?: Listing[]) {
       'SELECT * FROM requirement_capability_concepts',
     ),
     db.query<Link>('SELECT * FROM requirement_links'),
+    db.query<{ entry_id: string; capability_id: string }>('SELECT * FROM entry_capabilities'),
     suppliedListings
       ? Promise.resolve(suppliedListings)
       : db.query<Listing>(
-          "SELECT id,url,title,company,family,status,duplicate_of,requirements FROM listings WHERE status='ready' AND duplicate_of IS NULL",
+          "SELECT id,url,title,company,family,track,level,status,duplicate_of,requirements FROM listings WHERE status='ready' AND duplicate_of IS NULL",
         ),
   ]);
   const sources = new Map<string, RequirementEvidence>();
@@ -90,6 +91,8 @@ export async function readTaxonomy(db: Database, suppliedListings?: Listing[]) {
         company: listing.company,
         url: listing.url,
         family: listing.family,
+        track: listing.track,
+        level: listing.level,
       });
     }
   const validLinks = links.filter((l) => sources.has(evidenceKey(l.listing_id, l.requirement_key)));
@@ -109,6 +112,7 @@ export async function readTaxonomy(db: Database, suppliedListings?: Listing[]) {
         listingIds,
         families: [...new Set(evidence.map((e) => e.family).filter(Boolean))],
         aliases: [...new Set(evidence.map((e) => e.label))],
+        entryIds: stories.filter((s) => s.capability_id === cap.id).map((s) => s.entry_id),
       };
     })
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
@@ -128,6 +132,13 @@ export async function readTaxonomy(db: Database, suppliedListings?: Listing[]) {
     mappedRequirements: mapped.size,
     unmappedRequirements: sources.size - mapped.size,
     listingCount: eligible.length,
+    listings: eligible.map(({ id, title, company, track, level }) => ({
+      id,
+      title,
+      company,
+      track,
+      level,
+    })),
   };
   return { hierarchy, sources, links: validLinks, mapped };
 }

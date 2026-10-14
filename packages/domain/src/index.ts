@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from '@repo/database';
 import {
+  ClassifyInput,
   EntryInputSchema,
   ExtractionInput,
   ImportInput,
@@ -55,11 +56,11 @@ export function createCareerService(db: Database, retireSession?: (session: any)
       db.query<Role>('SELECT * FROM roles ORDER BY created_at'),
       db.query<Thread>('SELECT * FROM threads ORDER BY updated_at DESC'),
       db.query<Entry>(
-        "SELECT e.*, COALESCE((SELECT jsonb_agg(message_id) FROM entry_sources WHERE entry_id=e.id),'[]') AS source_message_ids FROM entries e ORDER BY updated_at DESC",
+        "SELECT e.*, COALESCE((SELECT jsonb_agg(message_id) FROM entry_sources WHERE entry_id=e.id),'[]') AS source_message_ids, COALESCE((SELECT jsonb_agg(capability_id ORDER BY capability_id) FROM entry_capabilities WHERE entry_id=e.id),'[]') AS capability_ids FROM entries e ORDER BY updated_at DESC",
       ),
       db.query<Topic>('SELECT * FROM topics ORDER BY label'),
       db.query<Listing>(
-        "SELECT id,url,source_url,title,company,family,seniority,location,arrangement,requirements,status,error,duplicate_of,collected_at,content_hash,''::text AS description FROM listings ORDER BY collected_at DESC",
+        "SELECT id,url,source_url,title,company,family,track,seniority,level,location,arrangement,requirements,status,error,duplicate_of,collected_at,content_hash,''::text AS description FROM listings ORDER BY collected_at DESC",
       ),
       db.query<Proposal>('SELECT * FROM proposals ORDER BY created_at'),
       settings(),
@@ -100,6 +101,23 @@ export function createCareerService(db: Database, retireSession?: (session: any)
     if (existing && input.id && input.expectedRevision !== existing.revision)
       throw new DomainError('This entry changed. Reload it before saving.', 409);
     if (existing && !input.id) return existing; // replay of the same agent call
+    // Omitted capability links keep the current associations; a supplied list replaces them.
+    const capabilityIds = input.capabilityIds
+      ? [...new Set(input.capabilityIds)].sort()
+      : (
+          await db.query<{ capability_id: string }>(
+            'SELECT capability_id FROM entry_capabilities WHERE entry_id=$1 ORDER BY capability_id',
+            [id],
+          )
+        ).map((r) => r.capability_id);
+    if (input.capabilityIds?.length) {
+      const known = await db.query<{ id: string }>(
+        'SELECT id FROM requirement_capabilities WHERE id IN (SELECT jsonb_array_elements_text($1::text::jsonb))',
+        [json(capabilityIds)],
+      );
+      if (known.length !== capabilityIds.length)
+        throw new DomainError('Link entries only to existing requirement-map capabilities.');
+    }
     const revision = (existing?.revision ?? 0) + 1;
     const params = [
       id,
@@ -108,20 +126,25 @@ export function createCareerService(db: Database, retireSession?: (session: any)
       input.markdown,
       json(input.skills),
       revision,
+      json(capabilityIds),
     ];
+    const links = `history AS (
+      INSERT INTO entry_revisions(entry_id,revision,title,markdown,skills,capability_ids) SELECT id,revision,title,markdown,skills,$7::text::jsonb FROM changed
+    ), removed AS (
+      DELETE FROM entry_capabilities WHERE entry_id=$1 AND capability_id NOT IN (SELECT jsonb_array_elements_text($7::text::jsonb)) AND EXISTS(SELECT 1 FROM changed)
+    ), added AS (
+      INSERT INTO entry_capabilities(entry_id,capability_id) SELECT changed.id, jsonb_array_elements_text($7::text::jsonb) FROM changed ON CONFLICT DO NOTHING
+    ) SELECT * FROM changed`;
     const rows = existing
-      ? await db.query(
+      ? await db.query<Entry>(
           `WITH changed AS (
       UPDATE entries SET role_id=$2,title=$3,markdown=$4,skills=$5::text::jsonb,revision=$6,updated_at=now()
-      WHERE id=$1 AND revision=$7 RETURNING *), history AS (
-      INSERT INTO entry_revisions(entry_id,revision,title,markdown,skills) SELECT id,revision,title,markdown,skills FROM changed)
-      SELECT * FROM changed`,
+      WHERE id=$1 AND revision=$8 RETURNING *), ${links}`,
           [...params, existing.revision],
         )
-      : await db.query(
+      : await db.query<Entry>(
           `WITH changed AS (
-      INSERT INTO entries(id,role_id,title,markdown,skills,revision) VALUES($1,$2,$3,$4,$5::text::jsonb,$6) RETURNING *), history AS (
-      INSERT INTO entry_revisions(entry_id,revision,title,markdown,skills) SELECT id,revision,title,markdown,skills FROM changed) SELECT * FROM changed`,
+      INSERT INTO entries(id,role_id,title,markdown,skills,revision) VALUES($1,$2,$3,$4,$5::text::jsonb,$6) RETURNING *), ${links}`,
           params,
         );
     if (!rows.length) throw new DomainError('This entry changed. Reload it before saving.', 409);
@@ -130,7 +153,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
         'INSERT INTO entry_sources(entry_id,message_id) SELECT $1,id FROM messages WHERE id=$2 ON CONFLICT DO NOTHING',
         [id, messageId],
       );
-    return rows[0];
+    return { ...rows[0], capability_ids: capabilityIds };
   }
   async function retireAllSessions() {
     const threads = await db.query<Thread>('SELECT * FROM threads WHERE session IS NOT NULL');
@@ -297,11 +320,13 @@ export function createCareerService(db: Database, retireSession?: (session: any)
             title: e.title,
             markdown: e.markdown,
             skills: e.skills,
+            capabilityIds: e.capability_ids,
             revision: e.revision,
           })),
           topics: state.topics,
           requirements: {
             ...state.requirementHierarchy,
+            listings: undefined,
             capabilities: state.requirementHierarchy.capabilities.map(
               ({ experience_guide, prompts, distinctions, aliases, ...summary }) => summary,
             ),
@@ -484,7 +509,7 @@ export function createCareerService(db: Database, retireSession?: (session: any)
               `Requirement "${req.label}" needs an exact excerpt from the source.`,
             );
         await db.query(
-          "UPDATE listings SET title=$2,company=$3,family=$4,seniority=$5,location=$6,arrangement=$7,requirements=$8::text::jsonb,status='ready',parsed_at=now(),model=$9,error=NULL WHERE id=$1",
+          "UPDATE listings SET title=$2,company=$3,family=$4,seniority=$5,location=$6,arrangement=$7,requirements=$8::text::jsonb,status='ready',parsed_at=now(),model=$9,error=NULL,track=$10,level=$11 WHERE id=$1",
           [
             id,
             input.title,
@@ -495,9 +520,20 @@ export function createCareerService(db: Database, retireSession?: (session: any)
             input.arrangement,
             json(input.requirements),
             (await settings()).extractionModel,
+            input.track,
+            input.level,
           ],
         );
         return { id, status: 'ready', requirements: input.requirements.length };
+      }
+      case 'research.classify': {
+        const input = decode(ClassifyInput, raw);
+        const rows = await db.query(
+          'UPDATE listings SET track=$2,level=$3 WHERE id=$1 RETURNING id,track,level',
+          [input.id, input.track, input.level],
+        );
+        if (!rows.length) throw new DomainError('Listing not found.', 404);
+        return rows[0];
       }
       case 'research.retry':
         await db.query(

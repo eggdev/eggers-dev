@@ -136,4 +136,31 @@ CREATE TABLE requirement_links (listing_id text REFERENCES listings(id) ON DELET
 CREATE INDEX requirement_links_capability ON requirement_links(capability_id);
 `,
   },
+  {
+    version: 8,
+    sql: `
+CREATE TABLE entry_capabilities (entry_id text REFERENCES entries(id) ON DELETE CASCADE,capability_id text REFERENCES requirement_capabilities(id) ON DELETE CASCADE,PRIMARY KEY(entry_id,capability_id));
+CREATE INDEX entry_capabilities_capability ON entry_capabilities(capability_id);
+ALTER TABLE entry_revisions ADD COLUMN capability_ids jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE listings ADD COLUMN track text NOT NULL DEFAULT 'other' CHECK(track IN ('software','frontend','full_stack','platform','forward_deployed','product','technical_product','other'));
+ALTER TABLE listings ADD COLUMN level text NOT NULL DEFAULT '' CHECK(level IN ('','early','mid','senior','staff','principal'));
+UPDATE listings SET track=CASE
+  WHEN lower(family||' '||title) ~ 'forward[- ]deployed' THEN 'forward_deployed'
+  WHEN lower(family||' '||title) ~ 'technical product manag' THEN 'technical_product'
+  WHEN lower(family||' '||title) ~ 'product manag' THEN 'product'
+  WHEN lower(family||' '||title) ~ 'full[- ]?stack' THEN 'full_stack'
+  WHEN lower(family||' '||title) ~ 'front[- ]?end|/ ui\\M' THEN 'frontend'
+  WHEN lower(family||' '||title) ~ 'platform|infrastructure' THEN 'platform'
+  WHEN lower(family||' '||title) ~ 'engineer|developer|technical staff' THEN 'software'
+  ELSE 'other' END;
+UPDATE listings SET level=CASE
+  WHEN x ~ 'principal' THEN 'principal'
+  WHEN x ~ '\\mstaff\\M' THEN 'staff'
+  WHEN x ~ '\\msenior\\M|\\msr\\M' THEN 'senior'
+  WHEN x ~ '\\mmid' THEN 'mid'
+  WHEN x ~ 'early|junior|entry|new grad' THEN 'early'
+  ELSE '' END
+FROM (SELECT id AS lid, regexp_replace(lower(seniority||' '||title),'member of technical staff','','g') AS x FROM listings) s WHERE s.lid=listings.id;
+`,
+  },
 ];

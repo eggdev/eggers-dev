@@ -5,27 +5,64 @@ import type {
   RequirementEvidence,
   RequirementHierarchy,
 } from '@repo/domain/requirement-taxonomy-types';
-import { Badge, Button, Dialog, Input, Select, Textarea } from '@repo/ui';
+import {
+  roleLevelIds,
+  roleLevelLabels,
+  roleTrackIds,
+  roleTrackLabels,
+} from '@repo/domain/requirement-taxonomy-types';
+import type { Entry } from '@repo/domain/types';
+import { Badge, Button, cn, Dialog, Input, Select, Textarea } from '@repo/ui';
 import { MarkdownEditor } from '@repo/ui/editor';
 import { api } from '@studio/components/api';
-import { useState } from 'react';
+import type { GraphController } from '@studio/components/requirement-graph';
+import {
+  buildGraph,
+  type Capability,
+  demand,
+  graphInput,
+  type MapFilter,
+  matchingListings,
+  nodeKey,
+} from '@studio/components/requirement-graph-model';
+import { entryInput, RequirementPanel } from '@studio/components/requirement-panel';
+import { List, Network } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type Act = (action: string, input?: unknown) => Promise<any>;
 type Detail = { capability: RequirementCapability; evidence: RequirementEvidence[] };
+type View = 'graph' | 'list';
+const RequirementGraph = dynamic(
+  () => import('@studio/components/requirement-graph').then((m) => m.RequirementGraph),
+  {
+    ssr: false,
+    loading: () => <p className="p-6 text-sm text-muted-foreground">Drawing the map…</p>,
+  },
+);
 export function RequirementMap({
   map,
+  entries,
   act,
   organize,
+  explore,
   canOrganize,
 }: {
   map: RequirementHierarchy;
+  entries: Entry[];
   act: Act;
   organize: () => Promise<void>;
+  explore?: (capability: Capability) => void;
   canOrganize: boolean;
 }) {
   const [query, setQuery] = useState('');
+  const [view, setView] = useState<View>('graph');
+  const [filter, setFilter] = useState<MapFilter>({ track: '', level: 'any' });
+  const [layers, setLayers] = useState({ tracks: true, stories: true });
+  const [selected, setSelected] = useState<string>();
+  const controller = useRef<GraphController>(undefined);
   const [detail, setDetail] = useState<Detail>();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
@@ -33,12 +70,38 @@ export function RequirementMap({
   const [editing, setEditing] = useState<RequirementCapability>();
   const [concept, setConcept] = useState<RequirementConcept>();
   const [unmapped, setUnmapped] = useState<RequirementEvidence[]>();
+  // Layout depends only on structure; refreshed counts must not re-run it or reset the camera.
+  const structure = useMemo(() => JSON.stringify(graphInput(map, entries)), [map, entries]);
+  const graph = useMemo(() => buildGraph(JSON.parse(structure)), [structure]);
   const search = query.toLowerCase().trim();
   const visible = map.capabilities.filter((c) =>
     `${c.label} ${c.description} ${c.aliases.join(' ')} ${c.families.join(' ')}`
       .toLowerCase()
       .includes(search),
   );
+  const rank = (label: string) =>
+    label.toLowerCase().startsWith(search) ? 0 : label.toLowerCase().includes(search) ? 1 : 2;
+  const matches = search
+    ? [
+        ...map.concepts
+          .filter((c) => c.label.toLowerCase().includes(search))
+          .map((c) => ({ key: nodeKey('concept', c.id), label: c.label, kind: 'Concept' })),
+        ...visible.map((c) => ({
+          key: nodeKey('capability', c.id),
+          label: c.label,
+          kind: 'Capability',
+        })),
+        ...entries
+          .filter((e) => `${e.title} ${e.markdown}`.toLowerCase().includes(search))
+          .map((e) => ({ key: nodeKey('entry', e.id), label: e.title, kind: 'Story' })),
+      ]
+        .sort((a, b) => rank(a.label) - rank(b.label))
+        .slice(0, 8)
+    : [];
+  const select = (key?: string) => {
+    setSelected(key);
+    if (key) controller.current?.focus(key);
+  };
   const open = async (id: string) => {
     setError('');
     setOpening(true);
@@ -62,32 +125,43 @@ export function RequirementMap({
       setBusy(false);
     }
   };
+  const trackCounts = new Map<string, number>();
+  for (const l of map.listings) trackCounts.set(l.track, (trackCounts.get(l.track) ?? 0) + 1);
   return (
-    <section aria-label="Requirement map" className="space-y-5 rounded-lg border p-5">
+    <section aria-label="Requirement map" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="font-semibold">Requirement map</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {map.concepts.length} concepts · {map.capabilities.length} capabilities ·{' '}
-            {map.listingCount} unique listings
-          </p>
+        <p className="text-sm text-muted-foreground">
+          {map.concepts.length} concepts · {map.capabilities.length} capabilities ·{' '}
+          {map.listingCount} unique listings ·{' '}
+          {map.capabilities.filter((c) => c.entryIds.length).length} capabilities with stories
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <fieldset className="flex rounded-md border p-0.5">
+            <legend className="sr-only">View</legend>
+            {(['graph', 'list'] as const).map((v) => (
+              <Button
+                key={v}
+                size="sm"
+                variant="ghost"
+                aria-pressed={view === v}
+                className={cn('h-7', view === v && 'bg-accent')}
+                onClick={() => setView(v)}
+              >
+                {v === 'graph' ? <Network /> : <List />}
+                {v === 'graph' ? 'Graph' : 'List'}
+              </Button>
+            ))}
+          </fieldset>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canOrganize || !map.totalRequirements}
+            onClick={() => void organize().catch(() => {})}
+          >
+            Organize with Eve
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          disabled={!canOrganize || !map.totalRequirements}
-          onClick={() => void organize().catch(() => {})}
-        >
-          Organize with Eve
-        </Button>
       </div>
-      <p className="text-sm leading-6 text-muted-foreground">
-        Explore related capabilities, the experience that could demonstrate them, and the original
-        job requirements. Counts are distinct listings; overlapping capabilities do not add up.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Experience guides are conversation prompts, not assessments of your experience or promises
-        about an employer’s expectations.
-      </p>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -98,86 +172,145 @@ export function RequirementMap({
           Opening capability…
         </p>
       )}
-      <Input
-        aria-label="Search requirement concepts and capabilities"
-        placeholder="Find a concept, capability, or original phrase…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="relative min-w-60 flex-1">
+          <Input
+            aria-label="Search requirement concepts and capabilities"
+            placeholder="Find a concept, capability, story, or original phrase…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && view === 'graph' && matches[0]) {
+                select(matches[0].key);
+                setQuery('');
+              }
+            }}
+          />
+          {view === 'graph' && matches.length > 0 && (
+            <ul
+              aria-label="Search results"
+              className="absolute top-full right-0 left-0 z-20 mt-1 rounded-md border bg-popover p-1 shadow-md"
+            >
+              {matches.map((m) => (
+                <li key={m.key}>
+                  <button
+                    type="button"
+                    className="flex w-full justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      select(m.key);
+                      setQuery('');
+                    }}
+                  >
+                    <span className="truncate">{m.label}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{m.kind}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <Select
+          aria-label="Role track"
+          className="w-auto"
+          value={filter.track}
+          onChange={(e) => setFilter({ ...filter, track: e.target.value as MapFilter['track'] })}
+        >
+          <option value="">All roles ({map.listings.length})</option>
+          {roleTrackIds
+            .filter((t) => trackCounts.has(t))
+            .map((t) => (
+              <option key={t} value={t}>
+                {roleTrackLabels[t]} ({trackCounts.get(t)})
+              </option>
+            ))}
+        </Select>
+        <Select
+          aria-label="Level"
+          className="w-auto"
+          value={filter.level}
+          onChange={(e) => setFilter({ ...filter, level: e.target.value as MapFilter['level'] })}
+        >
+          <option value="any">Any level</option>
+          {roleLevelIds.map((l) => (
+            <option key={l} value={l}>
+              {roleLevelLabels[l]}
+            </option>
+          ))}
+        </Select>
+        {view === 'graph' && (
+          <>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={layers.tracks}
+                onChange={(e) => setLayers({ ...layers, tracks: e.target.checked })}
+              />
+              Role tracks
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={layers.stories}
+                onChange={(e) => setLayers({ ...layers, stories: e.target.checked })}
+              />
+              Stories
+            </label>
+          </>
+        )}
+      </div>
       {!map.capabilities.length && (
         <p className="py-4 text-sm text-muted-foreground">
           The source requirements are ready to organize. Eve will group related meanings while
           keeping the original excerpts.
         </p>
       )}
-      <div className="divide-y">
-        {map.concepts
-          .filter(
-            (c) =>
-              c.label.toLowerCase().includes(search) ||
-              c.capabilityIds.some((id) => visible.some((cap) => cap.id === id)),
-          )
-          .map((c) => {
-            const children = map.capabilities.filter(
-              (cap) =>
-                c.capabilityIds.includes(cap.id) &&
-                (!search ||
-                  c.label.toLowerCase().includes(search) ||
-                  visible.some((v) => v.id === cap.id)),
-            );
-            return (
-              <details key={c.id} open={search ? true : undefined} className="py-4">
-                <summary className="cursor-pointer text-sm font-semibold">
-                  {c.label}
-                  <span className="ml-3 font-normal text-muted-foreground">
-                    {c.count} listings · {c.capabilityIds.length} capabilities
-                  </span>
-                </summary>
-                <div className="mt-4 space-y-3 pl-1">
-                  <p className="text-sm leading-6 text-muted-foreground">{c.description}</p>
-                  <Button size="sm" variant="ghost" onClick={() => setConcept(c)}>
-                    Edit concept
-                  </Button>
-                  {children.map((cap) => (
-                    <button
-                      key={cap.id}
-                      type="button"
-                      onClick={() => void open(cap.id)}
-                      className="flex w-full items-start justify-between gap-3 rounded-md border p-3 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{cap.label}</span>
-                        <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                          {cap.description}
-                        </span>
-                        {cap.conceptIds.length > 1 && (
-                          <span className="mt-2 block text-xs text-muted-foreground">
-                            Also in{' '}
-                            {map.concepts
-                              .filter(
-                                (other) => other.id !== c.id && cap.conceptIds.includes(other.id),
-                              )
-                              .map((other) => other.label)
-                              .join(', ')}
-                          </span>
-                        )}
-                      </span>
-                      <Badge className="shrink-0">{cap.count} listings</Badge>
-                    </button>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-      </div>
-      {!!search &&
-        !map.concepts.some(
-          (c) =>
-            c.label.toLowerCase().includes(search) ||
-            c.capabilityIds.some((id) => visible.some((v) => v.id === id)),
-        ) && <p className="text-sm text-muted-foreground">No matching concepts or capabilities.</p>}
+      {view === 'graph' && map.capabilities.length > 0 && (
+        <div className="grid overflow-hidden rounded-lg border lg:h-[min(76vh,820px)] lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="h-[62vh] min-h-[420px] lg:h-full">
+            <RequirementGraph
+              graph={graph}
+              map={map}
+              filter={filter}
+              layers={layers}
+              selected={selected && graph.hasNode(selected) ? selected : undefined}
+              controller={controller}
+              onSelect={setSelected}
+            />
+          </div>
+          <RequirementPanel
+            map={map}
+            entries={entries}
+            filter={filter}
+            selected={selected}
+            busy={busy}
+            select={select}
+            setFilter={setFilter}
+            openCapability={(id) => void open(id)}
+            editConcept={(id) => setConcept(map.concepts.find((c) => c.id === id))}
+            linkStory={(entry, capabilityIds) =>
+              void mutate('entries.save', entryInput(entry, capabilityIds)).catch(() => {})
+            }
+            explore={explore}
+          />
+        </div>
+      )}
+      {view === 'list' && (
+        <RequirementList
+          map={map}
+          filter={filter}
+          search={search}
+          visible={visible}
+          open={(id) => void open(id)}
+          editConcept={setConcept}
+        />
+      )}
+      <p className="text-xs leading-5 text-muted-foreground">
+        Counts are distinct listings, so overlapping capabilities do not add up. Experience guides
+        are conversation prompts. They do not assess your experience or promise an employer’s
+        expectations.
+      </p>
       {map.unmappedRequirements > 0 && (
-        <div className="space-y-2 border-t pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
           <p className="text-sm">
             {map.unmappedRequirements} of {map.totalRequirements} source requirements still need
             associations.
@@ -507,5 +640,99 @@ export function RequirementMap({
         </div>
       </Dialog>
     </section>
+  );
+}
+
+function RequirementList({
+  map,
+  filter,
+  search,
+  visible,
+  open,
+  editConcept,
+}: {
+  map: RequirementHierarchy;
+  filter: MapFilter;
+  search: string;
+  visible: RequirementHierarchy['capabilities'];
+  open: (id: string) => void;
+  editConcept: (concept: RequirementConcept) => void;
+}) {
+  const listings = matchingListings(map, filter);
+  const concepts = map.concepts.filter(
+    (c) =>
+      c.label.toLowerCase().includes(search) ||
+      c.capabilityIds.some((id) => visible.some((cap) => cap.id === id)),
+  );
+  return (
+    <div className="divide-y rounded-lg border px-5">
+      {concepts.map((c) => {
+        const children = map.capabilities
+          .filter(
+            (cap) =>
+              c.capabilityIds.includes(cap.id) &&
+              (!search ||
+                c.label.toLowerCase().includes(search) ||
+                visible.some((v) => v.id === cap.id)),
+          )
+          .map((cap) => ({ cap, count: demand(cap, listings) }))
+          .filter(({ count }) => count > 0 || (!filter.track && filter.level === 'any'))
+          .sort((a, b) => b.count - a.count || a.cap.label.localeCompare(b.cap.label));
+        const listingCount = new Set(
+          children.flatMap(({ cap }) => cap.listingIds.filter((id) => listings.has(id))),
+        ).size;
+        return (
+          <details key={c.id} open={search ? true : undefined} className="py-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              {c.label}
+              <span className="ml-3 font-normal text-muted-foreground">
+                {listingCount} listings · {children.length} capabilities
+              </span>
+            </summary>
+            <div className="mt-4 space-y-3 pl-1">
+              <p className="text-sm leading-6 text-muted-foreground">{c.description}</p>
+              <Button size="sm" variant="ghost" onClick={() => editConcept(c)}>
+                Edit concept
+              </Button>
+              {children.map(({ cap, count }) => (
+                <button
+                  key={cap.id}
+                  type="button"
+                  onClick={() => open(cap.id)}
+                  className="flex w-full items-start justify-between gap-3 rounded-md border p-3 text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{cap.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      {cap.description}
+                    </span>
+                    {cap.conceptIds.length > 1 && (
+                      <span className="mt-2 block text-xs text-muted-foreground">
+                        Also in{' '}
+                        {map.concepts
+                          .filter((other) => other.id !== c.id && cap.conceptIds.includes(other.id))
+                          .map((other) => other.label)
+                          .join(', ')}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge>{count} listings</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {cap.entryIds.length
+                        ? `${cap.entryIds.length} ${cap.entryIds.length === 1 ? 'story' : 'stories'}`
+                        : 'Unexplored'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </details>
+        );
+      })}
+      {!!search && !concepts.length && (
+        <p className="py-4 text-sm text-muted-foreground">No matching concepts or capabilities.</p>
+      )}
+    </div>
   );
 }

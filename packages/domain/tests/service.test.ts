@@ -148,6 +148,8 @@ describe('research corpus', () => {
       company: 'Example',
       family: 'Frontend',
       seniority: 'Senior',
+      level: 'senior',
+      track: 'frontend',
       location: 'NYC',
       arrangement: 'Hybrid',
       requirements: [

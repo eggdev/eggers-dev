@@ -1,4 +1,10 @@
-import type { RequirementHierarchy } from '@repo/domain/requirement-taxonomy-types';
+import type {
+  RequirementHierarchy,
+  RoleLevel,
+  RoleTrack,
+} from '@repo/domain/requirement-taxonomy-types';
+
+export type { RoleLevel, RoleTrack } from '@repo/domain/requirement-taxonomy-types';
 export interface Role {
   id: string;
   title: string;
@@ -28,6 +34,7 @@ export interface Entry {
   title: string;
   markdown: string;
   skills: string[];
+  capability_ids: string[];
   revision: number;
   updated_at: string;
   source_message_ids?: string[];
@@ -52,7 +59,9 @@ export interface Listing {
   title: string;
   company: string;
   family: string;
+  track: RoleTrack;
   seniority: string;
+  level: RoleLevel;
   location: string;
   arrangement: string;
   description: string;
@@ -88,6 +97,7 @@ export interface EntryInput {
   title: string;
   markdown: string;
   skills: string[];
+  capabilityIds?: string[];
   sourceMessageIds: string[];
   expectedRevision?: number;
 }

@@ -42,6 +42,7 @@ const allowed = new Set([
   'research.retry',
   'research.blocked',
   'research.delete',
+  'research.classify',
   'proposals.accept',
   'proposals.reject',
 ]);
