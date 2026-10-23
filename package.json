@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "catalog": {
-    "next": "16.4.0",
+    "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "eve": "0.78.0",
@@ -82,5 +82,10 @@
     "vitest": "catalog:",
     "@playwright/test": "catalog:",
     "tsx": "catalog:"
+  },
+  "overrides": {
+    "nx": {
+      "undici": "7.29.1"
+    }
   }
 }
