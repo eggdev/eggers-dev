@@ -1,25 +1,26 @@
-node_modules/
-.next/
-.eve/
-.nx/
-.data/
-.vercel/
-.env*
-!.env.example
-*.tsbuildinfo
-*.log
-test-results/
-playwright-report/
-.DS_Store
-.wrangler/
-.dev.vars
+# Exact build output and local state
+/target/
+/dist/
+/dist.*
+/dist-windows/
+/node_modules/
+/app.contract.d.ts
+/.exact/
+
+# Private data: the bank, the inbox, cloned repositories and resumes. This repository is public.
+/.data/
+/data/
+/resume/
 /_source/
 /content/
-/.agents/
+.env*
+
+# Machine and tool files
+.DS_Store
+*.log
 /.claude/
+/.agents/
 /.cursor/
 /.opencode/
 /.impeccable/
 /.gstack/
-.output/
-next-env.d.ts

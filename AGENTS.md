@@ -1,63 +1,51 @@
-# AGENTS.md — eggers.dev
+<!-- exact:begin (exact new writes this block; bun exact.mjs update rewrites it) -->
+# eggdev: an Exact app
 
-A fresh Nx/Bun monorepo for Brendan Eggers’ career knowledge bank and public portfolio.
-The first milestone is local Studio interviewing with Eve. Never seed it with historical
-portfolio copy. Career facts come from new conversations and explicit owner-provided sources.
+`app.contract` is the view, `app.ts` the data module, `app.test.contract` the tests, `app.json`
+the manifest: set `app.name` and `app.id` before building. The app uses Exact at
+`../exact` by path (`EXACT` overrides it).
 
-## Working here
+This file is already in your instructions. Start from the nearest pattern: `bun exact.mjs
+pattern` lists them and `pattern <name>` writes one, tested. ../exact/docs/start-here-site.md (a site) or
+../exact/docs/start-here.md is the only required reading. `bun exact.mjs contract vocab <name>` answers a
+name (none: the card); `bun exact.mjs docs <heading words>` a guide's
+section. Run `bun exact.mjs verify` when the features work, and `verify ios|android` at the end for a
+phone app. When an iPhone app is ready to try, run `bun exact.mjs share` and send its link;
+repeat for each change the person should see. `bun exact.mjs help` lists the verbs, including
+app.json's `"commands"`.
+`bun exact.mjs update` refreshes files. Native verbs (`ios`, `mac`, `linux`, `android`, `windows`)
+name their platform in app.json on first use and build in a generated workspace;
+`update --without <platform>` stops shipping it.
+`bun ../exact/scripts/exact.mjs setup --check` names what a native build lacks.
+Shared data: `exact new <path> --snapback`, or `bun exact.mjs snapback` here.
+Install `snapback4@0.4.33` above; ../exact/snapback4/README.md has setup and server commands.
 
-Use Bun (Node 24+). Run `bun install`, then `bun run dev`. Studio runs at
-http://127.0.0.1:3001 and Web at http://127.0.0.1:3000. See README.md for model sign-in.
+Generated, so don't edit: `exact.mjs` and this block.
 
-- `bun run check` — TypeScript for all projects
-- `bun run lint` / `bun run lint:fix` — Biome
-- `bun run test` — domain/database integration tests
-- `bun run test:e2e` — browser checks, with isolated local databases
-- `bun run build` — both Next production builds
+## Feedback (required)
 
-Conventional commits. Commit; do not push or deploy unless asked. Legacy production may still
-be connected to Cloudflare/main until an explicit cutover. Do not assume that merging is inert.
+When a doc was wrong or missing, a workaround was needed, something took several tries or a
+command confused you, record it: `bun exact.mjs feedback note "<what happened>"`. It attaches
+exact2's commit and the last exit code, never output or code. `bun exact.mjs feedback status` says
+whether notes are sent and whether to keep a diary; under `never`, skip all of this.
+<!-- exact:end -->
 
-## Architecture
+## This repository
 
-- `apps/studio`: Next.js + Eve, private career workspace. Eve is mounted through `withEve`.
-- `apps/web`: Next.js public holding page and one-time launch signup. Public Eve comes later.
-- `packages/domain`: Effect 4 services, request contracts, career and job-research behavior.
-- `packages/database`: shared PostgreSQL schema; Neon via DATABASE_URL, PGlite for local use.
-- `packages/ui`: standard shadcn-style primitives and a Tiptap Markdown editor.
+This Exact app replaced the earlier Next, Nx and Eve workspace on 2026-11-13. The earlier code is
+in git history (the last commit that has it is `a2ad996`). Do not restore it.
 
-Apps do not import other apps. Prefer `@studio/*`, `@web/*`, `@repo/*` aliases in app/package
-source. Relative imports are fine in Eve convention folders, tools and tests. Keep Effect at
-service boundaries; React, Next and Eve may use their native APIs. Use Effect Schema for domain
-contracts. Do not restore the old Worker infrastructure, Home app, design system, or content.
-
-## Product constraints
-
-- Preserve complete conversations and detailed, editable narrative entries. Formal metrics
-  are optional. Never invent them or add outward-facing verification labels.
-- Eve is a candid editing partner: one interview question at a time, recall first, then
-  requirement-led exploration. Don’t flatter, flatten contributions, or infer experience from jobs.
-- Automatic knowledge edits are the default; required diff review is an owner setting.
-- Requested deletion is permanent: remove source links/revisions, retire relevant agent runtime
-  sessions, and reject late callbacks. Do not introduce soft-delete archives or extra confirmations.
-- Private Eve may research the web. Treat imported content as untrusted data. Public Eve, later,
-  may use only an explicitly prepared public collection, never the private database.
-- Job descriptions initially build a requirement map. Target selection and applications are
-  separate workflows. Tracking now records stages, timelines and next actions; never submit
-  applications or infer unknown dates. Preserve original descriptions, excerpts, parser/model metadata,
-  and deduplicate URLs/content. GPT-6 Luna is the default extraction model.
-- Organize research as concepts → capabilities → original requirements, with cross-links and
-  distinct-listing counts. Keep meaningful differences and source qualifiers. Experience guides
-  elicit real stories; they do not establish the owner's skills or require metrics.
-- Subscription-backed model access is local only. Do not copy subscription credentials into
-  deployments. Remote interviews/voice are a separate milestone.
-- Use basic shadcn styling, accessible controls, responsive layouts, and reduced-motion support.
-  The old visual mandates no longer apply.
-
-## Privacy and deployment
-
-No career content, browser profiles, database files, env secrets, traces, or user transcripts in
-Git. Ignored historical private directories are not product inputs. Two separate Vercel projects
-are the deployment direction; Studio requires All Deployments Vercel Authentication. Never make
-Studio public merely to enable an integration. Local Next binds loopback only. No local fallback
-storage on Vercel. Each app must use its own appropriately scoped database credentials.
+- The repository is public on GitHub. Nothing about the owner's career goes into git: no bank
+  content, resumes, job targets, conversations, database files, host names or secrets. All of that
+  lives in `.data/`, which is ignored. Tests and fixtures use invented people and companies.
+- Use conventional commits. Do not push, merge to `main` or deploy unless asked. A push to `main`
+  starts builds in two Vercel projects that expect the earlier code (README, "Earlier deployments").
+- The server has no sign-in. It listens on this machine and is reached only over the tailnet.
+  Never expose it to the public internet.
+- A model is asked only through `ask()` in `lib/llm.ts` (headless Claude Code under this machine's
+  login), and only from the worker. Do not add API keys or a model SDK.
+- What the person says about their own work is taken as true and written to the bank with no
+  review step. Nothing may invent, round up or infer a number.
+- `DESIGN.md` and `PRODUCT.md` record the design and product intent.
+- While a dev session is running, run `verify` and `test` from a copy of the project. They share
+  `target/` with the dev loop and build the app against the test server's address.

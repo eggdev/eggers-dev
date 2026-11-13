@@ -1,0 +1,395 @@
+// Run by `test` or `verify` against server.ts on one database, empty at the start and shared by
+// every test in order: the first leaves a source and no facts, the second two facts. No worker runs, so a
+// source stays waiting; proposed facts are seeded through the API as the worker would write them.
+test "a source is added from the empty bank, waits to be read, refuses a repeat repository in words, and is deleted after asking"
+  clock data
+  tap "bank-add"
+  clock settle
+  expect state nav.tab == "sources"
+  expect disabled "add-save"
+  expect text "add-hint" == "Paste some text to add it."
+  type "add-title" "Resume 2024"
+  type "add-text" "Staff Engineer at Acme, 2021 to now. Built the billing export service."
+  expect text "add-hint" == "Claude Code on the server reads what you add and puts what it finds in your bank."
+  tap "add-save"
+  clock data
+  clock settle
+  expect state lib.items.0 .title == "Resume 2024"
+  expect state lib.items.0 .status == "queued"
+  tap "add-source"
+  clock settle
+  tap "kind-repo"
+  expect text "add-hint" == "Enter the repository’s path to add it."
+  type "add-repo" "/srv/code/billing"
+  expect text "add-hint" == "Enter the name or email your commits use."
+  type "add-author" "ada"
+  tap "add-save"
+  clock data
+  clock settle
+  expect state lib.items.0 .title == "billing"
+  tap "add-source"
+  clock settle
+  type "add-repo" "/srv/code/billing"
+  tap "add-save"
+  clock data
+  expect text "add-error" == "That repository is already a source. Read it again from its page."
+  fail fetch "http://127.0.0.1:87"
+  type "add-repo" "/srv/code/web"
+  tap "add-save"
+  clock data
+  expect text "add-error" == "Can’t reach the server. Check that it’s running, then try again."
+  expect text "add-repo" == "/srv/code/web"
+  pass fetch "http://127.0.0.1:87"
+  tap "add-cancel"
+  clock settle
+  tap "discard-edits-confirm"
+  clock settle
+  tap "source-1"
+  clock settle
+  expect text "source-title" == "Resume 2024"
+  expect text "source-status" == "Waiting to be read."
+  expect disabled "source-read"
+  expect text "source-hint" == "It can be read again once this reading finishes."
+  tap "source-delete"
+  clock settle
+  tap "remove-source-confirm"
+  clock settle
+  clock data
+  expect state lib.items.length == 1
+  expect tree missing "source-1"
+  reload
+  expect state author == "ada"
+
+test "facts are in the bank with no review step; one is edited with its story, and one is deleted only after asking"
+  clock data
+  expect tree has "bank-add"
+  request POST "/roles" {"company": "Acme", "title": "Staff Engineer", "start": "2021-03", "end": ""}
+  request POST "/facts" {"roleId": 1, "kind": "project", "text": "Built the billing export service.", "detail": "Finance closed the month by hand. Designed and built the export in Go.", "skills": "Go, Postgres", "evidence": "a1b2c3 billing/export.go"}
+  request POST "/facts" {"roleId": 1, "kind": "accomplishment", "text": "Cut checkout latency.", "metric": "900 ms to 210 ms", "evidence": "resume bullet"}
+  request POST "/facts" {"kind": "skill", "text": "TypeScript"}
+  clock +5000
+  clock data
+  expect state bank.facts.length == 3
+  expect tree missing "bank-add"
+  expect text "bank-unclassed" == "Kind of work isn’t set for 1 role, so that work counts as middling evidence for a job. Set it on each one’s Kind of Work row."
+  expect text "role-kind-1" == "Kind of work not set"
+  tap "role-1"
+  clock settle
+  type "role-standing" "employer"
+  type "role-reach" "live"
+  tap "role-save"
+  clock data
+  clock settle
+  expect text "role-kind-1" == "Employer, in production"
+  expect tree missing "bank-unclassed"
+  tap "fact-1"
+  clock settle
+  expect text "fact-text" == "Built the billing export service."
+  expect text "fact-detail-text" == "Finance closed the month by hand. Designed and built the export in Go."
+  expect text "fact-role" == "Staff Engineer, Acme"
+  expect text "fact-skills" == "Go, Postgres"
+  back
+  clock settle
+  tap "fact-2"
+  clock settle
+  expect text "fact-metric" == "900 ms to 210 ms"
+  expect tree missing "fact-detail-text"
+  tap "fact-edit"
+  clock settle
+  expect text "edit-text" == "Cut checkout latency."
+  type "edit-text" "Cut checkout p95 latency by rewriting the cart query."
+  type "edit-story" "Checkout timed out on large carts. Found the N+1 query and replaced it."
+  tap "edit-save"
+  clock data
+  clock settle
+  expect text "fact-text" == "Cut checkout p95 latency by rewriting the cart query."
+  expect text "fact-detail-text" == "Checkout timed out on large carts. Found the N+1 query and replaced it."
+  back
+  clock settle
+  tap "fact-3"
+  clock settle
+  expect text "fact-role" == "General"
+  tap "fact-delete"
+  clock settle
+  tap "remove-fact-confirm"
+  clock settle
+  clock data
+  expect state bank.facts.length == 2
+  expect tree missing "fact-3"
+
+test "the profile is asked for, shows as being written, then shows the document with what is worth adding, and says when the bank has moved on"
+  clock data
+  tap "tab-profile"
+  clock data
+  expect tree has "profile-write"
+  tap "profile-write"
+  clock data
+  expect text "profile-writing" == "Claude is writing your profile from 2 facts. This takes a few minutes."
+  request POST "/profile/save" {"body": "# Professional profile\n\n## Summary\n\nI build billing systems.", "gaps": ["What did the billing export replace, and who used it?"]}
+  clock +5000
+  clock data
+  expect tree has "profile-body"
+  expect text "gap-0" == "What did the billing export replace, and who used it?"
+  expect state profile.stale == false
+  expect enabled "profile-rewrite"
+  request POST "/facts" {"roleId": 1, "kind": "responsibility", "text": "Ran the on-call rotation."}
+  clock +5000
+  clock data
+  expect state profile.stale == true
+  tap "open-direction"
+  clock settle
+  clock data
+  type "direction-text" "## Target tracks\n- A. Forward-deployed engineer\n\n## Fit test for a job listing\n1. Does it include mentoring?"
+  tap "direction-save"
+  clock data
+  clock settle
+  expect state notes.body == "## Target tracks\n- A. Forward-deployed engineer\n\n## Fit test for a job listing\n1. Does it include mentoring?"
+  expect tree missing "direction-save"
+
+test "a picked file is uploaded and waits to be read; a type that can't be read is refused in words and the sheet stays open"
+  clock data
+  tap "tab-sources"
+  tap "add-source"
+  clock settle
+  tap "kind-file"
+  expect disabled "add-save"
+  expect text "add-hint" == "Choose a file to add it."
+  tap "add-choose"
+  pick "add-pick" "fixtures/notes.zip"
+  expect text "add-picked" == "notes.zip"
+  tap "add-save"
+  clock data
+  expect text "add-error" == "That zip isn’t a LinkedIn data export. Unzip it and add the files inside."
+  tap "add-choose"
+  pick "add-pick" "fixtures/resume.txt"
+  expect text "add-picked" == "resume.txt"
+  expect tree missing "add-error"
+  tap "add-save"
+  clock data
+  clock settle
+  expect state lib.items.0 .kind == "file"
+  expect state lib.items.0 .status == "queued"
+  expect tree missing "add-save"
+
+test "a LinkedIn export zip becomes one text source; GitHub repositories are searched, ticked and added, and one already added can't be ticked again"
+  clock data
+  tap "tab-sources"
+  tap "add-source"
+  clock settle
+  tap "kind-file"
+  tap "add-choose"
+  pick "add-pick" "fixtures/linkedin.zip"
+  tap "add-save"
+  clock data
+  clock settle
+  expect state lib.items.0 .title == "LinkedIn export"
+  expect state lib.items.0 .kind == "text"
+  tap "add-source"
+  clock settle
+  tap "kind-github"
+  clock data
+  expect text "hub-who" == "Signed in to GitHub as ada. Only your own commits are read."
+  expect disabled "add-save"
+  expect text "add-hint" == "Tick the repositories worth reading."
+  type "hub-search" "bill"
+  expect tree missing "repo-ada/ledger"
+  tap "repo-acme/billing-export"
+  type "hub-search" ""
+  tap "repo-ada/ledger"
+  expect state chosen.length == 2
+  expect text "hub-who" == "2 repositories chosen."
+  tap "add-save"
+  clock data
+  clock settle
+  expect state lib.items.0 .kind == "github"
+  expect state lib.items.1 .kind == "github"
+  tap "add-source"
+  clock settle
+  clock data
+  expect disabled "repo-ada/ledger"
+  expect tree missing "repo-ada/dotfiles"
+  tap "hub-extra"
+  expect enabled "repo-ada/dotfiles"
+  type "hub-search" "zzz"
+  expect text "hub-none" == "No repository matches “zzz”."
+
+
+test "a posting is added and waits to be read; once read it is ranked by fit and shows each requirement's support, the resume written for it and what changed"
+  clock data
+  tap "tab-jobs"
+  clock data
+  tap "jobs-add"
+  clock settle
+  expect disabled "job-save"
+  expect text "job-hint" == "Paste the posting or its link to add it."
+  type "job-text" "Staff engineer wanted."
+  tap "job-save"
+  clock data
+  expect text "job-error" == "That is too short to be a job posting. Paste the whole thing."
+  type "job-text" "Staff Engineer, Billing at Globex. You will lead a small team building our billing platform in Go and Postgres. Requirements: five or more years building backend systems; experience leading engineers; Go in production. Nice to have: experience with Kafka."
+  tap "job-save"
+  clock data
+  clock settle
+  expect state jobs.items.0 .status == "queued"
+  request POST "/jobs/1/result" {"title": "Staff Engineer, Billing", "company": "Globex", "place": "Remote", "verdict": "A strong fit on leadership and Go.", "requirements": [{"text": "Experience leading engineers", "need": "must", "coverage": "strong", "evidence": "Led five engineers on the billing export at Acme.", "roles": ["role:1"]}, {"text": "Go in production", "need": "must", "coverage": "partial", "evidence": "Go is shown on one project.", "roles": ["role:1"]}, {"text": "Experience with Kafka", "need": "nice", "coverage": "none", "evidence": "Nothing in the bank shows Kafka."}], "strengths": ["Led the billing export team."], "risks": ["No Kafka."], "changes": ["Moved the billing export to the top, since the posting centres on billing."], "gaps": ["Have you run Kafka or another queue in production?"], "terms": ["Go", "Kafka"], "knockouts": [{"question": "Are you authorised to work in the US?", "answer": "unknown", "note": "The bank doesn’t say."}], "resume": "# Ada Example\n\n## Summary\n\nStaff engineer who builds billing systems in Go."}
+  clock +5000
+  clock data
+  expect text "fit-1" == "64%"
+  tap "job-1"
+  clock settle
+  clock data
+  expect text "job-title" == "Staff Engineer, Billing"
+  expect text "job-fit" == "64%"
+  expect text "job-covered" == "2 of 3 requirements supported by your bank"
+  expect text "job-verdict" == "A strong fit on leadership and Go."
+  expect text "job-weighed" == "Claude’s reading of the posting against your bank. Production work and recent work count for more; set each role’s kind of work under Experience. A change to your bank writes every unsent resume again by itself, except one you edited. Writing it again takes several minutes and replaces your edits."
+  expect text "job-terms-in" == "Go"
+  expect text "job-terms-missing" == "Kafka"
+  type "job-outcome" "interviewed"
+  clock data
+  expect state job.outcome == "interviewed"
+  type "job-outcome-note" "Two rounds."
+  type "job-outcome-note" key "Enter"
+  clock data
+  expect state job.outcomeNote == "Two rounds."
+  type "job-contact" "Sam, my old manager, is a director there"
+  type "job-contact" key "Enter"
+  clock data
+  expect state job.contact == "Sam, my old manager, is a director there"
+  tap "job-edit-resume"
+  clock settle
+  type "resume-text" "# Ada Example\n\n## Summary\n\nStaff engineer who leads billing teams and builds in Go."
+  tap "resume-save"
+  clock data
+  clock settle
+  expect state job.resume == "# Ada Example\n\n## Summary\n\nStaff engineer who leads billing teams and builds in Go."
+  expect tree missing "resume-save"
+  tap "job-write-again"
+  tap "replace-edits-confirm"
+  clock data
+  expect state job.resumeStatus == "queued"
+  expect text "job-resume-writing" == "Claude is writing this resume again and having it reviewed. The one below is the last version."
+  expect disabled "job-write-again"
+  tap "job-resume"
+  clock settle
+  expect text "resume-for" == "Written by Claude for Staff Engineer, Billing at Globex, from your bank."
+  expect tree has "resume-body"
+  expect text "change-0" == "Moved the billing export to the top, since the posting centres on billing."
+
+test "the watchlist takes a company by its job-board link, refuses a link it can't place and a repeat, and removes one; the job list shows what became of a job"
+  clock data
+  tap "tab-jobs"
+  clock data
+  expect text "stage-saved" == "Saved 0"
+  expect text "stage-active" == "Active 1"
+  tap "stage-active"
+  expect text "job-line-1" == "Globex, Remote"
+  expect text "stage-note" == "Applied and interviewing. After fourteen days with nothing heard, a job moves to Done as No response."
+  type "status-1" "rejected"
+  clock data
+  expect text "stage-done" == "Done 1"
+  expect text "jobs-none" == "Nothing in progress. A job moves here when you mark it Applied."
+  type "job-search" "zzz"
+  expect text "jobs-none" == "No job here matches “zzz”."
+  type "job-search" ""
+  tap "stage-found"
+  expect text "leads-note" == "Add companies to your watchlist and their open jobs are found and scored for you."
+  tap "open-companies"
+  clock settle
+  clock data
+  expect disabled "companies-check"
+  type "company-link" "https://example.com/careers"
+  tap "company-add"
+  clock data
+  expect text "company-error" == "Paste a link to the company’s job board on Greenhouse, Lever or Ashby (boards.greenhouse.io, jobs.lever.co or jobs.ashbyhq.com)."
+  type "company-link" "https://jobs.ashbyhq.com/globex"
+  tap "company-add"
+  clock data
+  expect state companies.items.0 .name == "Globex"
+  expect state companyLink == ""
+  type "company-link" "https://jobs.ashbyhq.com/globex"
+  tap "company-add"
+  clock data
+  expect text "company-error" == "That company is already on your watchlist."
+  expect enabled "companies-check"
+  tap "company-remove-1"
+  clock settle
+  tap "remove-company-confirm"
+  clock settle
+  clock data
+  expect state companies.items.length == 0
+
+
+test "your details are refused without a name, saved with one, and shown again when the form is reopened"
+  clock data
+  tap "tab-profile"
+  clock settle
+  tap "open-details"
+  clock data
+  clock settle
+  type "details-location" "Brooklyn, NY"
+  tap "details-save"
+  clock data
+  expect text "details-error" == "Enter your name."
+  type "details-name" "Ada Lovelace"
+  type "details-email" "ada at example"
+  tap "details-save"
+  clock data
+  expect text "details-error" == "That email address doesn’t look right."
+  type "details-email" "ada@example.com"
+  tap "details-save"
+  clock data
+  clock settle
+  expect state me.name == "Ada Lovelace"
+  expect state me.location == "Brooklyn, NY"
+  expect tree missing "details-save"
+  tap "open-details"
+  clock data
+  clock settle
+  expect text "details-location" == "Brooklyn, NY"
+
+test "talk starts empty, sends what is written and shows a reply being written, and starts over after asking"
+  clock data
+  tap "tab-talk"
+  clock settle
+  expect disabled "talk-send"
+  type "talk-composer" "I led the checkout rewrite at Acme."
+  tap "talk-send"
+  clock data
+  clock settle
+  expect state talk.messages.length == 2
+  expect state talk.messages.0 .body == "I led the checkout rewrite at Acme."
+  expect state talk.busy == true
+  expect text "talk-composer" == ""
+  expect disabled "talk-send"
+  tap "talk-clear"
+  clock settle
+  tap "clear-talk-confirm"
+  clock settle
+  clock data
+  expect state talk.messages.length == 0
+
+test "experience is searched, a fact's category is changed, and an edit with changes asks before it is discarded"
+  clock data
+  tap "tab-bank"
+  clock settle
+  type "bank-search" "zzzz no such fact"
+  clock settle
+  expect text "bank-none" == "No fact matches “zzzz no such fact”."
+  type "bank-search" ""
+  clock settle
+  tap "fact-1"
+  clock settle
+  tap "fact-edit"
+  clock settle
+  type "edit-metric" "changed and not saved"
+  tap "edit-cancel"
+  clock settle
+  tap "discard-edits-cancel"
+  clock settle
+  expect text "edit-metric" == "changed and not saved"
+  tap "edit-cancel"
+  clock settle
+  tap "discard-edits-confirm"
+  clock settle
+  expect tree missing "edit-save"

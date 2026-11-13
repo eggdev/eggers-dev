@@ -1,151 +1,101 @@
 # eggers.dev
 
-A fresh career workspace for Brendan Eggers. Studio helps build a detailed career knowledge bank
-through conversations with Eve, then uses recurring job requirements to prompt deeper recall.
-Web is a minimal public holding page with a single launch-email signup.
+A private career workspace: a knowledge bank of one person's work, and the job search built on it.
+It is an Exact app with a small Bun server beside it. It runs on one machine and is reached over a
+private network. It has no sign-in and is not a public website.
 
-## Run locally
+This repository is public. The code is here; the person's data is not. Everything personal lives
+in `.data/`, which git ignores.
 
-Requires Node 24+, Bun 1.4+, and the Codex CLI with a subscription sign-in for live interviews.
+## What it does
+
+- **Bank.** You add sources: pasted text, files, a LinkedIn export, git repositories. A worker has
+  Claude Code read each source and writes what it finds as facts under the role they belong to.
+  Duplicate facts from several sources are folded into one.
+- **Profile.** One document written from the whole bank. Where the bank is thin, it asks
+  questions instead of guessing.
+- **Talk.** One running conversation about your work. What you say is written into the bank.
+- **Jobs.** A posting is read against the bank: what it requires, what supports each requirement,
+  and a fit score computed from that coverage. Each job gets a tailored resume built only from
+  bank facts, a PDF that an applicant tracking system reads cleanly, and draft outreach messages.
+- **Council.** Three readers, each a different model, score a tailored resume and name its weak
+  lines. A reviser rewrites it from the bank until it passes or three rounds are spent.
+- **Discovery.** The public job boards of companies on a watchlist are read daily, and each new
+  posting gets a quick first score.
+
+One rule holds everywhere: nothing may invent, round up or infer a number. A resume is built only
+from facts in the bank.
+
+## Run it
+
+You need Bun 1.4.2, an Exact checkout at `../exact` (or name one with `EXACT`), and the `claude`
+command signed in on this machine. GitHub sources use the `gh` command's sign-in. Chrome prints
+the resume PDFs (`CHROME` names the binary when it is not in the usual place).
 
 ```sh
 bun install
-bun run eve:login
-# Complete Codex sign-in in your browser.
-bun run dev
+bun exact.mjs dev
 ```
 
-- Studio: http://127.0.0.1:3001
-- Web: http://127.0.0.1:3000
+This starts three things: the API server (`server.ts`, port 8787), the worker (`worker.ts`) and
+the web app (port 8765). With `mprocs` installed, each runs in its own terminal tab.
 
-`bun run dev:studio` and `bun run dev:web` start either app alone. The launcher generates a
-process-local internal token shared by Next and Eve. Use the launcher, not a bare `next dev`.
-No API key is necessary for local subscription mode. Interview and extraction model identifiers
-are editable in Studio Settings; the defaults are `gpt-6.1-sol` and `gpt-6-luna`. Availability
-depends on your account. Eve uses a conservative 128,000-token working context budget for
-local models; set `EVE_CONTEXT_WINDOW_TOKENS` if selecting a model with a smaller limit. Authentication failures are shown in the conversation, not replaced
-with simulated replies. This repository does not copy or store Codex credentials.
-
-Local data persists in each app’s `.data/postgres` directory using PGlite (PostgreSQL compiled
-to WASM). One Next process owns each directory; Eve accesses Studio’s internal API. Restarting
-keeps your bank. Do not run two app processes against the same directory. Use `LOCAL_DATA_DIR`
-for an isolated store. There is no historical content migration or seed.
-
-For Neon, set `DATABASE_URL` in the app’s `.env.local` or launch environment. Run
-`DATABASE_URL=… bun run db:migrate` once against a fresh database before deployment. Local
-stores initialize automatically. Never place private content or secrets in Git.
-
-## Working in Studio
-
-1. Add a role or start a focused conversation. Explore memories freely in **Pass 1 · Recall**.
-2. Eve saves narrative entries and builds an editable interview map. Review/correct them in
-   Knowledge bank. Revisions can be restored into the editor and saved as a new revision.
-3. Add listing URLs in Job research. Choose **Process with Eve**, then send the prepared message.
-   The extraction subagent uses Luna and continues batches. Blocked sources remain visible for
-   browser capture or manual paste.
-   Choose **Organize with Eve** to consolidate extracted requirements into broad concepts and
-   specific capabilities. Search also matches original wording. Open a capability for recall
-   questions, an editable experience guide, and verbatim source excerpts. Related capabilities
-   can span concepts; counts always represent distinct listings. Unmapped requirements stay visible.
-4. Switch a role conversation to **Pass 2 · Dig deeper** when ready. Eve uses the full recurring
-   requirement map as prompts, without treating missing stories as absent skills.
-
-The editor renders Markdown as you type or paste. Select text for formatting, or type `/` in an
-empty paragraph for headings, lists, quotes and code blocks. Messages sent to Eve are Markdown.
-
-**Automatic edits start on.** Enable “Review Eve’s edits” in Settings to queue diffs for entries, role details, and interview topics.
-Requested deletions happen directly. Entry deletion removes its revisions and linked transcript
-turns (including associated replies). Conversation deletion also removes entries sourced from that conversation. Runtime
-sessions are retired and event snapshots cleared to prevent replay of deleted source content.
-Deleting a source-linked entry can remove a message that also supported another entry; inspect
-and correct those related entries when needed. Semantic copies in unrelated narrative text are
-not automatically detected. There is no hidden trash or archival copy in the application.
-
-## Job tracking
-
-Job tracker groups jobs into **Saved**, **In Progress**, and **Done**, with counts, inline status
-changes, direct listing links, and removal from each row. **Notes & timeline** opens the detailed
-record. In Progress includes Applied, Interviewing, Offer, and Negotiating; Done includes Offer
-accepted, Offer declined, No response, Ghosted, Rejected, Withdrawn, and Closed.
-
-After **14 calendar days in Applied**, a dated application automatically appears as **Ghosted**
-in Done. This is calculated from the current application date in the owner's New York time zone;
-it does not need a scheduled task or overwrite the original application history. Unknown dates
-stay blank and do not age into Ghosted. Correct the stage date in the job editor or current stage
-timeline event; ordinary notes and follow-ups do not restart the clock. Selecting Applied again
-from Ghosted starts a new period from today, with a timeline event. Other active stages reopen
-it normally.
-
-Each job has an editable timeline, a next action and optional due date. Active overdue and
-upcoming follow-ups appear above the list. Completing an action records it in the timeline.
-Removing a tracked job permanently removes its timeline; the separately collected research
-description remains available. “Tracked” is when it was added to Studio, not a guessed TrueUp
-saved or application date.
-
-## Browser job capture
-
-For the complete TrueUp tracker, including its Saved, In Progress and Done tabs:
+To reach the app from another device on a Tailscale network, set `EGG_REMOTE` to this machine's
+`.ts.net` name. Everything then listens on this machine only, and Tailscale Serve carries it over
+HTTPS. `tools/dev.ts` has the two `tailscale serve` commands.
 
 ```sh
-bun run import:trueup
-# Only when the owner confirms every “No offer” outcome was a rejection:
-bun run import:trueup --no-offer=rejected
+EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 ```
 
-Start local Studio first and sign in to the dedicated browser when prompted. The importer reads
-all three tabs, creates tracked jobs, and captures original descriptions for research. Re-running
-it adds new jobs without overwriting your stages, notes or timeline; unchanged parsed descriptions
-are skipped. “No offer” defaults to Closed unless explicitly mapped to Rejected. Relative saved
-ages are retained as source notes, never guessed application dates. Blocked or expired descriptions
-remain visible for another source or manual paste. Choose **Process with Eve** in Job research to
-extract the captured requirements using local subscription access.
+## Layout
 
-For arbitrary listing URLs or links on another browser page:
+| Path | What it is |
+| --- | --- |
+| `app.contract` | The view: every screen of the app |
+| `app.ts` | The app's data module: calls to the server |
+| `app.test.contract` | The tests, run against `server.ts` on an empty database |
+| `app.tamber` | Colours and theme tokens |
+| `server.ts` | The API. It stores and serves; it never calls a model |
+| `worker.ts` | Reads sources, writes the profile, reads jobs, replies in Talk |
+| `lib/` | One file per concern, such as `db`, `ingest`, `profile`, `jobs`, `council`, `pdf`, `discover`, `talk` and `llm` |
+| `tools/` | Commands to run by hand, listed below |
+| `.data/` | The database, inbox, cloned repositories and resumes. Ignored by git |
 
-```sh
-bunx playwright install chromium
-bun run import:browser
-# Or supply listing URLs:
-bun run import:browser /path/to/listings.txt
-```
+## Commands
 
-Start Studio first. The importer opens a dedicated persistent browser profile in `.data/browser`.
-Sign into TrueUp yourself, navigate to saved jobs/search results, then follow the terminal prompt.
-Without a URL file it gathers listing links currently present on that page (scroll/load more
-before continuing). It captures rendered pages and preserves originals in Studio. Logged-in
-sessions remain on your personal computer. Use `BROWSER_CHANNEL=chrome` if you prefer installed
-Chrome. The importer does not assume a LinkedIn API or bypass login/paywall controls.
+| Command | What it does |
+| --- | --- |
+| `bun exact.mjs dev` | Server, worker and web app together |
+| `bun exact.mjs verify` | Builds the app and runs the tests. Run it from a copy while `dev` is running |
+| `bun exact.mjs help` | Every Exact verb |
+| `bun tools/refresh.ts [steps]` | Brings everything derived from the bank up to date |
+| `bun tools/rerank.ts` | Reads every job again and prints the old and new fit |
+| `bun tools/council.ts [job id]` | Has the council review resumes not yet sent |
+| `bun tools/discover.ts` | Checks the watchlist now |
+| `bun tools/score.ts [days]` | Quick-scores recent found postings |
+| `bun tools/widen.ts <file>` | Adds companies to the watchlist from a file of board names |
+| `bun tools/unslop.ts` | Rewords bank facts to the writing rules without changing what they say |
+| `bun tools/questions.ts` | Closes open questions that the bank already answers |
 
-Imports normalize tracking URLs, detect repeated descriptions, preserve failed retrievals,
-and retain verbatim requirement evidence. Re-fetching an unchanged parsed description avoids
-another extraction. Source-specific JSON-LD parsing is preferred; visible-page capture is the
-fallback. Review extracted location/family fields for relevance; ingestion does not silently
-filter or score candidates. Scheduled discovery and source-status synchronization come later.
+Run the `tools/` commands while the worker is idle.
 
-## Checks
+## Models
 
-```sh
-bun run check
-bun run lint
-bun run test
-bun run test:e2e
-bun run build
-bun run build:eve
-```
+Every model call goes through `ask()` in `lib/llm.ts`, which runs headless Claude Code under this
+machine's existing login. There is no API key. `EGG_MODEL` sets the default model. A variable for
+each task (`EGG_READ_MODEL`, `EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL` and others in
+`lib/`) overrides it.
 
-Tests use empty disposable databases. Browser tests start local services with isolated stores;
-they do not send paid model requests. Live subscription access and a real Neon connection depend on your account/environment;
-the automated suite intentionally uses no model billing.
+## Planned
 
-## Deployments
+A conversational agent on the public website that answers visitors' questions about the owner's
+career. It is not built yet. It will read only a collection prepared for the public, never `.data/`.
 
-Web is live at https://eggers-web.vercel.app and private Studio at https://eggers-studio.vercel.app.
-Each has its own Neon database. This computer's app-local environment files connect local Studio
-to the remote career bank; interviews still run locally. See [deployment notes](docs/deployment.md)
-for commands and the current remote limitations. Nothing is deployed by local development or checks.
-The existing Cloudflare production wiring must be explicitly disconnected during domain cutover.
-Do not merge/push assuming that the old production setup has already been removed.
+## Earlier deployments
 
-Later milestones: live voice, remote private interviews, explicit public knowledge preparation,
-low-cost public Eve, targeted resumes and cover letters, job targeting and scheduled discovery. Launch notifications are collected now; sending the single launch
-email is a separate explicit launch action, not an automatic development side effect.
+Until 2026-11-13 this repository held a Next and Nx workspace with two apps: a public holding page
+and a private Studio. Two Vercel projects (`eggers-web` and `eggers-studio`) still build from this
+repository's `main` branch and expect that code. The `eggers.dev` domain was never moved to them.
+Disconnect those projects before this code reaches `main`, or their builds will fail. The earlier
+code is in git history; the last commit that has it is `a2ad996`.

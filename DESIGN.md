@@ -1,5 +1,10 @@
 # Design direction
 
+> This direction was written for the earlier Next workspace. The Exact app keeps its intent:
+> neutral greys, Geist, light and dark by system, and one accent colour. The tokens are in
+> `app.tamber`, and the controls are Exact's native ones instead of shadcn and Tailwind. There is
+> no public holding page in this code.
+
 Use standard shadcn-style controls and neutral Tailwind tokens. Geist is self-hosted through
 its package. Light/dark follow the system. This is a working studio first: clear navigation,
 legible prose, accessible controls, and a comfortable rich Markdown editor.

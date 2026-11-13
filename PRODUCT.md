@@ -1,5 +1,16 @@
 # Agreed product scope
 
+> This scope was written for the earlier Next and Eve workspace, which the Exact app in this
+> repository replaced on 2026-11-13. The product intent below still guides the app: stories that
+> keep contribution, decisions, context and outcomes, no mandatory metrics, real deletion, and
+> research kept separate from applications. The parts about Eve, the "Architecture" paragraph, the
+> public Web page and the TrueUp import describe the earlier code. README.md describes the app as
+> it is now.
+>
+> The goal the owner stated on 2026-11-13: a conversational agent on the personal website that
+> answers visitors' questions about the owner's career. It is not built yet. The rule below still
+> applies to it: a public agent gets only a collection prepared for the public, never the private bank.
+
 The first usable release is local private Eve in Studio, building an empty career knowledge bank.
 The owner and Eve revisit roles over several deep sessions: free recall first, then recurring
 requirements from a broad job-description corpus. Stories retain contribution, decisions,

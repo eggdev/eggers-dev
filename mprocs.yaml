@@ -1,0 +1,9 @@
+# Terminal tabs for `bun exact.mjs dev`, used when mprocs is installed (brew install mprocs).
+# Keep these three in step with PROCS in tools/dev.ts.
+procs:
+  server:
+    cmd: ["bun", "--watch", "server.ts"]
+  worker:
+    cmd: ["bun", "worker.ts"]
+  web:
+    cmd: ["bun", "exact.mjs", "web"]
