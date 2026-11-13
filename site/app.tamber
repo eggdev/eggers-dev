@@ -1,0 +1,6 @@
+tamber brand
+
+theme
+  AccentColor = light-dark(#bf5700, #cc5f0a)
+  surface.note = light-dark(#f5f5f5, #1c1c1c)
+  text.muted = light-dark(#5c5c5c, #b0b0b0)  pair=surface.note

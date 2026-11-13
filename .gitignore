@@ -7,6 +7,15 @@
 /app.contract.d.ts
 /.exact/
 
+# The public site (site/), a second Exact project with the same build output. Its API address has a
+# default in site/app.ts, so no site/.env is tracked; `.env*` below keeps any local one out of git.
+/site/target/
+/site/dist/
+/site/dist.*
+/site/node_modules/
+/site/app.contract.d.ts
+/site/.exact/
+
 # Private data: the bank, the inbox, cloned repositories and resumes. This repository is public.
 /.data/
 /data/

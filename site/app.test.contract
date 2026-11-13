@@ -1,0 +1,119 @@
+// Run by `test` or `verify`, which start server.ts, the chat endpoint's stand-in, for the whole run. Its answer
+// streams in pieces in real time, and a stream counts as landed at its first piece, so a test waits for the
+// whole answer with `clock until state reply.done == true`. A question that contains "stand-in-fail" makes the
+// stand-in answer 500, which is how these tests reach the error state (`fail fetch` does not reach a stream).
+
+test "the page says what it is, and offers starter questions"
+  clock data
+  expect text "title" == "Ask about my work"
+  expect tree has "question"
+  expect tree has "starter-0"
+  expect tree has "ai-note"
+  expect tree has "contact"
+  expect tree missing "conversation"
+
+test "an empty or blank question cannot be sent"
+  clock data
+  expect disabled "send"
+  type "question" "   "
+  clock settle
+  expect disabled "send"
+  type "question" key "Enter"
+  clock settle
+  expect tree missing "conversation"
+  type "question" "What do you work on?"
+  clock settle
+  expect enabled "send"
+
+test "a question appears in the conversation, and the whole answer follows it"
+  clock data
+  type "question" "What do you work on?"
+  tap "send"
+  clock data
+  expect text "text-0" == "What do you work on?"
+  expect state draft == ""
+  clock until state reply.done == true within 10000
+  clock settle
+  expect state busy == false
+  expect text "text-1" == "This is a stand-in reply. The real assistant is not connected yet, so this page cannot answer questions yet. Until it is, the email link at the top of the page reaches me."
+  expect enabled "question"
+
+test "the send control is disabled while an answer is arriving"
+  clock data
+  type "question" "What do you work on?"
+  tap "send"
+  type "question" "And next?"
+  clock settle
+  expect state busy == true
+  expect disabled "send"
+  clock until state reply.done == true within 10000
+  clock settle
+  expect enabled "send"
+
+test "a starter question sends itself"
+  clock data
+  tap "starter-0"
+  clock data
+  expect text "text-0" == "What kind of work do you do?"
+  expect tree missing "starter-0"
+  clock until state reply.done == true within 10000
+  clock settle
+  expect tree has "text-1"
+
+test "a failed answer says so, and the visitor can ask again"
+  clock data
+  type "question" "Please stand-in-fail now"
+  tap "send"
+  clock data
+  clock settle
+  expect tree has "error"
+  expect tree has "retry"
+  expect state busy == false
+  expect state turns.length == 1
+  type "question" "What kind of work do you do?"
+  tap "send"
+  clock data
+  expect tree missing "error"
+  clock until state reply.done == true within 10000
+  clock settle
+  expect state turns.length == 1
+  expect text "text-0" == "What kind of work do you do?"
+  expect tree has "text-1"
+
+test "Try Again asks the failed question again"
+  clock data
+  type "question" "stand-in-fail"
+  tap "send"
+  clock data
+  clock settle
+  expect tree has "error"
+  tap "retry"
+  clock data
+  clock settle
+  expect tree has "error"
+  expect state turns.length == 1
+  expect enabled "question"
+
+test "a second question carries the conversation so far"
+  clock data
+  tap "starter-1"
+  clock data
+  clock until state reply.done == true within 10000
+  clock settle
+  type "question" "Tell me more"
+  tap "send"
+  clock data
+  expect state turns.length == 3
+  expect state turns.1 .role == "assistant"
+  clock until state reply.done == true within 10000
+  clock settle
+  expect text "text-2" == "Tell me more"
+  expect tree has "text-3"
+
+test "a path no route matches is the not-found page, with a way home"
+  at "/no/such/page"
+  clock data
+  expect tree has "notfound-home"
+  tap "notfound-home"
+  clock settle
+  expect text "title" == "Ask about my work"
