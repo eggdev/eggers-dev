@@ -78,6 +78,7 @@ EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 | `bun tools/widen.ts <file>` | Adds companies to the watchlist from a file of board names |
 | `bun tools/unslop.ts` | Rewords bank facts to the writing rules without changing what they say |
 | `bun tools/questions.ts` | Closes open questions that the bank already answers |
+| `bun tools/public.ts` | Writes a draft of the public collection to `.data/public/` for the owner to audit. It publishes nothing |
 
 Run the `tools/` commands while the worker is idle.
 
