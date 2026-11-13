@@ -7,7 +7,8 @@
     "server": "bun server.ts",
     "worker": "bun worker.ts",
     "test": "bun exact.mjs test web",
-    "dev": "bun tools/dev.ts"
+    "dev": "bun tools/dev.ts",
+    "test:lib": "bun test lib"
   },
   "dependencies": {
     "unpdf": "^2.1.0"

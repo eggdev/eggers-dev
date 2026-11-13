@@ -6,6 +6,7 @@ import { db } from './db.ts';
 import { ask } from './llm.ts';
 import { direction } from './direction.ts';
 import { TARGETS } from './profile.ts';
+import { nearby } from './place.ts';
 
 export type Ats = 'greenhouse' | 'lever' | 'ashby';
 export type Posting = { ext: string; title: string; place: string; url: string; text: string; posted: number; salary: string };
@@ -54,11 +55,10 @@ export async function fetchBoard(ats: Ats, token: string): Promise<Posting[]> {
 }
 
 // The first sieve, by title and place alone, so no model reads a posting that could not suit.
-// Engineering roles at senior level or unlabelled, in or near New York or remote within the US.
+// Engineering roles at senior level or unlabelled, in a place the person could work from (lib/place.ts).
 const WANT = /engineer|developer|architect|technical lead|tech lead|solutions|forward.deployed|founding|cto\b|head of engineering/i;
 const SKIP = /\bintern\b|internship|new grad|university|junior|\bjr\b|associate\b|apprentice|recruit|sales (?!engineer)|account (executive|manager)|marketing|designer|counsel|attorney|accountant|hardware|mechanical|electrical|firmware|embedded|\bios\b|android|security clearance|data scientist|research scientist|\bml research|site reliability|\bsre\b|network engineer|support engineer|\bqa\b|test engineer|manager,? (?!engineering)|director of (?!engineering)/i;
-const NEAR = /remote|new york|\bnyc\b|\bny\b|brooklyn|manhattan|jersey city|stamford|connecticut|united states|\busa?\b|north america|americas|anywhere|\beastern\b|\best\b/i;
-export const suits = (p: { title: string; place: string }) => WANT.test(p.title) && !SKIP.test(p.title) && (p.place.trim() === '' || NEAR.test(p.place));
+export const suits = (p: { title: string; place: string }) => WANT.test(p.title) && !SKIP.test(p.title) && nearby(p.place);
 
 // Which suited postings get a quick score first: titles in the role families the person named, then
 // senior general engineering. Only the first few per company are scored, so a company with hundreds

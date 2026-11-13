@@ -68,6 +68,7 @@ EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 | --- | --- |
 | `bun exact.mjs dev` | Server, worker and web app together |
 | `bun exact.mjs verify` | Builds the app and runs the tests. Run it from a copy while `dev` is running |
+| `bun test lib` | Unit tests for `lib/`, such as the place check for found jobs |
 | `bun exact.mjs help` | Every Exact verb |
 | `bun tools/refresh.ts [steps]` | Brings everything derived from the bank up to date |
 | `bun tools/rerank.ts` | Reads every job again and prints the old and new fit |
