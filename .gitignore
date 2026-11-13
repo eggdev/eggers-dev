@@ -15,6 +15,11 @@
 /site/node_modules/
 /site/app.contract.d.ts
 /site/.exact/
+# The site's Worker: the approved collection copied in at deploy time (private), wrangler's local state, and
+# local secrets for `wrangler dev`.
+/site/worker/private/
+/site/.wrangler/
+/site/.dev.vars*
 
 # Private data: the bank, the inbox, cloned repositories and resumes. This repository is public.
 /.data/

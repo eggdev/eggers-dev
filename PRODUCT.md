@@ -8,7 +8,7 @@
 > it is now.
 >
 > The goal the owner stated on 2026-11-13: a conversational agent on the personal website that
-> answers visitors' questions about the owner's career. It is not built yet. The rule below still
+> answers visitors' questions about the owner's career. Its page and endpoint are in `site/`. The rule below still
 > applies to it: a public agent gets only a collection prepared for the public, never the private bank.
 
 The first usable release is local private Eve in Studio, building an empty career knowledge bank.

@@ -89,10 +89,22 @@ machine's existing login. There is no API key. `EGG_MODEL` sets the default mode
 each task (`EGG_READ_MODEL`, `EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL` and others in
 `lib/`) overrides it.
 
-## Planned
+## The public site
 
-A conversational agent on the public website that answers visitors' questions about the owner's
-career. It is not built yet. It will read only a collection prepared for the public, never `.data/`.
+`site/` is a second Exact project: one public page where a visitor asks questions about the
+owner's work, and an assistant answers. It is built as static files and served by a Cloudflare
+Worker (`site/worker/`), which also answers the questions at `POST /ask`.
+
+The assistant answers only from one file, the public collection, which the owner approves:
+
+1. `bun tools/public.ts` writes a draft of the whole bank to `.data/public/collection.draft.md`.
+2. The owner deletes what must not be public and saves the result as `.data/public/collection.md`.
+3. In `site/`, `bun tools/deploy.ts --origin https://<public origin>` builds the page, copies the
+   approved collection into the Worker and deploys both. It refuses to run without that file.
+
+The collection is never in git. The model's address and name are settings in `site/wrangler.jsonc`,
+and its key is a Worker secret. In `site/`, `bun exact.mjs verify` tests the page against a
+stand-in endpoint, and `bun run test:worker` tests the Worker against a fake model.
 
 ## Earlier deployments
 

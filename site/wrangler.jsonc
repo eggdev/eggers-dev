@@ -1,0 +1,48 @@
+// The Cloudflare Worker for the public site: one origin serves the built page (dist/) and the chat endpoint
+// (POST /ask, worker/). Deploy with `bun tools/deploy.ts --origin https://<public origin>`, never with a bare
+// `wrangler deploy`: the deploy command builds the page for that origin and copies in the approved collection.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "eggers-site",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-15",
+
+  // Served at <name>.<account subdomain>.workers.dev. No custom domain and no routes.
+  "workers_dev": true,
+
+  // The built site. Only /ask runs the Worker first; every other path is a file in dist/, and a path with no
+  // file gets dist/404.html with status 404.
+  // https://developers.cloudflare.com/workers/static-assets/binding/
+  // https://developers.cloudflare.com/workers/static-assets/routing/static-site-generation/
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/ask"]
+  },
+
+  // worker/index.ts imports the collection (worker/private/collection.md) as text.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+
+  // Plain settings. The model's address and name live here and only here; change them to change provider or model.
+  // MAX_REPLY_TOKENS caps each answer (sent as max_completion_tokens).
+  // LOCAL_RUN "true" allows a page on http://localhost or http://127.0.0.1 to call /ask; it stays "false" here.
+  // The secret MODEL_API_KEY is set with `wrangler secret put MODEL_API_KEY`, never written in this file.
+  "vars": {
+    "MODEL_BASE_URL": "https://api.openai.com/v1",
+    "MODEL": "gpt-6-luna",
+    "MAX_REPLY_TOKENS": "400",
+    "LOCAL_RUN": "false"
+  },
+
+  // A per-visitor limit on /ask: 10 questions in 60 seconds from one IP address, counted per Cloudflare location.
+  // namespace_id is any positive integer unique in the account. period may be 10 or 60.
+  // https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+  "ratelimits": [
+    {
+      "name": "ASK_LIMIT",
+      "namespace_id": "4207",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ]
+}
