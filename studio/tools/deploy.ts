@@ -1,8 +1,12 @@
-// Deploys the private studio as one Cloudflare Worker (studio/wrangler.jsonc) at https://studio.eggers.dev.
+// Deploys the private studio as one Cloudflare Worker (studio/wrangler.jsonc) at https://studio.eggers.dev, with
+// the container image its Durable Object runs (cloud/Dockerfile).
 //
 //   bun studio/tools/deploy.ts [--dry-run]
 //
 // In order, stopping at the first failure:
+//   0. Check that Docker runs. Wrangler builds the container image with it, for every deploy and also for a dry run.
+//      A real deploy without Docker stops here. A dry run without Docker goes on with --containers-rollout=none:
+//      wrangler then checks and bundles the Worker but builds no image, and says so.
 //   1. Refuse while a dev session runs (tools/dev.ts or `bun exact.mjs web`). The build shares target/ with the dev
 //      loop, and a build for another API address breaks the running session.
 //   2. Build the screens from the repository root for the studio's API:
@@ -10,10 +14,13 @@
 //      Exact builds only into dist/ or target/ inside the app, so the build goes to target/ first.
 //   3. Copy the build into studio/dist, leaving out its dot files (.exact-build.json, .exact/), and check that no
 //      private data came with it: no database, nothing from .data/ or resume/.
-//   4. wrangler deploy (with --dry-run: build the Worker bundle, upload nothing, sign-in not needed).
+//   4. wrangler deploy (with --dry-run: build the Worker bundle and the image, upload nothing, sign-in not needed).
+//      Wrangler builds the image for linux/amd64 with the repository root as its context; the root .dockerignore
+//      lets in only the app's code.
 //
-// A real deploy needs CLOUDFLARE_ACCOUNT_ID in the environment and wrangler's sign-in. The Worker's two secrets,
-// ACCESS_TEAM_DOMAIN and ACCESS_AUD, are set once with `wrangler secret put` (see wrangler.jsonc).
+// A real deploy needs CLOUDFLARE_ACCOUNT_ID in the environment and wrangler's sign-in. The Worker's secrets
+// (ACCESS_TEAM_DOMAIN, ACCESS_AUD and the optional GH_TOKEN) are set once with `wrangler secret put` (see
+// wrangler.jsonc). The R2 bucket eggers-studio-data is created once with `wrangler r2 bucket create`.
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
@@ -74,6 +81,22 @@ const account = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
 if (!dryRun && !account) stop('set CLOUDFLARE_ACCOUNT_ID to the Cloudflare account that holds the studio. Nothing was built or deployed.');
 if (!existsSync(WRANGLER)) stop('wrangler is not installed. Run `bun install` in studio/ first.');
 
+// 0. Docker, for the container image.
+const docker = Bun.which('docker') ? Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0 : false;
+if (!docker && !dryRun) {
+  stop('Docker is not running. Wrangler builds the container image (cloud/Dockerfile) with it on every deploy. '
+    + 'Start Docker (or Colima) and run this again. Nothing was built or deployed.');
+}
+// The image's build context is the repository root, which holds .data/. The root .dockerignore must leave
+// everything out first and let only the app's code back in.
+const ignore = existsSync(join(REPO, '.dockerignore')) ? readFileSync(join(REPO, '.dockerignore'), 'utf8') : '';
+const rules = ignore.split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('#'));
+if (rules[0] !== '*' || !rules.includes('.data')) {
+  stop('the root .dockerignore must start with "*" (leave everything out) and name .data. Without it the container '
+    + 'image could hold private data. Nothing was built or deployed.');
+}
+if (!docker) console.log('deploy: Docker is not running, so this dry run builds no container image (--containers-rollout=none).');
+
 // 1. No dev session.
 if (running('tools/dev.ts') || running('exact.mjs web')) {
   stop('a dev session is running (tools/dev.ts or `bun exact.mjs web`). The build shares target/ with it, and a build for '
@@ -103,7 +126,8 @@ for (const file of shipped) console.log(`  ${file}`);
 // 4. The Worker and the screens.
 const env = { ...QUIET, ...(account ? { CLOUDFLARE_ACCOUNT_ID: account } : {}) };
 if (dryRun) {
-  run('wrangler deploy --dry-run (nothing is uploaded)', [WRANGLER, 'deploy', '--dry-run', '--outdir', DRY_RUN_OUT], STUDIO, env);
+  const noImage = docker ? [] : ['--containers-rollout=none'];
+  run('wrangler deploy --dry-run (nothing is uploaded)', [WRANGLER, 'deploy', '--dry-run', '--outdir', DRY_RUN_OUT, ...noImage], STUDIO, env);
   console.log(`deploy: dry run done. The Worker bundle is in ${relative(REPO, DRY_RUN_OUT)}/.`);
 } else {
   run('wrangler deploy', [WRANGLER, 'deploy'], STUDIO, env);

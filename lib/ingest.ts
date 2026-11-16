@@ -5,7 +5,8 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { db, deletedFacts, KINDS, type Extraction, type RoleRow, type SourceRow } from './db.ts';
 import { authors, clone, hub } from './github.ts';
 import { inData } from './paths.ts';
-import { ask } from './llm.ts';
+import { ask, llmBackend } from './llm.ts';
+import { extractText, getDocumentProxy } from 'unpdf';
 
 // The inbox sits beside the database, so a test's scratch database gets a scratch inbox too.
 export const INBOX = resolve(process.env.EGG_INBOX ?? inData('inbox'));
@@ -62,6 +63,14 @@ const removed = () => {
   return gone.length === 0 ? '' : `\n\nFacts the person deleted from the bank. Do not record these again, in these words or others:\n${gone.map((t) => `- ${t}`).join('\n')}`;
 };
 
+// A Word or RTF file as plain text in `out`: macOS's textutil where it exists, else pandoc (which
+// reads .docx and .rtf but not the older .doc). False when neither could convert it.
+function wordToText(file: string, out: string): boolean {
+  if (Bun.which('textutil')) return Bun.spawnSync(['textutil', '-convert', 'txt', '-output', out, file]).exitCode === 0;
+  if (Bun.which('pandoc') && extname(file).toLowerCase() !== '.doc') return Bun.spawnSync(['pandoc', '-t', 'plain', '--wrap=none', file, '-o', out]).exitCode === 0;
+  return false;
+}
+
 const GIT = ['log', 'show', 'shortlog', 'diff', 'ls-files', 'rev-list', 'blame'].map((c) => `Bash(git ${c}:*)`);
 
 // Answers the extraction for a source, or throws with a reason a person can act on.
@@ -74,11 +83,17 @@ export async function read(source: SourceRow): Promise<Extraction> {
     const file = join(INBOX, source.body);
     if (!resolve(file).startsWith(INBOX + '/') || !existsSync(file)) throw new Error(`${source.body} is not in the inbox folder any more. Put it back in ${INBOX} and read it again.`);
     let name = source.body;
-    // Claude Code reads PDFs and text itself; a Word file is turned into text first (macOS's textutil).
-    if (['.docx', '.doc', '.rtf'].includes(extname(file).toLowerCase())) {
+    const ext = extname(file).toLowerCase();
+    // Claude Code reads PDFs and text itself; a Word file is turned into text first (wordToText).
+    if (['.docx', '.doc', '.rtf'].includes(ext)) {
       const out = join(INBOX, `.${source.body}.txt`);
-      const done = Bun.spawnSync(['textutil', '-convert', 'txt', '-output', out, file]);
-      if (done.exitCode !== 0) throw new Error(`Couldn't convert ${source.body} to text on this machine. Save it as a PDF and add that instead.`);
+      if (!wordToText(file, out)) throw new Error(`Couldn't convert ${source.body} to text on this machine. Save it as a PDF and add that instead.`);
+      name = `.${source.body}.txt`;
+    }
+    // Codex has no PDF reader of its own, so under EGG_LLM=codex the text is taken out here, page by page.
+    if (ext === '.pdf' && llmBackend() === 'codex') {
+      const { text } = await extractText(await getDocumentProxy(new Uint8Array(await Bun.file(file).arrayBuffer())), { mergePages: false });
+      await Bun.write(join(INBOX, `.${source.body}.txt`), text.map((t, i) => `--- Page ${i + 1} of ${text.length} ---\n${t}`).join('\n\n'));
       name = `.${source.body}.txt`;
     }
     return ask<Extraction>({ cwd: INBOX, schema: SCHEMA, tools: ['Read'], allow: ['Read'], timeoutMs: 15 * 60_000,

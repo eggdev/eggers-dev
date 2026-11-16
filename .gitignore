@@ -30,6 +30,10 @@
 
 # Private data: the bank, the inbox, cloned repositories and resumes. This repository is public.
 /.data/
+# The studio's backups on this machine: the first backup cloud/tools/seed.ts makes, and the copies of the cloud's
+# data cloud/tools/pull.ts downloads.
+/.data.seed/
+/.data.cloud/
 /data/
 /resume/
 /_source/

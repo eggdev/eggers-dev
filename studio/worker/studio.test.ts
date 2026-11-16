@@ -1,5 +1,6 @@
 // Tests for the studio's Worker with fake bindings: the Access check in front of everything, the API forwarded to a
-// fake server, and the pages served by Exact's hosting rule. Nothing here calls Cloudflare.
+// fake server (the tunnel backend) or a fake Durable Object (the container backend), the reserved /api/_studio
+// controls, and the pages served by Exact's hosting rule. Nothing here calls Cloudflare.
 // Run from studio/: `bun run test`.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { createGate } from './access.ts';
@@ -56,7 +57,8 @@ function server(respond: (url: string, init: RequestInit) => Response | Promise<
 function setup(over: Partial<Env> = {}, respond: (url: string, init: RequestInit) => Response | Promise<Response> = () => Response.json({ ok: true })) {
   const certs = certsEndpoint([signer]);
   const logs: string[] = [];
-  const env = { ASSETS: assets(), SERVER: server(respond), ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, ...over };
+  // The tests below were written for the tunnel; the container backend has its own block further down.
+  const env = { ASSETS: assets(), SERVER: server(respond), STUDIO_BACKEND: 'tunnel', ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, ...over };
   const w = worker({ gate: createGate({ fetch: certs.fetch, now: () => NOW }), log: (m) => { logs.push(m); } });
   return { env, w, logs, certs };
 }
@@ -124,7 +126,7 @@ describe('the Access check in front of everything', () => {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-describe('the API', () => {
+describe('the API on the tunnel backend', () => {
   test('/api/jobs/3?x=1 goes to the server as /jobs/3?x=1 with its method and body, and without cookie or cf-* headers', async () => {
     const { env, w } = setup({}, () => new Response('{"saved":true}', {
       status: 201,
@@ -285,6 +287,146 @@ describe('the API', () => {
     const b = await own.w.fetch(get('/api/jobs'), own.env);
     expect(b.status).toBe(503);
     expect(await b.json()).toEqual({ error: 'Busy.' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A fake Durable Object namespace: one object, which answers with `respond` and records each request. */
+function studio(respond: (r: Request) => Response | Promise<Response> = () => Response.json({ ok: true })) {
+  const calls: { name: string; url: string; method: string; headers: Headers; body: string | null }[] = [];
+  return {
+    calls,
+    getByName(name: string) {
+      return {
+        async fetch(r: Request) {
+          calls.push({ name, url: r.url, method: r.method, headers: new Headers(r.headers), body: r.body ? '(stream)' : null });
+          return respond(r);
+        },
+      };
+    },
+  };
+}
+
+describe('the API on the container backend', () => {
+  const containerSetup = (respond?: (r: Request) => Response | Promise<Response>, over: Partial<Env> = {}) => {
+    const s = setup({ STUDIO_BACKEND: undefined, STUDIO: studio(respond), ...over });
+    return { ...s, studio: s.env.STUDIO as ReturnType<typeof studio> };
+  };
+
+  test('container is the default: /api/jobs/3?x=1 goes to the Durable Object "studio" as /jobs/3?x=1, filtered', async () => {
+    const { env, w, studio: s } = containerSetup(async (r) => new Response(await r.text(), {
+      status: 201, headers: { 'content-type': 'application/json', 'x-internal': 'yes', 'retry-after': '5' },
+    }));
+    const res = await w.fetch(new Request('https://studio.eggers.dev/api/jobs/3?x=1', {
+      method: 'PATCH',
+      headers: { 'cf-access-jwt-assertion': token, cookie: `CF_Authorization=${token}`, origin: 'https://studio.eggers.dev', 'content-type': 'application/json', 'cf-ray': 'x' },
+      body: '{"resume":"text"}',
+    }), env);
+    expect(s.calls.length).toBe(1);
+    expect(s.calls[0]!.name).toBe('studio');
+    expect(s.calls[0]!.url).toBe('http://studio/jobs/3?x=1');
+    expect(s.calls[0]!.method).toBe('PATCH');
+    expect([...s.calls[0]!.headers.keys()].sort()).toEqual(['content-type']);
+    expect(env.SERVER.calls).toEqual([]);
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe('{"resume":"text"}');
+    expect(res.headers.get('x-internal')).toBeNull();
+    expect(res.headers.get('retry-after')).toBe('5');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test("the Durable Object's 503 while the container starts reaches the page as JSON with retry-after", async () => {
+    const { env, w } = containerSetup(() => Response.json({ error: MESSAGES.starting }, { status: 503, headers: { 'retry-after': '5' } }));
+    const res = await w.fetch(get('/api/bank'), env);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('5');
+    expect(await res.json()).toEqual({ error: "The studio's server is starting. Try again in a moment." });
+  });
+
+  test('a Durable Object that throws, or a missing STUDIO binding: 502 JSON', async () => {
+    const thrown = containerSetup(() => { throw new Error('internal error'); });
+    const a = await thrown.w.fetch(get('/api/bank'), thrown.env);
+    expect(a.status).toBe(502);
+    expect(await a.json()).toEqual({ error: MESSAGES.containerDown });
+    const missing = setup({ STUDIO_BACKEND: 'container' });
+    const b = await missing.w.fetch(get('/api/bank'), missing.env);
+    expect(b.status).toBe(502);
+    expect(missing.env.SERVER.calls).toEqual([]);
+  });
+
+  test('an unknown STUDIO_BACKEND: 503, nothing forwarded', async () => {
+    const { env, w, studio: s } = containerSetup(undefined, { STUDIO_BACKEND: 'mac' });
+    const res = await w.fetch(get('/api/bank'), env);
+    expect(res.status).toBe(503);
+    expect(s.calls).toEqual([]);
+    expect(env.SERVER.calls).toEqual([]);
+  });
+
+  test('tunnel still goes to SERVER, never to the Durable Object', async () => {
+    const { env, w, studio: s } = containerSetup(undefined, { STUDIO_BACKEND: 'tunnel' });
+    await w.fetch(get('/api/bank'), env);
+    expect(env.SERVER.calls.length).toBe(1);
+    expect(s.calls).toEqual([]);
+  });
+
+  test('a change still needs the studio page as its origin', async () => {
+    const { env, w, studio: s } = containerSetup();
+    const res = await w.fetch(new Request('https://studio.eggers.dev/api/facts/1', { method: 'DELETE', headers: { 'cf-access-jwt-assertion': token, origin: 'https://example.com' } }), env);
+    expect(res.status).toBe(403);
+    expect(s.calls).toEqual([]);
+  });
+});
+
+describe('the studio controls at /api/_studio', () => {
+  const STATUS = { backend: 'container', keeper: { phase: 'running', lastBackup: { key: 'backups/x.tar.gz' } } };
+  const controls = (over: Partial<Env> = {}) => {
+    const s = setup({ STUDIO_BACKEND: undefined, STUDIO: studio((r) => Response.json(new URL(r.url).pathname === '/_studio/status' ? STATUS : { ok: true })), ...over });
+    return { ...s, studio: s.env.STUDIO as ReturnType<typeof studio> };
+  };
+
+  test('GET /api/_studio/status answers from the Durable Object; nothing reaches the server', async () => {
+    const { env, w, studio: s } = controls();
+    const res = await w.fetch(get('/api/_studio/status'), env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(STATUS);
+    expect(s.calls.map((c) => c.url)).toEqual(['http://studio/_studio/status']);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test('it needs the Access sign-in like everything else', async () => {
+    const { env, w, studio: s } = controls();
+    const res = await w.fetch(get('/api/_studio/status', {}, false), env);
+    expect(res.status).toBe(403);
+    expect(s.calls).toEqual([]);
+  });
+
+  test('POST /api/_studio/backup needs the studio page as its origin', async () => {
+    const { env, w, studio: s } = controls();
+    const refused = await w.fetch(new Request('https://studio.eggers.dev/api/_studio/backup', { method: 'POST', headers: { 'cf-access-jwt-assertion': token } }), env);
+    expect(refused.status).toBe(403);
+    const ok = await w.fetch(new Request('https://studio.eggers.dev/api/_studio/backup', { method: 'POST', headers: { 'cf-access-jwt-assertion': token, origin: 'https://studio.eggers.dev' } }), env);
+    expect(ok.status).toBe(200);
+    expect(s.calls.map((c) => `${c.method} ${c.url}`)).toEqual(['POST http://studio/_studio/backup']);
+  });
+
+  test('the _studio segment is never forwarded, whatever follows it or however it is written', async () => {
+    const { env, w, studio: s } = controls();
+    for (const path of ['/api/_studio', '/api/_studio/', '/api/_studio/other', '/api/_STUDIO/status/x', '/api/_studio/status?x=1&y=2/..']) {
+      const res = await w.fetch(get(path), env);
+      if (path.startsWith('/api/_studio/status?')) expect(res.status).toBe(200);
+      else expect(res.status).toBe(404);
+    }
+    expect(s.calls.every((c) => c.url === 'http://studio/_studio/status')).toBe(true);
+    expect(env.SERVER.calls).toEqual([]);
+  });
+
+  test('on the tunnel backend the status says so and nothing is forwarded', async () => {
+    const { env, w, studio: s } = controls({ STUDIO_BACKEND: 'tunnel' });
+    const res = await w.fetch(get('/api/_studio/status'), env);
+    expect(((await res.json()) as { backend: string }).backend).toBe('tunnel');
+    expect(s.calls).toEqual([]);
+    expect(env.SERVER.calls).toEqual([]);
   });
 });
 

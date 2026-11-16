@@ -1,0 +1,30 @@
+# The container image (cloud/Dockerfile) is built with the repository root as its context. This repository's
+# private data (.data/, resume/, .env files) must never reach the image, so the context is an allow-list: everything
+# is left out, then only the app's code is let back in.
+*
+!package.json
+!bun.lock
+!server.ts
+!worker.ts
+!lib/
+!cloud/keeper.ts
+!cloud/lib/
+
+# Tests and test helpers are not needed to run the app.
+lib/**/*.test.ts
+cloud/lib/**/*.test.ts
+cloud/lib/testing.ts
+
+# Named again so a change to the list above cannot let them in by accident.
+.data
+.data.*
+resume
+.git
+.env*
+**/.env*
+node_modules
+target
+dist
+site
+studio
+.exact

@@ -69,8 +69,14 @@ a { color: inherit; text-decoration: none; }
 </style></head><body>${out.join('\n')}</body></html>`;
 }
 
-const chrome = () => [process.env.CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', Bun.which('google-chrome'), Bun.which('chromium'), Bun.which('chromium-browser')]
+// CHROME first, then the macOS apps, then the names Linux packages use.
+const chrome = () => [process.env.CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  ...['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'].map((n) => Bun.which(n))]
   .find((p): p is string => typeof p === 'string' && p !== '' && existsSync(p));
+
+// EGG_CHROME_ARGS adds arguments to the print command, split on spaces. A container usually needs
+// "--no-sandbox --disable-dev-shm-usage". Unset, the command is as before.
+export const chromeArgs = (value = process.env.EGG_CHROME_ARGS ?? ''): string[] => value.split(/\s+/).filter(Boolean);
 
 // Prints the resume to fit `pages`. When the text runs a little over, the type is stepped down, never
 // below 9 point, which is as small as a resume stays comfortable to read; past that it is left over
@@ -91,7 +97,7 @@ async function print(markdown: string, scale: number, companies: string[]): Prom
   mkdirSync(dir, { recursive: true });
   try {
     await Bun.write(join(dir, 'resume.html'), resumeHtml(markdown, scale, companies));
-    const proc = Bun.spawn([bin, '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${join(dir, 'profile')}`, '--no-pdf-header-footer', `--print-to-pdf=${join(dir, 'resume.pdf')}`, `file://${join(dir, 'resume.html')}`], { stdout: 'ignore', stderr: 'ignore' });
+    const proc = Bun.spawn([bin, '--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${join(dir, 'profile')}`, '--no-pdf-header-footer', `--print-to-pdf=${join(dir, 'resume.pdf')}`, ...chromeArgs(), `file://${join(dir, 'resume.html')}`], { stdout: 'ignore', stderr: 'ignore' });
     const timer = setTimeout(() => proc.kill(), 45_000);
     await proc.exited; clearTimeout(timer);
     if (!existsSync(join(dir, 'resume.pdf'))) throw new Error('Chrome did not produce the PDF.');

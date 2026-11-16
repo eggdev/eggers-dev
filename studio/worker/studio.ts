@@ -1,11 +1,17 @@
-// The studio's Worker: the Access check on every request (access.ts), then /api/... to the server on the owner's
-// machine, and every other path from the built screens in dist/.
+// The studio's Worker: the Access check on every request (access.ts), then /api/... to the app's server, and every
+// other path from the built screens in dist/.
 // This file has no Cloudflare imports, so `bun test` runs it with fake bindings.
 //
 // The API. The screens are built with API_BASE_URL=https://studio.eggers.dev/api, so the page calls
-// /api/<path> on its own origin. The Worker strips /api and sends the request through the Workers VPC binding
-// SERVER, a private tunnel to server.ts on the owner's machine. The page's paths (/profile, /jobs, /talk) are also
-// API paths; the prefix keeps them apart.
+// /api/<path> on its own origin. The Worker strips /api and sends the request to one of two backends, chosen by
+// the Worker variable STUDIO_BACKEND:
+//   container (the default)  the Durable Object STUDIO, which runs the server in a Cloudflare Container and backs
+//                            its data up to R2 (backend.ts, cloud/keeper.ts)
+//   tunnel                   the Workers VPC binding SERVER, a private tunnel to server.ts on the owner's machine
+//                            (tools/live.ts). Kept so the owner can fall back to the Mac.
+// The page's paths (/profile, /jobs, /talk) are also API paths; the prefix keeps them apart.
+// /api/_studio/... is the Worker's own: GET /api/_studio/status (the container and its backups) and
+// POST /api/_studio/backup (back up now). The _studio segment is never forwarded to the server.
 //
 // The pages. Every route of the app is drawn in the browser (render=client), so a page such as /jobs or /job/12 has
 // no file of its own. The Worker serves them by the rule Exact's own static host applies (`bun exact.mjs serve`,
@@ -14,6 +20,9 @@
 // else, for a navigation to a page path, shell.html with status 404 (the app then draws its notfound route); else an
 // empty 404. Paths with a dot segment (.exact-build.json, .exact/) are never served.
 import { readConfig, type Gate } from './access.ts';
+import { MESSAGES } from './messages.ts';
+
+export { MESSAGES };
 
 /** The Workers static assets binding, a plain file lookup here (wrangler.jsonc: html_handling "none"). */
 export interface Assets {
@@ -25,27 +34,41 @@ export interface Server {
   fetch(input: string, init?: RequestInit): Promise<Response>;
 }
 
+/** The Durable Object namespace STUDIO: one object, named "studio", owns the container. */
+export interface StudioNamespace {
+  getByName(name: string): { fetch(request: Request): Promise<Response> };
+}
+
 export interface Env {
   ASSETS: Assets;
   SERVER?: Server;
+  STUDIO?: StudioNamespace;
+  /** "container" (the default) or "tunnel". */
+  STUDIO_BACKEND?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
 }
+
+export type Backend = 'container' | 'tunnel';
+
+/** The backend STUDIO_BACKEND names, or null for a value that is not one. */
+export function backendOf(env: Pick<Env, 'STUDIO_BACKEND'>): Backend | null {
+  const v = (env.STUDIO_BACKEND ?? '').trim().toLowerCase();
+  if (v === '' || v === 'container') return 'container';
+  if (v === 'tunnel') return 'tunnel';
+  return null;
+}
+
+/** The name of the one Durable Object that owns the container. */
+export const STUDIO_OBJECT = 'studio';
+// The address the Durable Object is called with. Only the path and query matter.
+export const STUDIO_ORIGIN = 'http://studio';
 
 export type Deps = {
   gate: Gate;
   /** Where operator messages go (Worker logs). Never a token, never the caller. */
   log: (msg: string) => void;
 };
-
-// What the caller sees. None of these says why a sign-in was refused.
-export const MESSAGES = {
-  notConfigured: "The studio's sign-in is not set up, so the studio is closed.",
-  forbidden: 'Sign in at https://studio.eggers.dev to use the studio.',
-  serverDown: "The studio's server is not running. Start it on the machine that holds the data.",
-  method: 'Use GET or HEAD.',
-  routesUnreadable: "The studio's pages are not ready. Try again in a moment.",
-} as const;
 
 // The address the VPC binding is called with. The host and port do not route; the service config does.
 export const SERVER_ORIGIN = 'http://127.0.0.1:8787';
@@ -66,7 +89,8 @@ const text = (status: number, body: string, extra: Record<string, string> = {}) 
 // Request headers the server reads. Nothing else goes: no cookie, no cf-* header, no Access token.
 const FORWARD_REQUEST = ['content-type', 'accept'];
 // Response headers the page needs. The server's CORS headers stay behind: the page is on the same origin now.
-const FORWARD_RESPONSE = ['content-type', 'content-disposition', 'content-length'];
+// retry-after goes too: the Durable Object sets it on its 503 while the container starts.
+const FORWARD_RESPONSE = ['content-type', 'content-disposition', 'content-length', 'retry-after'];
 
 /** Forwards /api/<path>?<query> to the server as /<path>?<query>, its body streamed both ways. */
 export async function api(request: Request, env: Env, deps: Deps): Promise<Response> {
@@ -87,20 +111,36 @@ export async function api(request: Request, env: Env, deps: Deps): Promise<Respo
     redirect: 'manual',
   } as RequestInit;
 
-  let upstream: Response;
-  try {
-    if (!env.SERVER) throw new Error('the SERVER binding is missing');
-    upstream = await env.SERVER.fetch(`${SERVER_ORIGIN}${path}${url.search}`, init);
-  } catch (error) {
-    deps.log(`server: no connection (${error instanceof Error ? error.message : 'unknown error'})`);
-    return serverDown();
+  const backend = backendOf(env);
+  if (!backend) {
+    deps.log('config: STUDIO_BACKEND is not "container" or "tunnel"');
+    return jsonError(503, MESSAGES.backendUnknown);
   }
-  // The tunnel answers for a server that is not listening, with a page of its own. The server's own errors are JSON.
-  const type = upstream.headers.get('content-type') ?? '';
-  if (upstream.status >= 502 && upstream.status <= 504 && !type.includes('application/json')) {
-    deps.log(`server: the tunnel answered ${upstream.status}`);
-    await upstream.body?.cancel().catch(() => {});
-    return serverDown();
+
+  let upstream: Response;
+  if (backend === 'container') {
+    try {
+      if (!env.STUDIO) throw new Error('the STUDIO binding is missing');
+      upstream = await env.STUDIO.getByName(STUDIO_OBJECT).fetch(new Request(`${STUDIO_ORIGIN}${path}${url.search}`, init));
+    } catch (error) {
+      deps.log(`container: no answer (${error instanceof Error ? error.message : 'unknown error'})`);
+      return jsonError(502, MESSAGES.containerDown);
+    }
+  } else {
+    try {
+      if (!env.SERVER) throw new Error('the SERVER binding is missing');
+      upstream = await env.SERVER.fetch(`${SERVER_ORIGIN}${path}${url.search}`, init);
+    } catch (error) {
+      deps.log(`server: no connection (${error instanceof Error ? error.message : 'unknown error'})`);
+      return serverDown();
+    }
+    // The tunnel answers for a server that is not listening, with a page of its own. The server's own errors are JSON.
+    const type = upstream.headers.get('content-type') ?? '';
+    if (upstream.status >= 502 && upstream.status <= 504 && !type.includes('application/json')) {
+      deps.log(`server: the tunnel answered ${upstream.status}`);
+      await upstream.body?.cancel().catch(() => {});
+      return serverDown();
+    }
   }
 
   const out = new Headers({ 'cache-control': 'no-store', ...ALWAYS });
@@ -112,7 +152,35 @@ export async function api(request: Request, env: Env, deps: Deps): Promise<Respo
 }
 
 function serverDown(): Response {
-  return Response.json({ error: MESSAGES.serverDown }, { status: 502, headers: { 'cache-control': 'no-store', ...ALWAYS } });
+  return jsonError(502, MESSAGES.serverDown);
+}
+
+function jsonError(status: number, error: string): Response {
+  return Response.json({ error }, { status, headers: { 'cache-control': 'no-store', ...ALWAYS } });
+}
+
+/**
+ * /api/_studio/...: the Worker's own controls, answered by the Durable Object and never forwarded to the server.
+ *   GET  /api/_studio/status   the keeper's status and the container's state
+ *   POST /api/_studio/backup   back up now
+ */
+export async function control(request: Request, env: Env, deps: Deps): Promise<Response> {
+  const { pathname } = new URL(request.url);
+  const name = pathname.slice('/api/_studio'.length);
+  const known = (name === '/status' && (request.method === 'GET' || request.method === 'HEAD')) || (name === '/backup' && request.method === 'POST');
+  if (!known) return jsonError(404, MESSAGES.notFound);
+  const backend = backendOf(env);
+  if (backend === 'tunnel') return Response.json({ backend: 'tunnel', note: MESSAGES.tunnelOnly }, { headers: { 'cache-control': 'no-store', ...ALWAYS } });
+  if (!backend) return jsonError(503, MESSAGES.backendUnknown);
+  try {
+    if (!env.STUDIO) throw new Error('the STUDIO binding is missing');
+    const res = await env.STUDIO.getByName(STUDIO_OBJECT).fetch(new Request(`${STUDIO_ORIGIN}/_studio${name}`, { method: request.method === 'HEAD' ? 'GET' : request.method }));
+    const out = new Headers({ 'cache-control': 'no-store', ...ALWAYS, 'content-type': res.headers.get('content-type') ?? 'application/json' });
+    return new Response(request.method === 'HEAD' ? null : res.body, { status: res.status, headers: out });
+  } catch (error) {
+    deps.log(`container: no answer (${error instanceof Error ? error.message : 'unknown error'})`);
+    return jsonError(502, MESSAGES.containerDown);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -251,7 +319,7 @@ export function createPages(): Pages {
 // ---------------------------------------------------------------------------------------------------------------
 // The Worker
 
-/** The whole Worker: the Access check, then /api/... to the server and every other path from dist/. */
+/** The whole Worker: the Access check, then /api/... to the backend and every other path from dist/. */
 export function worker(deps: Deps) {
   const pages = createPages();
   return {
@@ -276,6 +344,8 @@ export function worker(deps: Deps) {
           deps.log('api: refused a change that did not come from the studio page');
           return text(403, MESSAGES.forbidden);
         }
+        // The reserved segment, in any case or spelling of it, never reaches the server.
+        if (/^\/api\/_studio(\/|$)/i.test(pathname)) return control(request, env, deps);
         return api(request, env, deps);
       }
       return pages.serve(request, env, deps);
