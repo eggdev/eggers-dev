@@ -1,16 +1,17 @@
 # eggers.dev
 
 A private career workspace: a knowledge bank of one person's work, and the job search built on it.
-It is an Exact app with a small Bun server beside it. It runs on one machine and is reached over a
-private network. It has no sign-in and is not a public website.
+It is an Exact app with a small Bun server beside it. It runs on Cloudflare as the studio, which only
+the owner can open. For development, it also runs on one machine. It is not a public website. The
+public site is a separate project in `site/`.
 
 This repository is public. The code is here; the person's data is not. Everything personal lives
-in `.data/`, which git ignores.
+in `.data/`, which git ignores, and in private storage on Cloudflare.
 
 ## What it does
 
 - **Bank.** You add sources: pasted text, files, a LinkedIn export, git repositories. A worker has
-  Claude Code read each source and writes what it finds as facts under the role they belong to.
+  a model read each source and writes what it finds as facts under the role they belong to.
   Duplicate facts from several sources are folded into one.
 - **Profile.** One document written from the whole bank. Where the bank is thin, it asks
   questions instead of guessing.
@@ -22,6 +23,8 @@ in `.data/`, which git ignores.
   lines. A reviser rewrites it from the bank until it passes or three rounds are spent.
 - **Discovery.** The public job boards of companies on a watchlist are read daily, and each new
   posting gets a quick first score.
+- **Public Page.** The owner writes the public collection, the only text the public site's
+  assistant answers from, and publishes it.
 
 One rule holds everywhere: nothing may invent, round up or infer a number. A resume is built only
 from facts in the bank.
@@ -48,6 +51,9 @@ HTTPS. `tools/dev.ts` has the two `tailscale serve` commands.
 EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 ```
 
+A local run has its own data in `.data/`. It does not share data with the studio. To work on a
+copy of the studio's data, see `bun cloud/tools/pull.ts` below.
+
 ## Layout
 
 | Path | What it is |
@@ -58,8 +64,12 @@ EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 | `app.tamber` | Colours and theme tokens |
 | `server.ts` | The API. It stores and serves; it never calls a model |
 | `worker.ts` | Reads sources, writes the profile, reads jobs, replies in Talk |
-| `lib/` | One file per concern, such as `db`, `ingest`, `profile`, `jobs`, `council`, `pdf`, `discover`, `talk` and `llm` |
+| `lib/` | One file per concern, such as `db`, `ingest`, `profile`, `jobs`, `council`, `pdf`, `discover`, `talk`, `public` and `llm` |
 | `tools/` | Commands to run by hand, listed below |
+| `cloud/` | The container image and its keeper, which runs the app in the studio |
+| `studio/` | The studio's Cloudflare Worker |
+| `site/` | The public site and its Cloudflare Worker |
+| `.github/` | The workflow that tests and deploys on GitHub |
 | `.data/` | The database, inbox, cloned repositories and resumes. Ignored by git |
 
 ## Commands
@@ -78,16 +88,16 @@ EGG_REMOTE=<machine>.<tailnet>.ts.net bun tools/dev.ts --plain
 | `bun tools/widen.ts <file>` | Adds companies to the watchlist from a file of board names |
 | `bun tools/unslop.ts` | Rewords bank facts to the writing rules without changing what they say |
 | `bun tools/questions.ts` | Closes open questions that the bank already answers |
-| `bun tools/public.ts` | Writes a draft of the public collection to `.data/public/` for the owner to audit. It publishes nothing |
+| `bun tools/public.ts` | Writes a draft of the public collection and a list of lines to check to `.data/public/`. It never writes the collection and publishes nothing |
 
 Run the `tools/` commands while the worker is idle.
 
 ## Models
 
-Every model call goes through `ask()` in `lib/llm.ts`, which runs headless Claude Code under this
-machine's existing login. There is no API key. `EGG_MODEL` sets the default model. A variable for
-each task (`EGG_READ_MODEL`, `EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL` and others in
-`lib/`) overrides it.
+Every model call goes through `ask()` in `lib/llm.ts`. On a developer machine, it runs headless
+Claude Code under that machine's existing login. There is no API key. The studio uses Codex
+instead (below). `EGG_MODEL` sets the default model. A variable for each task (`EGG_READ_MODEL`,
+`EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL` and others in `lib/`) overrides it.
 
 ### Codex instead of Claude Code
 
@@ -116,27 +126,85 @@ Codex cannot read a PDF itself. Under `EGG_LLM=codex`, the worker takes the text
 - Word and RTF files become text with macOS's `textutil`. Where it is missing, `pandoc` does it.
   Pandoc reads `.docx` and `.rtf` files, but not the older `.doc`.
 
+## Running it day to day (no laptop needed)
+
+Each routine job is done in a browser or on GitHub. The owner's machine can be off.
+
+| Job | Where it is done |
+| --- | --- |
+| Add or edit career content | The studio, at `https://studio.eggers.dev` |
+| Publish the public text | The studio: Profile tab, Public Page, "Publish Saved Text" |
+| Stop the public chat | The studio: Profile tab, Public Page, "Take the Chat Offline" |
+| Renew the model sign-in | The studio: Profile tab, System (the settings symbol), "Sign In Again" |
+| Check or force a backup | The studio: Profile tab, System, "Back Up Now" |
+| Deploy code | Push to `main`. GitHub runs the tests and deploys both Workers |
+
+Some work still needs a developer machine:
+
+- Writing code and running the tests.
+- The first set-up: creating the buckets, setting the Worker secrets and making the first backup
+  (the seed).
+- Pulling a copy of the studio's data for local work (`bun cloud/tools/pull.ts`).
+
 ## The public site
 
 `site/` is a second Exact project: one public page where a visitor asks questions about the
 owner's work, and an assistant answers. It is built as static files and served by a Cloudflare
-Worker (`site/worker/`), which also answers the questions at `POST /ask`.
+Worker (`site/worker/`) at `https://eggers.dev`. The same Worker answers the questions at
+`POST /ask`.
 
-The assistant answers only from one file, the public collection, which the owner approves:
+### The public collection
 
-1. `bun tools/public.ts` writes a draft of the whole bank to `.data/public/collection.draft.md`.
-2. The owner deletes what must not be public and saves the result as `.data/public/collection.md`.
-3. In `site/`, `bun tools/deploy.ts --origin https://<public origin>` builds the page, copies the
-   approved collection into the Worker and deploys both. It refuses to run without that file.
+The assistant answers only from one text, the public collection. The owner writes, saves, checks
+and publishes it in the studio, on the Profile tab's Public Page screen:
 
-The collection is never in git. The model's address and name are settings in `site/wrangler.jsonc`,
-and its key is a Worker secret. In `site/`, `bun exact.mjs verify` tests the page against a
-stand-in endpoint, and `bun run test:worker` tests the Worker against a fake model.
+1. "Start from My Bank" puts a draft of the whole bank into the field. No model writes it. Nothing
+   is saved until the owner presses Save.
+2. The owner deletes what must not be public and presses Save. The app's server keeps the saved
+   text in the data folder as `public/collection.md`.
+3. "Lines to check before you publish" lists lines that may hold money, a person or client, a
+   link, or inside knowledge. This is advice only. The owner decides what is public.
+4. "Publish Saved Text" copies the saved text to the R2 bucket `eggers-site-content` as
+   `collection.md`. Only the saved text can be published, and only the text the owner reviewed.
+5. "Take the Chat Offline" deletes `collection.md`. The public chat then stops answering. This is
+   the emergency stop.
+
+The site's Worker reads `collection.md` at request time and keeps it for 60 seconds
+(`site/worker/collection.ts`). So a publish or a take-down shows within about a minute, and a
+content change needs no deploy. Each publish also puts a history copy in the studio's private
+bucket under `public-history/`. The newest 20 copies are kept. The bucket the public site reads
+holds `collection.md` and nothing else.
+
+The server routes are `/public`, `/public/draft`, `/public/notes` and `/public/save`
+(`server.ts`, `lib/public.ts`). The studio's Worker does the publishing (`studio/worker/publish.ts`):
+
+- `GET /api/_studio/public` shows what is published now.
+- `POST /api/_studio/publish` publishes the saved text.
+- `POST /api/_studio/unpublish` takes it down.
+
+The collection is never in git. `bun tools/public.ts` still writes a draft for local work, but it
+never writes the collection.
+
+### Limits and set-up
+
+The assistant has three limits on questions. Each visitor may ask 10 questions a minute. Each UTC
+day has a total for all visitors together (`MAX_QUESTIONS_PER_DAY`) and a share for each visitor
+(`MAX_QUESTIONS_PER_VISITOR_PER_DAY`). Both are settings in `site/wrangler.jsonc`. A Durable Object
+counts them (`site/worker/budget.ts`). It stores no addresses.
+
+The assistant answers "The assistant is not set up yet." until two things are true: a collection is
+published, and the Worker secret `MODEL_API_KEY` is set. Set the key only after a real collection is
+published. In `site/`, set it with `wrangler secret put MODEL_API_KEY`. The model's address and name
+are settings in `site/wrangler.jsonc`.
+
+In `site/`, `bun tools/deploy.ts --origin https://eggers.dev` builds the page and deploys the Worker.
+It does not take a collection. `bun exact.mjs verify` tests the page against a stand-in endpoint,
+and `bun run test:worker` tests the Worker against a fake model.
 
 ## The studio at studio.eggers.dev
 
 The studio is this app, reached from any browser at `https://studio.eggers.dev`. Only the owner can
-open it. It runs on Cloudflare, so the owner's machine can be off.
+open it. It runs only on Cloudflare. Nothing in it runs on the owner's machine.
 
 ### What runs where
 
@@ -169,8 +237,26 @@ The limits: a hard crash loses the changes made since the last backup, at most a
 work. The first request after a sleep is slow, because the container restores the data first.
 
 The container reaches the bucket only through the Worker (`studio/worker/backups.ts`). It holds no
-storage keys. `GET /api/_studio/status` shows the container, the last backup, whether Codex is
-signed in and whether its sandbox starts. `POST /api/_studio/backup` takes a backup now.
+storage keys.
+
+### The System screen
+
+The studio's System screen (Profile tab, the settings symbol) shows the last backup, any changes not
+yet backed up, the model sign-in and the machine. "Back Up Now" takes a backup at once.
+
+"Sign In Again" renews the model sign-in (the owner's ChatGPT account, through Codex) from the
+container (`cloud/lib/codexlogin.ts`). The screen shows a web address and a one-time code. The owner
+opens the address on any device, signs in to ChatGPT and types the code. The code expires after 15
+minutes. When the sign-in is done, the keeper backs it up at once, so it survives a restart.
+
+The Worker's own controls, behind the same Access check:
+
+- `GET /api/_studio/status` shows the container, the last backup, whether Codex is signed in and
+  whether its sandbox starts.
+- `POST /api/_studio/backup` takes a backup now.
+- `POST /api/_studio/codex/login` starts a Codex sign-in, and `POST /api/_studio/codex/cancel`
+  stops one that waits.
+- The publishing controls are under "The public collection" above.
 
 ### Commands
 
@@ -181,30 +267,49 @@ signed in and whether its sandbox starts. `POST /api/_studio/backup` takes a bac
 | `bun cloud/tools/pull.ts` | Downloads the newest backup into a new folder in `.data.cloud/` and checks it. It never writes to `.data/` |
 | `bun test cloud` | Tests the keeper with a fake bucket and small invented databases |
 
-In `studio/`, `bun run test` tests the Worker, the Durable Object's logic and the backup gateway
-with fakes.
+In `studio/`, `bun run test` tests the Worker, the Durable Object's logic, the backup gateway and the
+publishing controls with fakes.
 
-Before the first deploy, create the bucket once: `wrangler r2 bucket create eggers-studio-data`.
-Then run `bun cloud/tools/seed.ts --upload`. Add `--codex-home ~/.codex` to include the Codex
-sign-in. The seed refuses to run while the app runs on this machine, unless `--live` is given. It
-refuses to replace a backup already in the bucket, unless `--replace` is given.
+### First set-up
 
-A deploy and the bucket commands need `CLOUDFLARE_ACCOUNT_ID` in the environment. Set the secrets
-once with `wrangler secret put` in `studio/`:
+This is done once, from a developer machine. Create the studio's bucket:
+`wrangler r2 bucket create eggers-studio-data`. The public site's bucket, `eggers-site-content`,
+must also exist. Then run `bun cloud/tools/seed.ts --upload`. Add `--codex-home ~/.codex` to
+include the Codex sign-in, so the container starts signed in. Later sign-ins are renewed on the
+System screen. The seed refuses to run while the app runs on this machine, unless `--live` is given.
+It refuses to replace a backup already in the bucket, unless `--replace` is given.
+
+A deploy and the bucket commands from a developer machine need `CLOUDFLARE_ACCOUNT_ID` in the
+environment. Set the secrets once with `wrangler secret put` in `studio/`:
 
 - `ACCESS_TEAM_DOMAIN`: the Access team's host name. Required.
 - `ACCESS_AUD`: the Access application's audience tag. Required. Without these two, the studio
   answers 503.
 - `GH_TOKEN`: a GitHub token for GitHub sources. Optional.
 
-### Falling back to the Mac
+The public site's secret, `MODEL_API_KEY`, is set in `site/` (see "Limits and set-up" above).
 
-Set `STUDIO_BACKEND` to `tunnel` in `studio/wrangler.jsonc` and deploy. The Worker then sends
-`/api/...` through a private Cloudflare Tunnel to the server on the owner's machine, as before.
-There, `bun tools/live.ts` runs the server, the worker and the tunnel. Before you switch, run
-`bun cloud/tools/pull.ts` to get the cloud's newest data. It goes into a new folder in
-`.data.cloud/`. With the app stopped, move it into `.data/` yourself. Do not run the app in both
-places at once: each has its own copy of the data.
+## Tests and deploys on GitHub
+
+`.github/workflows/ci.yml` runs on GitHub's machines:
+
+- On every pull request and every push to `main`, the job "test" runs `bun test lib`,
+  `bun test cloud`, the studio's Worker tests and the site's Worker tests. Then it runs both deploy
+  tools with `--dry-run`, which builds everything and uploads nothing. It does not run
+  `bun exact.mjs verify`.
+- On a push to `main`, or a manual run on `main`, the job "deploy" then deploys the studio and the
+  public site to Cloudflare. It runs in the GitHub environment "production".
+
+The deploy needs two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The
+apps build with Exact, which is not an npm package. Both jobs check out the public repository
+`expo/exact` beside this repository, at the commit that `EXACT_REF` in the workflow names.
+`.github/actions/setup/action.yml` installs the rest.
+
+The workflow has not yet run on GitHub, because nothing has been pushed. Its first run is the proof
+that it works.
+
+Deploying from a developer machine still works. From the repository root, run
+`bun studio/tools/deploy.ts`. In `site/`, run `bun tools/deploy.ts --origin https://eggers.dev`.
 
 ## Earlier deployments
 
