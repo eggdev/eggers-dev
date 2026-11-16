@@ -13,6 +13,7 @@ import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from 
 import { INBOX } from './lib/ingest.ts';
 import { fitOf, publish, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { type AtsCheck } from './lib/pdf.ts';
+import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -143,6 +144,37 @@ Bun.serve({ hostname, port, routes: {
       if (typeof b.body !== 'string') return send({ error: 'Nothing to save.' }, 400);
       saveDirection(b.body, Date.now());
       return send({ ok: true });
+    },
+  },
+  // The public collection: the text a public assistant answers from. Only the person decides what is in it.
+  // GET is the saved text, which the publishing step reads. A draft and notes are only aids, and save nothing.
+  '/public': {
+    OPTIONS: preflight,
+    GET: () => { const saved = readSaved(); return send({ ...saved, notes: reviewNotes(saved.text) }); },
+  },
+  '/public/draft': {
+    OPTIONS: preflight,
+    POST: () => { const text = draftCollection(db); return send({ text, notes: reviewNotes(text) }); },
+  },
+  '/public/notes': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      if (typeof b.text !== 'string') return send({ error: 'Send the text to check.' }, 400);
+      if (b.text.length > MAX_COLLECTION) return send({ error: `That is over ${MAX_COLLECTION.toLocaleString('en-US')} characters. Shorten it.` }, 400);
+      return send({ notes: reviewNotes(b.text) });
+    },
+  },
+  // Saves exactly the text the person sends as the collection.
+  '/public/save': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      if (typeof b.text !== 'string') return send({ error: 'Send the collection to save.' }, 400);
+      try {
+        const saved = saveCollection(b.text);
+        return send({ ok: true, ...saved, notes: reviewNotes(readSaved().text) });
+      } catch (e) { return send({ error: (e as Error).message }, 400); }
     },
   },
   // Talk: the conversation, and the open questions the person can pick from. The worker writes replies.
