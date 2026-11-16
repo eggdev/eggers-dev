@@ -7,8 +7,11 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-15",
 
-  // Served at <name>.<account subdomain>.workers.dev. No custom domain and no routes.
-  "workers_dev": true,
+  // Served at https://eggers.dev, a custom domain of this Worker. The workers.dev address is off: the page is
+  // built for one origin, so a second address would serve a page whose chat cannot reach /ask.
+  // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
+  "workers_dev": false,
+  "routes": [{ "pattern": "eggers.dev", "custom_domain": true }],
 
   // The built site. Only /ask runs the Worker first; every other path is a file in dist/, and a path with no
   // file gets dist/404.html with status 404.
