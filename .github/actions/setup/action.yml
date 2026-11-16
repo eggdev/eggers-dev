@@ -1,0 +1,96 @@
+# The machine set-up that both jobs of ci.yml share. It expects this repository checked out in the folder
+# `eggers-dev` of the workspace, and it puts Exact beside it in `exact`, so that `../exact` resolves from the
+# repository root and `../../exact` from `site/` (exact.mjs and site/exact.mjs look for Exact there).
+#
+# What a clean ubuntu-latest runner lacks, and why each step is here:
+#   - Exact itself: it is not an npm package, only a sibling checkout.
+#   - Bun 1.4.2: the apps' exact.mjs asks for at least 1.4.2 (ensureBun), and the studio's container runs 1.4.2.
+#   - Node.js 22 or newer, for wrangler.
+#   - Rust: Exact compiles its page compiler (the crate exact-web-js) from source on the first build. Without
+#     Rust the build stops with "the web build (the JS target) failed". The toolchain is the one Exact's
+#     rust-toolchain.toml names.
+#   - Exact's web nightly with its standard-library sources (rust-src): the studio's screens use Markdown, and
+#     Exact builds markdown.wasm with that nightly and -Zbuild-std. Without rust-src the build stops with
+#     "library/Cargo.lock does not exist".
+#   - Binaryen (wasm-opt): without it the build still passes, but ships markdown.wasm unoptimized and larger
+#     than the laptop's build. This is the version Exact pins, checked against its published SHA-256 sum.
+#   - A cache of what Exact compiled (~/.cache/exact). Exact keeps the compiler and the wasm modules there by
+#     the hash of their sources, so a later run with the same EXACT_REF takes them instead of compiling again.
+name: Set up Exact and the apps
+description: Check out Exact beside the app, install Bun, Rust, Binaryen and every dependency.
+inputs:
+  exact-ref:
+    description: The commit of expo/exact to build with.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check out Exact
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: expo/exact
+        ref: ${{ inputs.exact-ref }}
+        path: exact
+        persist-credentials: false
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: 1.4.2
+
+    - name: Install Node.js
+      # The deploy tools run wrangler (4.155.0) directly, and its launcher is a Node.js script that needs Node 22
+      # or newer. Without Node it stops with "/usr/bin/env: 'node': No such file or directory".
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+
+    - name: Install Rust (Exact's toolchain and its web nightly)
+      shell: bash
+      working-directory: exact
+      run: |
+        set -euo pipefail
+        # rust-toolchain.toml's toolchain, which Exact's page compiler builds with.
+        rustup show active-toolchain || rustup toolchain install
+        # The nightly Exact builds its wasm modules with, read from Exact so a new EXACT_REF brings its own.
+        web=$(sed -n "s/^export const WEB_TOOLCHAIN = '\(.*\)';$/\1/p" scripts/app.mjs)
+        test -n "$web" || { echo "WEB_TOOLCHAIN not found in exact/scripts/app.mjs"; exit 1; }
+        rustup toolchain install "$web" --profile minimal --component rust-src --target wasm32-unknown-unknown
+        echo "EXACT_WEB_TOOLCHAIN=$web" >> "$GITHUB_ENV"
+
+    - name: Install Binaryen (wasm-opt)
+      shell: bash
+      working-directory: exact
+      run: |
+        set -euo pipefail
+        # Exact's pin, as host/web/stages.mjs states it: "version 132" becomes the tag version_132.
+        tag=$(sed -n "s/^export const BINARYEN = '\(.*\)';$/\1/p" host/web/stages.mjs | tr ' ' '_')
+        test -n "$tag" || { echo "BINARYEN not found in exact/host/web/stages.mjs"; exit 1; }
+        case "$(uname -m)" in x86_64) arch=x86_64 ;; aarch64|arm64) arch=aarch64 ;; *) echo "no Binaryen for $(uname -m)"; exit 1 ;; esac
+        name="binaryen-${tag}-${arch}-linux.tar.gz"
+        url="https://github.com/WebAssembly/binaryen/releases/download/${tag}/${name}"
+        dir="$RUNNER_TEMP/binaryen"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/$name" "$url"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/$name.sha256" "$url.sha256"
+        echo "$(cut -d' ' -f1 "$RUNNER_TEMP/$name.sha256")  $RUNNER_TEMP/$name" | sha256sum -c -
+        tar -xzf "$RUNNER_TEMP/$name" --strip-components=1 -C "$dir"
+        echo "$dir/bin" >> "$GITHUB_PATH"
+        "$dir/bin/wasm-opt" --version
+
+    - name: Restore what Exact compiled
+      # The key names everything the kept products depend on: Exact's commit and the machine. Exact checks each
+      # product against the hash of its sources before it takes one, so a stale entry is never used.
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/exact
+        key: exact-kept-${{ runner.os }}-${{ runner.arch }}-${{ inputs.exact-ref }}
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        (cd exact && bun install --frozen-lockfile)
+        (cd eggers-dev && bun install --frozen-lockfile)
+        (cd eggers-dev/studio && bun install --frozen-lockfile)
+        (cd eggers-dev/site && bun install --frozen-lockfile)

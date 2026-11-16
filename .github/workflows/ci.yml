@@ -1,0 +1,123 @@
+# Tests and deploys this repository on GitHub's machines, so no deploy needs the owner's laptop.
+#
+# - On every pull request (and on every push to main), the job "test" runs all the tests, then runs both deploy
+#   tools with --dry-run: they build the studio's screens, the site and both Workers (and the studio's container
+#   image), and upload nothing.
+# - On a push to main, or a manual run on main, the job "deploy" then deploys the studio (https://studio.eggers.dev)
+#   and the public site (https://eggers.dev) to Cloudflare.
+#
+# The deploy needs two repository secrets (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN   an API token that may deploy Workers, Containers and R2 bindings in the account
+#   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account that holds the studio and the site
+# It runs in the GitHub environment "production". Add required reviewers to that environment to approve each deploy.
+#
+# The apps build with Exact, which is not an npm package: they find it as a sibling checkout (../exact). Both jobs
+# check it out beside this repository at the commit EXACT_REF names (.github/actions/setup has the details).
+#
+# The steps were tried on a clean Ubuntu 24.04 machine, but only the first real run on GitHub proves this file.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time for each branch. A newer push to a pull request stops the older run. On main nothing is
+# stopped: a run that deploys always finishes, and the next one waits for it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The commit of https://github.com/expo/exact that the apps build with. To update it, choose a commit on
+  # expo/exact's main branch, check that the apps build and test with it locally (check it out in ../exact), and
+  # put its full 40-character hash here. The cache of what Exact compiles is keyed by this value.
+  EXACT_REF: b191e765a540faf77b541f6ac29794d755c53395
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # This job gets no secrets: it runs the code of every pull request.
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: eggers-dev
+          persist-credentials: false
+
+      - name: Set up Exact, Bun, Rust and the dependencies
+        uses: ./eggers-dev/.github/actions/setup
+        with:
+          exact-ref: ${{ env.EXACT_REF }}
+
+      - name: Test lib (and cloud/lib)
+        working-directory: eggers-dev
+        run: bun test lib
+
+      - name: Test cloud
+        working-directory: eggers-dev
+        run: bun test cloud
+
+      - name: Test the studio's Worker
+        working-directory: eggers-dev/studio
+        run: bun run test
+
+      - name: Test the site's Worker
+        working-directory: eggers-dev/site
+        run: bun run test:worker
+
+      - name: Studio deploy, dry run
+        # Builds the screens, the Worker bundle and the container image (cloud/Dockerfile), and uploads nothing.
+        # Docker runs on ubuntu-latest, so the tool builds the image. An uncached build of the image took 76 seconds
+        # on a 4-core test machine, so expect about one to three minutes here. That is kept on purpose: a pull
+        # request that breaks the image then fails here, not in the deploy after the merge. The tool's no-Docker
+        # path (--containers-rollout=none, taken only when `docker info` fails) would skip the image.
+        working-directory: eggers-dev
+        run: bun studio/tools/deploy.ts --dry-run
+
+      - name: Site deploy, dry run
+        working-directory: eggers-dev/site
+        run: bun tools/deploy.ts --origin https://eggers.dev --dry-run
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    # Two deploys never overlap, and a deploy that started is never stopped.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: eggers-dev
+          persist-credentials: false
+
+      - name: Set up Exact, Bun, Rust and the dependencies
+        uses: ./eggers-dev/.github/actions/setup
+        with:
+          exact-ref: ${{ env.EXACT_REF }}
+
+      - name: Deploy the studio
+        working-directory: eggers-dev
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun studio/tools/deploy.ts
+
+      - name: Deploy the site
+        working-directory: eggers-dev/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun tools/deploy.ts --origin https://eggers.dev
