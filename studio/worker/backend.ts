@@ -5,15 +5,17 @@
 // The container (cloud/Dockerfile) runs the keeper (cloud/keeper.ts), which restores the data from the bucket,
 // runs server.ts and worker.ts, and backs the data up. The Durable Object reaches:
 //   the app's server   port 8787, every /api/... request (the Worker has stripped /api)
-//   the keeper         port 8788, GET /status and POST /backup, with this start's token
+//   the keeper         port 8788, with this start's token: GET /status, POST /backup, and POST /codex/login and
+//                      /codex/cancel (the Codex sign-in that runs in the container, cloud/lib/codexlogin.ts)
 // and gives the container one outbound route: http://backup.internal, to the backup gateway (backups.ts).
 //
 // Lifetime. Containers stop a container some time after its Durable Object goes quiet (setInactivityTimeout). An
 // alarm wakes the Durable Object every few minutes while the container runs. The container keeps running while API
-// requests arrive, or while the keeper reports work in hand (a source being read, a resume being written) or
-// changes not yet backed up. After IDLE_MS with none of these, the Durable Object asks the keeper for a last backup
-// and sends SIGTERM; the keeper stops the app, backs up anything left and exits. Once a day the alarm starts the
-// container, so the worker's daily job-board check runs; then the same idle rule lets it sleep again.
+// requests arrive, or while the keeper reports work in hand (a source being read, a resume being written, a Codex
+// sign-in that waits for the owner) or changes not yet backed up. After IDLE_MS with none of these, the Durable
+// Object asks the keeper for a last backup and sends SIGTERM; the keeper stops the app, backs up anything left and
+// exits. Once a day the alarm starts the container, so the worker's daily job-board check runs; then the same idle
+// rule lets it sleep again.
 import { MESSAGES } from './messages.ts';
 
 export const APP_PORT = 8787;
@@ -37,6 +39,10 @@ export const CHECK_MS = 5 * MINUTE;
 export const MAX_BUSY_MS = 6 * HOUR;
 /** The time a stopping keeper is given for its last backup before the Durable Object stops waiting for it. */
 export const BACKUP_WAIT_MS = 5 * MINUTE;
+/** How long the keeper has to answer a sign-in start. It answers when Codex has printed the address and code, or gives up after about 20 s. */
+export const LOGIN_WAIT_MS = 40 * SECOND;
+/** How long the keeper has to stop a sign-in. */
+export const CANCEL_WAIT_MS = 15 * SECOND;
 const SIGTERM = 15;
 
 type Fetchish = { fetch(input: string, init?: RequestInit): Promise<Response> };
@@ -208,15 +214,20 @@ export class Backend {
     return { ok: false };
   }
 
-  /** One API request: /<path>?<query> for the app's server, its body streamed both ways. */
-  async forward(request: Request): Promise<Response> {
+  /** Counts as use, then waits for the app. The answer for the caller when the app is not ready, else null. */
+  private async wake(): Promise<Response | null> {
     await this.touch();
     await this.armAlarm(this.now() + CHECK_MS);
     const ready = await this.ensureReady();
-    if (!ready.ok) {
-      if (ready.failed) return json({ error: `${MESSAGES.containerFailed} ${ready.failed}` }, 503, { 'retry-after': '60' });
-      return json({ error: MESSAGES.starting }, 503, { 'retry-after': '5' });
-    }
+    if (ready.ok) return null;
+    if (ready.failed) return json({ error: `${MESSAGES.containerFailed} ${ready.failed}` }, 503, { 'retry-after': '60' });
+    return json({ error: MESSAGES.starting }, 503, { 'retry-after': '5' });
+  }
+
+  /** One API request: /<path>?<query> for the app's server, its body streamed both ways. */
+  async forward(request: Request): Promise<Response> {
+    const notReady = await this.wake();
+    if (notReady) return notReady;
     const url = new URL(request.url);
     const init = {
       method: request.method,
@@ -258,11 +269,33 @@ export class Backend {
   async backupNow(): Promise<Response> {
     if (!this.d.container.running || !this.token) return json({ error: MESSAGES.notRunning }, 409);
     await this.touch();
+    return this.askKeeper('/backup', BACKUP_WAIT_MS);
+  }
+
+  /**
+   * POST /_studio/codex/login: asks the keeper to start a Codex sign-in, and returns its JSON: the address and the
+   * one-time code the owner types there. A sleeping container is started first, as for an API request.
+   */
+  async codexLogin(): Promise<Response> {
+    const notReady = await this.wake();
+    if (notReady) return notReady;
+    return this.askKeeper('/codex/login', LOGIN_WAIT_MS);
+  }
+
+  /** POST /_studio/codex/cancel: asks the keeper to stop a sign-in that waits. Never starts the container. */
+  async codexCancel(): Promise<Response> {
+    // No container, no sign-in: the answer has the keeper's form.
+    if (!this.d.container.running || !this.token) return json({ ok: true, codexLogin: { state: 'idle' } });
+    return this.askKeeper('/codex/cancel', CANCEL_WAIT_MS);
+  }
+
+  /** One POST to the keeper's control endpoint with this start's token. Its JSON and status go back as they are. */
+  private async askKeeper(path: string, timeoutMs: number): Promise<Response> {
     try {
-      const res = await this.d.container.getTcpPort(KEEPER_PORT).fetch('http://keeper/backup', {
+      const res = await this.d.container.getTcpPort(KEEPER_PORT).fetch(`http://keeper${path}`, {
         method: 'POST',
-        headers: { 'x-egg-token': this.token },
-        signal: AbortSignal.timeout(BACKUP_WAIT_MS),
+        headers: { 'x-egg-token': this.token ?? '' },
+        signal: AbortSignal.timeout(timeoutMs),
       });
       return json(await res.json(), res.status);
     } catch (error) {

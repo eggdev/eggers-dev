@@ -15,6 +15,9 @@
 // What the container cannot do here: read or write anything but backups/<time>.tar.gz and their manifests, replace
 // an existing backup, write the pointer for a backup that is not complete, or delete anything itself. Deletion
 // happens only by the retention rule, after a commit, and never touches the backup the pointer names.
+// The bucket also holds public-history/<time>.md, the history copies of the published public collection
+// (publish.ts). This gateway lists only backups/, and every key it reads, writes or deletes passes isBackupKey or
+// is such a key's manifest or the pointer: a history copy is never listed, restored, counted or deleted here.
 // This file has no Cloudflare imports, so `bun test` runs it with a fake bucket.
 import { isBackupKey, manifestKey, parseManifest, POINTER, PREFIX, toPrune, type Manifest } from '../../cloud/lib/manifest.ts';
 

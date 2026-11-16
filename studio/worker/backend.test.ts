@@ -1,5 +1,6 @@
 // Tests for the Durable Object's work (backend.ts) with a fake container, a fake keeper and a fake clock: the start,
-// the wait for readiness, the forwarding, and the lifetime rules of the alarm. Run from studio/: `bun run test`.
+// the wait for readiness, the forwarding, the Codex sign-in passed to the keeper, and the lifetime rules of the
+// alarm. Run from studio/: `bun run test`.
 import { describe, expect, test } from 'bun:test';
 import { Backend, CHECK_MS, IDLE_MS, INACTIVITY_MS, MAX_BUSY_MS, type BackendDeps, type ContainerLike, type KeeperStatus } from './backend.ts';
 import { MESSAGES } from './messages.ts';
@@ -10,10 +11,12 @@ function fakeContainer() {
   const calls: string[] = [];
   let exit: () => void = () => {};
   const keeper: KeeperStatus & { reachable: boolean } = { reachable: true, phase: 'running', note: '', busy: false, unsaved: false, serverHealthy: true };
+  // What the fake keeper answers to POST /codex/login.
+  const login = { status: 200, body: { ok: true, codexLogin: { state: 'waiting', url: 'https://auth.example.com/device', code: 'ABCD-12345', startedAt: 1 } } as unknown };
   const appRequests: { url: string; init: RequestInit }[] = [];
   const keeperRequests: { url: string; method: string; token: string | null }[] = [];
   const c = {
-    calls, keeper, appRequests, keeperRequests,
+    calls, keeper, login, appRequests, keeperRequests,
     running: false,
     images: { base: 'registry/img@sha256:1' } as Record<string, string>,
     runningImage: 'registry/img@sha256:1',
@@ -45,6 +48,8 @@ function fakeContainer() {
               keeper.unsaved = false;
               return Response.json({ ok: true, key: 'backups/x.tar.gz' });
             }
+            if (input.endsWith('/codex/login')) return Response.json(login.body, { status: login.status });
+            if (input.endsWith('/codex/cancel')) return Response.json({ ok: true, codexLogin: { state: 'idle', detail: 'cancelled' } });
             const { reachable: _r, ...status } = keeper;
             return Response.json(status);
           }
@@ -181,6 +186,80 @@ describe('the container start', () => {
     const res = await backend.backupNow();
     expect(res.status).toBe(409);
     expect(container.calls).toEqual([]);
+  });
+});
+
+describe('the Codex sign-in, passed to the keeper', () => {
+  test('a sign-in starts a sleeping container, then asks the keeper with this start\'s token and returns its JSON', async () => {
+    const { backend, container } = setup();
+    const res = await backend.codexLogin();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(container.login.body);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(container.calls).toContain('start');
+    const asked = container.keeperRequests.at(-1)!;
+    expect(asked).toEqual({ url: 'http://keeper/codex/login', method: 'POST', token: container.startOptions!.env.EGG_BACKUP_TOKEN! });
+    // Nothing went to the app's server.
+    expect(container.appRequests).toEqual([]);
+  });
+
+  test("the keeper's refusal goes back with its status and its JSON", async () => {
+    const { backend, container } = setup();
+    container.login.status = 502;
+    container.login.body = { ok: false, error: 'Codex did not give a sign-in address and code. Try again.', codexLogin: { state: 'failed', detail: 'codex printed no address and code in 20 s' } };
+    const res = await backend.codexLogin();
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual(container.login.body);
+  });
+
+  test('a container that is still starting: the same 503 as an API request, and the keeper is not asked to sign in', async () => {
+    const { backend, container } = setup();
+    container.keeper.reachable = false;
+    const res = await backend.codexLogin();
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('5');
+    expect(await res.json()).toEqual({ error: MESSAGES.starting });
+    expect(container.keeperRequests.some((r) => r.method === 'POST')).toBe(false);
+  });
+
+  test('a sign-in counts as use, so the idle rule does not stop the container under it', async () => {
+    const { backend, container, clock } = setup();
+    await backend.forward(api('/bank'));
+    clock.now += IDLE_MS - MINUTE;
+    await backend.codexLogin();
+    clock.now += 5 * MINUTE;
+    await backend.alarm();
+    expect(container.calls).not.toContain('signal 15');
+    // While the sign-in waits, the keeper reports work in hand (cloud/keeper.ts), which keeps the container too.
+    container.keeper.busy = true;
+    clock.now += IDLE_MS;
+    await backend.alarm();
+    expect(container.calls).not.toContain('signal 15');
+  });
+
+  test('a cancel is passed to the keeper of a running container', async () => {
+    const { backend, container } = setup();
+    await backend.forward(api('/bank'));
+    const res = await backend.codexCancel();
+    expect(await res.json()).toEqual({ ok: true, codexLogin: { state: 'idle', detail: 'cancelled' } });
+    expect(container.keeperRequests.at(-1)).toMatchObject({ url: 'http://keeper/codex/cancel', method: 'POST' });
+  });
+
+  test('a cancel while the container sleeps: nothing waits, and nothing is started', async () => {
+    const { backend, container } = setup();
+    const res = await backend.codexCancel();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, codexLogin: { state: 'idle' } });
+    expect(container.calls).toEqual([]);
+  });
+
+  test('a keeper that does not answer: 502 with a plain message', async () => {
+    const { backend, container } = setup();
+    await backend.forward(api('/bank'));
+    container.keeper.reachable = false;
+    const res = await backend.codexCancel();
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toContain('The keeper did not answer');
   });
 });
 

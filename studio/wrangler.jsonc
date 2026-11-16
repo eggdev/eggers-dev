@@ -1,6 +1,6 @@
 // The Cloudflare Worker for the private studio at https://studio.eggers.dev: it checks the Access sign-in on every
 // request, serves the studio's built screens (dist/) and forwards /api/... to the app's server, which runs in a
-// Cloudflare Container that this Worker owns (or, as a fallback, on the owner's machine through a tunnel).
+// Cloudflare Container that this Worker owns. Nothing runs on anyone's own machine.
 // Deploy with `bun studio/tools/deploy.ts` from the repository root, never with a bare `wrangler deploy`: the deploy
 // command builds the screens for this origin first.
 {
@@ -34,10 +34,6 @@
     "run_worker_first": true
   },
 
-  // Where /api/... goes: "container" (the server in the container below) or "tunnel" (the server on the owner's
-  // machine, through SERVER). Change it here and deploy to fall back to the Mac.
-  "vars": { "STUDIO_BACKEND": "container" },
-
   // The container that runs the app's server and worker (cloud/Dockerfile, built from the repository root). Its
   // Durable Object, StudioContainer, starts it with the image, size and settings (worker/backend.ts): instance
   // standard-1 (1/2 vCPU, 4 GiB memory, 8 GB disk). The durable_object scheduling policy is the current one; the
@@ -62,15 +58,18 @@
     "StudioContainer": { "type": "durable-object", "storage": "sqlite" }
   },
 
-  // The private bucket that holds the backups of the studio's data. Nothing else reads it: the container reaches it
-  // only through this Worker's backup gateway (worker/backups.ts). Create it once with
-  // `wrangler r2 bucket create eggers-studio-data`.
-  "r2_buckets": [{ "binding": "DATA", "bucket_name": "eggers-studio-data" }],
-
-  // The fallback: the API server on the owner's machine, reached through a private Cloudflare Tunnel
-  // (tools/live.ts runs it). The tunnel has no public hostname; only this binding reaches it.
-  // https://developers.cloudflare.com/workers-vpc/
-  "vpc_services": [{ "binding": "SERVER", "service_id": "01a1e57c-488b-77c2-ac21-8db64302c409", "remote": true }],
+  // DATA is the private bucket that holds the backups of the studio's data (backups/, latest.json) and the history
+  // copies of what the owner published (public-history/, worker/publish.ts). Only this Worker is bound to it: the
+  // container reaches the backups, and nothing else, through this Worker's backup gateway (worker/backups.ts).
+  // Create it once with `wrangler r2 bucket create eggers-studio-data`.
+  // CONTENT is the bucket the public website reads its collection from, as the object collection.md
+  // (site/wrangler.jsonc binds the same bucket). The studio writes it when the owner publishes the saved text, and
+  // deletes it when the owner takes it down (worker/publish.ts). It holds that one object and no history, because
+  // an internet-facing Worker is bound to it. The bucket already exists.
+  "r2_buckets": [
+    { "binding": "DATA", "bucket_name": "eggers-studio-data" },
+    { "binding": "CONTENT", "bucket_name": "eggers-site-content" }
+  ],
 
   // The Worker's and the container's logs in the dashboard (the keeper's restore and backup lines are there).
   "observability": { "enabled": true },

@@ -7,6 +7,8 @@
 //   backups/<time>.json     its manifest (below), written when its upload is complete
 //   latest.json             the manifest of the backup to restore, written last
 // <time> is the backup's UTC time in ISO form with ':' and '.' replaced by '-', so names sort by time.
+// The bucket also holds public-history/<time>.md: the studio Worker's history copies of the published public
+// collection (studio/worker/publish.ts). They are not backups: no key here names them, and isBackupKey refuses them.
 // This file has no imports: the Worker bundles it too.
 
 export const PREFIX = 'backups/';

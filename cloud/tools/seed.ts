@@ -63,7 +63,7 @@ function running(text: string): boolean {
   return found.split('\n').some((line) => line.trim() !== '' && !self.has(Number(line.trim())));
 }
 
-const live = ['tools/live.ts', 'bun server.ts', 'bun worker.ts'].filter(running);
+const live = ['bun server.ts', 'bun worker.ts'].filter(running);
 if (live.length && !flag('--live')) {
   stop(`${live.join(', ')} ${live.length === 1 ? 'is' : 'are'} running. Stop ${live.length === 1 ? 'it' : 'them'}, or pass --live to copy while the app runs (the copy is consistent). Nothing was written.`);
 }

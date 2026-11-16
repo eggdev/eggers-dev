@@ -1,7 +1,10 @@
-// Test helpers: an in-memory backup store and tiny invented databases. Only the tests import this file.
+// Test helpers: an in-memory backup store, tiny invented databases, and a fake `codex login` command with timers
+// the test fires. Only the tests import this file.
 import { Database } from 'bun:sqlite';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { Proc } from './children.ts';
+import type { LoginDeps, LoginSpec } from './codexlogin.ts';
 import { toPrune, type Manifest } from './manifest.ts';
 import type { Index, Store } from './store.ts';
 
@@ -60,4 +63,41 @@ export function makeDb(path: string, roles = 2, facts = 5, jobs = 1): void {
   for (let i = 0; i < facts; i++) db.query('INSERT INTO facts (text) VALUES (?)').run(`Invented fact ${i} ${'x'.repeat(200)}`);
   for (let i = 0; i < jobs; i++) db.run("INSERT INTO jobs (status) VALUES ('done')");
   db.close();
+}
+
+/** A fake sign-in command: the test sends its output, and exits it. A signal exits it with 143 unless it is `stubborn`. */
+export function fakeCodex() {
+  const runs: { spec: LoginSpec; say: (text: string) => void; exit: (code: number) => void; signals: string[]; stubborn: boolean }[] = [];
+  const spawn: LoginDeps['spawn'] = (spec, onText) => {
+    let exit: (code: number) => void = () => {};
+    const exited = new Promise<number>((resolve) => { exit = resolve; });
+    const run = { spec, say: onText, exit, signals: [] as string[], stubborn: false };
+    runs.push(run);
+    const proc: Proc = {
+      exited,
+      kill(signal) {
+        run.signals.push(String(signal));
+        if (!run.stubborn || signal === 'SIGKILL') exit(signal === 'SIGKILL' ? 137 : 143);
+      },
+    };
+    return proc;
+  };
+  return { runs, spawn };
+}
+
+/** Timers the test fires by their length. */
+export function fakeTimers() {
+  const list: { ms: number; fn: () => void; off: boolean }[] = [];
+  const timer: NonNullable<LoginDeps['timer']> = (ms, fn) => {
+    const t = { ms, fn, off: false };
+    list.push(t);
+    return () => { t.off = true; };
+  };
+  const fire = (ms: number) => {
+    for (const t of list.filter((x) => x.ms === ms && !x.off)) {
+      t.off = true;
+      t.fn();
+    }
+  };
+  return { list, timer, fire, pending: () => list.filter((t) => !t.off).map((t) => t.ms) };
 }

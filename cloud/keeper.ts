@@ -5,10 +5,16 @@
 //   3. Run `bun server.ts` and `bun worker.ts`, and start either again if it exits.
 //   4. Back up when the data changed and then was quiet for a while.
 //   5. On SIGTERM or SIGINT: stop both, back up anything unsaved, exit 0.
-// A control endpoint on KEEPER_PORT (8788) answers the Durable Object that owns the container:
-//   GET  /status   the keeper's state as JSON (no data, no secrets)
-//   POST /backup   back up now and wait for it
-// Both need the start's token (header x-egg-token). Nothing else is served.
+//      A Codex sign-in that waits is stopped first, and no new one starts from then on.
+// A control endpoint on KEEPER_PORT (8788) answers the Durable Object that owns the container (lib/control.ts,
+// which the tests call without a server):
+//   GET  /status         the keeper's state as JSON: no data and no secrets. While a Codex sign-in waits, its
+//                        `codexLogin` holds the address and the one-time code the owner types there.
+//   POST /backup         back up now and wait for it
+//   POST /codex/login    start a Codex sign-in in the container (lib/codexlogin.ts); the answer has the address and
+//                        the code. A second call while one waits answers with the same two.
+//   POST /codex/cancel   stop a sign-in that waits
+// All need the start's token (header x-egg-token). Nothing else is served.
 //
 // Environment (the image sets the fixed ones; the Durable Object passes the rest when it starts the container):
 //   DB                 the database file; its folder is the data folder (image: /data/egg.db)
@@ -21,8 +27,10 @@
 //   EGG_QUIET_MS, EGG_MAX_WAIT_MS   the backup's quiet period and longest wait (defaults 45 s and 5 minutes)
 import { dirname, join, resolve } from 'node:path';
 import { spawnChild } from './lib/children.ts';
+import { spawnLogin } from './lib/codexlogin.ts';
+import { Control } from './lib/control.ts';
 import { Keeper } from './lib/keeper.ts';
-import { selfTest } from './lib/selftest.ts';
+import { codexSignIn, selfTest } from './lib/selftest.ts';
 import { HttpStore } from './lib/store.ts';
 
 const env = process.env;
@@ -96,33 +104,27 @@ async function serverHealthy(): Promise<boolean> {
   }
 }
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
-
-Bun.serve({
-  hostname: '0.0.0.0',
-  port: PORT,
-  async fetch(request) {
-    if (request.headers.get('x-egg-token') !== TOKEN) return json({ error: 'forbidden' }, 403);
-    const { pathname } = new URL(request.url);
-    if (pathname === '/status' && request.method === 'GET') {
-      const s = keeper.status();
-      return json({ ...s, serverHealthy: s.phase === 'running' ? await serverHealthy() : false, llm });
-    }
-    if (pathname === '/backup' && request.method === 'POST') {
-      const r = await keeper.backup('asked');
-      return json(r, r.ok ? 200 : 409);
-    }
-    return json({ error: 'not found' }, 404);
+// The control endpoint, with the Codex sign-in made here in the container. The sign-in's command runs as the app's
+// own Codex runs: the app's environment (CODEX_HOME in it, the backup token not) and no capabilities. After a
+// sign-in: the check again, the readiness view again, and a backup at once (lib/control.ts joins it to the keeper).
+const control = new Control({
+  token: TOKEN,
+  keeper,
+  login: {
+    spec: { cmd: [...plain, env.CODEX_BIN || 'codex', 'login', '--device-auth'], cwd: APP, env: appEnv },
+    spawn: spawnLogin,
+    check: () => codexSignIn({ CODEX_BIN: env.CODEX_BIN, codexEnv: appEnv, prefix: plain }),
+    refresh: checkLlm,
+    log,
   },
+  serverHealthy,
+  llm: () => llm,
 });
+
+Bun.serve({ hostname: '0.0.0.0', port: PORT, fetch: (request) => control.fetch(request) });
 log(`control endpoint on port ${PORT}; data folder ${dirname(DB)}`);
 
-let stopping = false;
-const onSignal = (signal: string) => {
-  if (stopping) return;
-  stopping = true;
-  void keeper.stop(signal).then((code) => process.exit(code));
-};
+const onSignal = (signal: string) => void control.shutdown(signal).then((code) => process.exit(code));
 process.on('SIGTERM', () => onSignal('SIGTERM'));
 process.on('SIGINT', () => onSignal('SIGINT'));
 

@@ -1,6 +1,8 @@
 // The Cloudflare Worker for the private studio: the Access check on every request, then /api/... to the app's
-// server and every other path from the built screens in dist/ (studio.ts, access.ts). This file holds the parts
-// that need the Workers runtime; the logic is in files `bun test` runs with fakes:
+// server in the container, the Worker's own controls at /api/_studio/... (the status, a backup, the Codex sign-in,
+// the publish step of the public collection), and every other path from the built screens in dist/ (studio.ts,
+// access.ts, publish.ts). This file holds the parts that need the Workers runtime; the logic is in files `bun test`
+// runs with fakes:
 //   StudioContainer  the Durable Object that owns the one container (backend.ts)
 //   BackupGateway    the outbound handler the container reaches at http://backup.internal (backups.ts)
 //
@@ -58,6 +60,8 @@ export class StudioContainer extends DurableObject<Env> {
     const { pathname } = new URL(request.url);
     if (pathname === '/_studio/status' && request.method === 'GET') return this.backend.status();
     if (pathname === '/_studio/backup' && request.method === 'POST') return this.backend.backupNow();
+    if (pathname === '/_studio/codex/login' && request.method === 'POST') return this.backend.codexLogin();
+    if (pathname === '/_studio/codex/cancel' && request.method === 'POST') return this.backend.codexCancel();
     if (pathname.startsWith('/_studio')) return Response.json({ error: MESSAGES.notFound }, { status: 404 });
     return this.backend.forward(request);
   }

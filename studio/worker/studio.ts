@@ -3,15 +3,18 @@
 // This file has no Cloudflare imports, so `bun test` runs it with fake bindings.
 //
 // The API. The screens are built with API_BASE_URL=https://studio.eggers.dev/api, so the page calls
-// /api/<path> on its own origin. The Worker strips /api and sends the request to one of two backends, chosen by
-// the Worker variable STUDIO_BACKEND:
-//   container (the default)  the Durable Object STUDIO, which runs the server in a Cloudflare Container and backs
-//                            its data up to R2 (backend.ts, cloud/keeper.ts)
-//   tunnel                   the Workers VPC binding SERVER, a private tunnel to server.ts on the owner's machine
-//                            (tools/live.ts). Kept so the owner can fall back to the Mac.
+// /api/<path> on its own origin. The Worker strips /api and sends the request to the Durable Object STUDIO, which
+// runs the server in a Cloudflare Container and backs its data up to R2 (backend.ts, cloud/keeper.ts). The
+// container is the only backend: nothing runs on anyone's own machine.
 // The page's paths (/profile, /jobs, /talk) are also API paths; the prefix keeps them apart.
-// /api/_studio/... is the Worker's own: GET /api/_studio/status (the container and its backups) and
-// POST /api/_studio/backup (back up now). The _studio segment is never forwarded to the server.
+// /api/_studio/... is the Worker's own, and the _studio segment is never forwarded to the server:
+//   GET  /api/_studio/status         the container and its backups
+//   POST /api/_studio/backup         back up now
+//   POST /api/_studio/codex/login    start a Codex sign-in in the container; the answer has the address and code
+//   POST /api/_studio/codex/cancel   stop a sign-in that waits
+//   GET  /api/_studio/public         what the public website's chat answers from now (publish.ts)
+//   POST /api/_studio/publish        publish the saved public collection
+//   POST /api/_studio/unpublish      take it down
 //
 // The pages. Every route of the app is drawn in the browser (render=client), so a page such as /jobs or /job/12 has
 // no file of its own. The Worker serves them by the rule Exact's own static host applies (`bun exact.mjs serve`,
@@ -21,17 +24,13 @@
 // empty 404. Paths with a dot segment (.exact-build.json, .exact/) are never served.
 import { readConfig, type Gate } from './access.ts';
 import { MESSAGES } from './messages.ts';
+import { live, publish, unpublish, type ContentBucket } from './publish.ts';
 
 export { MESSAGES };
 
 /** The Workers static assets binding, a plain file lookup here (wrangler.jsonc: html_handling "none"). */
 export interface Assets {
   fetch(request: Request): Promise<Response>;
-}
-
-/** The Workers VPC Service binding. It needs an absolute URL; the service, not the URL, decides where it goes. */
-export interface Server {
-  fetch(input: string, init?: RequestInit): Promise<Response>;
 }
 
 /** The Durable Object namespace STUDIO: one object, named "studio", owns the container. */
@@ -41,22 +40,13 @@ export interface StudioNamespace {
 
 export interface Env {
   ASSETS: Assets;
-  SERVER?: Server;
   STUDIO?: StudioNamespace;
-  /** "container" (the default) or "tunnel". */
-  STUDIO_BACKEND?: string;
+  /** The R2 bucket the public website reads its collection from (publish.ts). It holds collection.md only. */
+  CONTENT?: ContentBucket;
+  /** The private R2 bucket: the backups, and the history copies of what was published (publish.ts). */
+  DATA?: ContentBucket;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
-}
-
-export type Backend = 'container' | 'tunnel';
-
-/** The backend STUDIO_BACKEND names, or null for a value that is not one. */
-export function backendOf(env: Pick<Env, 'STUDIO_BACKEND'>): Backend | null {
-  const v = (env.STUDIO_BACKEND ?? '').trim().toLowerCase();
-  if (v === '' || v === 'container') return 'container';
-  if (v === 'tunnel') return 'tunnel';
-  return null;
 }
 
 /** The name of the one Durable Object that owns the container. */
@@ -68,10 +58,8 @@ export type Deps = {
   gate: Gate;
   /** Where operator messages go (Worker logs). Never a token, never the caller. */
   log: (msg: string) => void;
+  now?: () => number;
 };
-
-// The address the VPC binding is called with. The host and port do not route; the service config does.
-export const SERVER_ORIGIN = 'http://127.0.0.1:8787';
 
 // Headers on every response: the studio is private, so it is never indexed and never sends a referrer.
 const ALWAYS = {
@@ -111,36 +99,12 @@ export async function api(request: Request, env: Env, deps: Deps): Promise<Respo
     redirect: 'manual',
   } as RequestInit;
 
-  const backend = backendOf(env);
-  if (!backend) {
-    deps.log('config: STUDIO_BACKEND is not "container" or "tunnel"');
-    return jsonError(503, MESSAGES.backendUnknown);
-  }
-
   let upstream: Response;
-  if (backend === 'container') {
-    try {
-      if (!env.STUDIO) throw new Error('the STUDIO binding is missing');
-      upstream = await env.STUDIO.getByName(STUDIO_OBJECT).fetch(new Request(`${STUDIO_ORIGIN}${path}${url.search}`, init));
-    } catch (error) {
-      deps.log(`container: no answer (${error instanceof Error ? error.message : 'unknown error'})`);
-      return jsonError(502, MESSAGES.containerDown);
-    }
-  } else {
-    try {
-      if (!env.SERVER) throw new Error('the SERVER binding is missing');
-      upstream = await env.SERVER.fetch(`${SERVER_ORIGIN}${path}${url.search}`, init);
-    } catch (error) {
-      deps.log(`server: no connection (${error instanceof Error ? error.message : 'unknown error'})`);
-      return serverDown();
-    }
-    // The tunnel answers for a server that is not listening, with a page of its own. The server's own errors are JSON.
-    const type = upstream.headers.get('content-type') ?? '';
-    if (upstream.status >= 502 && upstream.status <= 504 && !type.includes('application/json')) {
-      deps.log(`server: the tunnel answered ${upstream.status}`);
-      await upstream.body?.cancel().catch(() => {});
-      return serverDown();
-    }
+  try {
+    upstream = await studioObject(env).fetch(new Request(`${STUDIO_ORIGIN}${path}${url.search}`, init));
+  } catch (error) {
+    deps.log(`container: no answer (${error instanceof Error ? error.message : 'unknown error'})`);
+    return jsonError(502, MESSAGES.containerDown);
   }
 
   const out = new Headers({ 'cache-control': 'no-store', ...ALWAYS });
@@ -151,32 +115,72 @@ export async function api(request: Request, env: Env, deps: Deps): Promise<Respo
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
-function serverDown(): Response {
-  return jsonError(502, MESSAGES.serverDown);
+/** The one Durable Object that owns the container. */
+function studioObject(env: Env) {
+  if (!env.STUDIO) throw new Error('the STUDIO binding is missing');
+  return env.STUDIO.getByName(STUDIO_OBJECT);
 }
 
 function jsonError(status: number, error: string): Response {
   return Response.json({ error }, { status, headers: { 'cache-control': 'no-store', ...ALWAYS } });
 }
 
+/** An answer of the Worker's own controls, with the studio's headers. A HEAD gets no body. */
+function controlAnswer(res: Response, head: boolean): Response {
+  const out = new Headers({ 'cache-control': 'no-store', ...ALWAYS, 'content-type': res.headers.get('content-type') ?? 'application/json' });
+  const retry = res.headers.get('retry-after');
+  if (retry !== null) out.set('retry-after', retry);
+  return new Response(head ? null : res.body, { status: res.status, headers: out });
+}
+
+// The controls the Durable Object answers (backend.ts), and the ones this Worker answers with the buckets.
+const OBJECT_CONTROLS = new Set(['GET /status', 'POST /backup', 'POST /codex/login', 'POST /codex/cancel']);
+const CONTENT_CONTROLS = new Set(['GET /public', 'POST /publish', 'POST /unpublish']);
+
 /**
- * /api/_studio/...: the Worker's own controls, answered by the Durable Object and never forwarded to the server.
- *   GET  /api/_studio/status   the keeper's status and the container's state
- *   POST /api/_studio/backup   back up now
+ * /api/_studio/...: the Worker's own controls, never forwarded to the server. The caller (worker(), below) has
+ * already made the Access check and applied the same-origin rule.
+ *   GET  /api/_studio/status         the keeper's status and the container's state
+ *   POST /api/_studio/backup         back up now
+ *   POST /api/_studio/codex/login    start a Codex sign-in in the container (cloud/lib/codexlogin.ts)
+ *   POST /api/_studio/codex/cancel   stop it
+ *   GET  /api/_studio/public         what is published now (publish.ts)
+ *   POST /api/_studio/publish        publish the saved public collection
+ *   POST /api/_studio/unpublish      take it down
  */
 export async function control(request: Request, env: Env, deps: Deps): Promise<Response> {
   const { pathname } = new URL(request.url);
   const name = pathname.slice('/api/_studio'.length);
-  const known = (name === '/status' && (request.method === 'GET' || request.method === 'HEAD')) || (name === '/backup' && request.method === 'POST');
-  if (!known) return jsonError(404, MESSAGES.notFound);
-  const backend = backendOf(env);
-  if (backend === 'tunnel') return Response.json({ backend: 'tunnel', note: MESSAGES.tunnelOnly }, { headers: { 'cache-control': 'no-store', ...ALWAYS } });
-  if (!backend) return jsonError(503, MESSAGES.backendUnknown);
+  const head = request.method === 'HEAD';
+  const route = `${head ? 'GET' : request.method} ${name}`;
+
+  if (CONTENT_CONTROLS.has(route)) {
+    if (!env.CONTENT) {
+      deps.log('config: the CONTENT bucket binding is missing');
+      return jsonError(503, MESSAGES.publishOff);
+    }
+    // A publish also writes a history copy to the private bucket. Looking and taking down do not need it.
+    if (name === '/publish' && !env.DATA) {
+      deps.log('config: the DATA bucket binding is missing');
+      return jsonError(503, MESSAGES.publishOff);
+    }
+    const d = {
+      bucket: env.CONTENT,
+      // The saved text comes from the server the way every API call goes to it. No header of the caller goes along.
+      saved: async () => studioObject(env).fetch(new Request(`${STUDIO_ORIGIN}/public`, { headers: { accept: 'application/json' } })),
+      now: deps.now ?? Date.now,
+      log: deps.log,
+    };
+    if (name === '/public') return controlAnswer(await live(d), head);
+    if (name === '/publish') return controlAnswer(await publish(request, { ...d, history: env.DATA! }), false);
+    return controlAnswer(await unpublish(d), false);
+  }
+
+  if (!OBJECT_CONTROLS.has(route)) return jsonError(404, MESSAGES.notFound);
   try {
-    if (!env.STUDIO) throw new Error('the STUDIO binding is missing');
-    const res = await env.STUDIO.getByName(STUDIO_OBJECT).fetch(new Request(`${STUDIO_ORIGIN}/_studio${name}`, { method: request.method === 'HEAD' ? 'GET' : request.method }));
-    const out = new Headers({ 'cache-control': 'no-store', ...ALWAYS, 'content-type': res.headers.get('content-type') ?? 'application/json' });
-    return new Response(request.method === 'HEAD' ? null : res.body, { status: res.status, headers: out });
+    // Only the method and the path go on: no body, no header.
+    const res = await studioObject(env).fetch(new Request(`${STUDIO_ORIGIN}/_studio${name}`, { method: head ? 'GET' : request.method }));
+    return controlAnswer(res, head);
   } catch (error) {
     deps.log(`container: no answer (${error instanceof Error ? error.message : 'unknown error'})`);
     return jsonError(502, MESSAGES.containerDown);
@@ -319,7 +323,7 @@ export function createPages(): Pages {
 // ---------------------------------------------------------------------------------------------------------------
 // The Worker
 
-/** The whole Worker: the Access check, then /api/... to the backend and every other path from dist/. */
+/** The whole Worker: the Access check, then /api/... to the container and every other path from dist/. */
 export function worker(deps: Deps) {
   const pages = createPages();
   return {

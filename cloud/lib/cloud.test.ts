@@ -2,12 +2,12 @@
 // Nothing here reads .data/ or reaches the network. Run from the repository root: `bun test cloud`.
 import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildArchive, filesToKeep, listArchive, unpackArchive, type Layout } from './archive.ts';
 import { prepareBackup, sendBackup } from './backup.ts';
-import { ChangeTracker } from './changes.ts';
+import { ChangeTracker, signature } from './changes.ts';
 import type { ChildSpec, Proc } from './children.ts';
 import { Keeper } from './keeper.ts';
 import { backupKey, isBackupKey, parseManifest, shrinkCheck, toPrune, type Manifest } from './manifest.ts';
@@ -373,6 +373,52 @@ describe('change detection', () => {
     t.markSaved('s3', 7);
     expect(t.unsaved).toBe(false);
   });
+
+  test('a changed Codex sign-in file changes the signature: by size, by time, or by content alone', () => {
+    const f = dataFolder();
+    const auth = join(f.data, 'codex', 'auth.json');
+    const sig = () => signature(1, filesToKeep(f.layout));
+    // A whole-second time, so it can be set again exactly.
+    const at = new Date(Date.UTC(2026, 10, 16, 12));
+    utimesSync(auth, at, at);
+    const s0 = sig();
+    expect(sig()).toBe(s0);
+
+    // Codex renews its tokens: another content. Here with the same size and the same time, the hardest case.
+    const size = statSync(auth).size;
+    writeFileSync(auth, '{"invented":"SIGN-IN"}');
+    utimesSync(auth, at, at);
+    expect(statSync(auth).size).toBe(size);
+    expect(statSync(auth).mtimeMs).toBe(at.getTime());
+    const s1 = sig();
+    expect(s1).not.toBe(s0);
+
+    // The same content written again at another time, and a longer content.
+    utimesSync(auth, at, new Date(at.getTime() + 60_000));
+    const s2 = sig();
+    expect(s2).not.toBe(s1);
+    writeFileSync(auth, '{"invented":"a longer sign-in"}');
+    expect(sig()).not.toBe(s2);
+
+    // config.toml counts in the same way, from the moment it exists.
+    const s3 = sig();
+    const config = join(f.data, 'codex', 'config.toml');
+    writeFileSync(config, 'model = "invented"\n');
+    utimesSync(config, at, at);
+    const s4 = sig();
+    expect(s4).not.toBe(s3);
+    writeFileSync(config, 'model = "INVENTED"\n');
+    utimesSync(config, at, at);
+    expect(sig()).not.toBe(s4);
+
+    // What a backup does not hold does not count: Codex's logs, its lock files, its session records.
+    const s5 = sig();
+    writeFileSync(join(f.data, 'codex', 'history.jsonl'), 'more history');
+    writeFileSync(join(f.data, 'codex', 'auth.json.lock'), '');
+    mkdirSync(join(f.data, 'codex', 'log'), { recursive: true });
+    writeFileSync(join(f.data, 'codex', 'log', 'codex.log'), 'a log line');
+    expect(sig()).toBe(s5);
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -477,6 +523,64 @@ describe('the keeper', () => {
     expect(store.events.length).toBe(2);
     expect(keeper.status().unsaved).toBe(false);
     await keeper.stop('SIGTERM');
+  });
+});
+
+describe('the Codex sign-in files and the keeper', () => {
+  const children: ChildSpec[] = [{ name: 'server', cmd: ['true'], cwd: '/', env: {} }];
+  const spawn = (): Proc => {
+    let exit: (code: number) => void = () => {};
+    return { exited: new Promise<number>((resolve) => { exit = resolve; }), kill: () => exit(0) };
+  };
+  const noSelfTest = async (): Promise<SelfTest> => ({ at: 0, programs: {}, codexSignedIn: { ok: false, detail: 'test' }, codexSandbox: { state: 'unknown', detail: 'test' } });
+
+  test('a sign-in that Codex renewed by itself is unsaved data, is backed up, and is what the next start restores', async () => {
+    const store = new FakeStore();
+    await seedStore(store, Date.now() - 10_000);
+    let clock = 1_000_000;
+    const t = emptyTarget();
+    const logs: string[] = [];
+    const keeper = new Keeper({ store, ...t, allowEmpty: false, allowShrink: false, children, spawn, selfTest: noSelfTest, log: (l) => logs.push(l), pollMs: 1_000_000, now: () => clock, quietMs: 45_000 });
+    await keeper.start();
+    store.events = [];
+    await keeper.tick();
+    expect(keeper.status().unsaved).toBe(false);
+
+    // Codex writes its renewed tokens. The database and the app's files do not change.
+    writeFileSync(join(t.layout.codexHome!, 'auth.json'), '{"invented":"RENEWED"}');
+    await keeper.tick();
+    expect(keeper.status().unsaved).toBe(true);
+    expect(store.events).toEqual([]);
+    clock += 46_000;
+    await keeper.tick();
+    expect(store.events.length).toBe(2);
+    expect(keeper.status()).toMatchObject({ unsaved: false, lastBackupError: null });
+    await keeper.stop('SIGTERM');
+
+    // A new container: the restore brings the renewed sign-in, not the one first seeded.
+    const next = emptyTarget();
+    const r = await restore({ store, ...next, allowEmpty: false, ...quiet });
+    expect(r.kind).toBe('restored');
+    expect(readFileSync(join(next.layout.codexHome!, 'auth.json'), 'utf8')).toBe('{"invented":"RENEWED"}');
+    // The keeper's log lines never hold the file's content.
+    expect(logs.join('\n')).not.toContain('RENEWED');
+  });
+
+  test('a config.toml that appears is unsaved data too', async () => {
+    const store = new FakeStore();
+    await seedStore(store, Date.now() - 10_000);
+    const t = emptyTarget();
+    const keeper = new Keeper({ store, ...t, allowEmpty: false, allowShrink: false, children, spawn, selfTest: noSelfTest, log: () => {}, pollMs: 1_000_000 });
+    await keeper.start();
+    writeFileSync(join(t.layout.codexHome!, 'config.toml'), 'model = "invented"\n');
+    await keeper.tick();
+    expect(keeper.status().unsaved).toBe(true);
+    const r = await keeper.backup('asked');
+    expect(r.ok).toBe(true);
+    await keeper.stop('SIGTERM');
+    const next = emptyTarget();
+    await restore({ store, ...next, allowEmpty: false, ...quiet });
+    expect(readFileSync(join(next.layout.codexHome!, 'config.toml'), 'utf8')).toBe('model = "invented"\n');
   });
 });
 

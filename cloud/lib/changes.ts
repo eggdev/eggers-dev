@@ -5,13 +5,32 @@
 // when the signature differs from the one last saved and has then been still for a quiet period (default 45 s),
 // or when the first unsaved change is older than the longest wait (default 5 minutes), so a long run of changes
 // is still saved now and then.
-import type { Entry } from './archive.ts';
+//
+// The Codex sign-in files (codex/auth.json, codex/config.toml) are among those files, and they change without
+// the app: Codex renews its tokens in auth.json by itself while it is used. A renewed sign-in that is not backed
+// up is lost when the container restarts, and the older one may no longer be valid. So for these two small files
+// the signature also takes a hash of the content: a change counts even when the size and the time stay the same.
+// The content and its hash stay inside the signature; nothing here logs them.
+import { readFileSync } from 'node:fs';
+import { CODEX_IN_ARCHIVE, type Entry } from './archive.ts';
+
+/** A hash of a small file's content, or a fixed word when the file has gone since it was listed. */
+function contentHash(path: string): string {
+  try {
+    return new Bun.CryptoHasher('sha256').update(readFileSync(path)).digest('hex');
+  } catch {
+    return 'gone';
+  }
+}
 
 /** A signature of the data: equal signatures mean nothing a backup holds has changed. */
 export function signature(dataVersion: number, files: Entry[]): string {
   const hasher = new Bun.CryptoHasher('sha1');
   hasher.update(`db v ${dataVersion}\n`);
-  for (const f of files) hasher.update(`${f.rel} ${f.size}:${Math.round(f.mtimeMs)}\n`);
+  for (const f of files) {
+    const content = f.rel.startsWith(`${CODEX_IN_ARCHIVE}/`) ? ` ${contentHash(f.abs)}` : '';
+    hasher.update(`${f.rel} ${f.size}:${Math.round(f.mtimeMs)}${content}\n`);
+  }
   return hasher.digest('hex');
 }
 

@@ -1,5 +1,5 @@
-// The app's two processes in the container, server.ts and worker.ts, run and restarted as tools/live.ts does on
-// the owner's machine: a process that exits is started again after a wait that grows while it keeps failing.
+// The app's two processes in the container, server.ts and worker.ts, run and restarted: a process that exits is
+// started again after a wait that grows while it keeps failing.
 // The keeper is the only thing that starts them, so exactly one worker runs.
 
 // The wait before a restart: 1 s, doubled after each quick failure, at most 30 s. A process that ran a minute or

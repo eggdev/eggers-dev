@@ -73,6 +73,15 @@ export function signInKind(code: number | null, text: string): Check {
   return { ok: false, detail: code === null ? 'codex did not answer' : `codex login status exited ${code}` };
 }
 
+/**
+ * The sign-in check alone: `codex login status`, run as the app runs Codex. The keeper runs it again after a
+ * sign-in made in the container (codexlogin.ts).
+ */
+export async function codexSignIn(env: { CODEX_BIN?: string; codexEnv: Record<string, string | undefined>; prefix?: string[] }, plainRunner: Run = run): Promise<Check> {
+  const status = await plainRunner([...(env.prefix ?? []), env.CODEX_BIN || 'codex', 'login', 'status'], { env: env.codexEnv, timeoutMs: 20_000 });
+  return signInKind(status.code, status.err || status.out);
+}
+
 /** `prefix` is what the keeper puts before the app's commands (it drops capabilities), so the checks run as the app does. */
 export async function selfTest(env: { CHROME?: string; CODEX_BIN?: string; codexEnv: Record<string, string | undefined>; prefix?: string[] }, plainRunner: Run = run): Promise<SelfTest> {
   const codex = env.CODEX_BIN || 'codex';
@@ -93,8 +102,7 @@ export async function selfTest(env: { CHROME?: string; CODEX_BIN?: string; codex
   let codexSignedIn: Check = { ok: false, detail: 'codex is not installed' };
   let codexSandbox: SelfTest['codexSandbox'] = { state: 'unknown', detail: 'codex is not installed' };
   if (programs.codex!.ok) {
-    const status = await runner([codex, 'login', 'status'], { env: env.codexEnv, timeoutMs: 20_000 });
-    codexSignedIn = signInKind(status.code, status.err || status.out);
+    codexSignedIn = await codexSignIn(env, plainRunner);
 
     // One harmless command in the read-only sandbox, from an empty folder.
     const dir = mkdtempSync(join(tmpdir(), 'keeper-sandbox-'));

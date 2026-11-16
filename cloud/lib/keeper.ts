@@ -2,6 +2,8 @@
 // back up once more and exit. cloud/keeper.ts wires it to the real store, processes and clock; the tests wire it
 // to fakes. The rule that matters most: no backup is ever taken unless the restore succeeded (or the owner allowed
 // an empty start), because a backup of an empty database would replace the owner's data.
+// A change counts as unsaved data whether the app made it or Codex did: Codex renews its sign-in by itself while
+// it is used, and the sign-in files are part of every backup (changes.ts, archive.ts).
 import { mkdirSync } from 'node:fs';
 import { filesToKeep, type Layout } from './archive.ts';
 import { prepareBackup, sendBackup } from './backup.ts';
@@ -9,7 +11,7 @@ import { ChangeTracker, signature } from './changes.ts';
 import { Supervisor, type ChildSpec, type Spawn } from './children.ts';
 import type { DbStats, Manifest } from './manifest.ts';
 import { restore } from './restore.ts';
-import type { SelfTest } from './selftest.ts';
+import type { Check, SelfTest } from './selftest.ts';
 import { Watcher } from './sqlite.ts';
 import type { Store } from './store.ts';
 
@@ -62,6 +64,7 @@ export class Keeper {
   private last: DbStats | null = null;
   private tracker: ChangeTracker | null = null;
   private selfTestResult: SelfTest | null = null;
+  private signIn: Check | null = null;
   private readonly supervisors: Supervisor[];
   private readonly watcher: Watcher;
   private chain: Promise<unknown> = Promise.resolve();
@@ -124,7 +127,8 @@ export class Keeper {
     this.phase = 'running';
     this.note = '';
     // The self-test runs beside the app, so a wake from sleep is not slowed by it.
-    void this.d.selfTest().then((t) => { this.selfTestResult = t; }).catch((e) => this.d.log(`keeper: the self-test failed to run (${(e as Error).message})`));
+    // A sign-in made in the container while the self-test ran is newer than what the self-test saw.
+    void this.d.selfTest().then((t) => { this.selfTestResult = this.signIn ? { ...t, codexSignedIn: this.signIn } : t; }).catch((e) => this.d.log(`keeper: the self-test failed to run (${(e as Error).message})`));
     for (const s of this.supervisors) s.start();
     void this.watch();
   }
@@ -148,7 +152,7 @@ export class Keeper {
    * Takes a backup now when anything is unsaved (or always, when forced). Backups never overlap: each waits for
    * the one before it.
    */
-  backup(why: 'changed' | 'asked' | 'stopping', force = false): Promise<{ ok: boolean; key?: string; reason?: string }> {
+  backup(why: 'changed' | 'asked' | 'stopping' | 'signed in', force = false): Promise<{ ok: boolean; key?: string; reason?: string }> {
     const job = this.chain.then(async () => {
       if (!this.tracker || (this.phase !== 'running' && this.phase !== 'stopping')) return { ok: false, reason: 'the app is not running, so there is nothing to back up' };
       this.tracker.observe(this.sig(), this.now());
@@ -201,6 +205,12 @@ export class Keeper {
     this.phase = 'stopped';
     this.d.log('keeper: stopped');
     return 0;
+  }
+
+  /** Takes a newer answer of the Codex sign-in check (after a sign-in made in the container) into the status. */
+  codexSignedIn(check: Check): void {
+    this.signIn = check;
+    if (this.selfTestResult) this.selfTestResult = { ...this.selfTestResult, codexSignedIn: check };
   }
 
   status(): KeeperStatus {

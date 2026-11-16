@@ -1,5 +1,6 @@
-// The bucket from the owner's machine, through wrangler (studio/node_modules) and its own sign-in. Used by seed.ts
-// and pull.ts. Nothing here prints an object's content.
+// The bucket through wrangler (studio/node_modules) and its own sign-in, for the two tools a person runs by hand:
+// seed.ts and pull.ts. The studio itself never uses this file: its container reaches the bucket through the Worker.
+// Nothing here prints an object's content.
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
