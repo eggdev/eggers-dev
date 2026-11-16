@@ -106,6 +106,29 @@ The collection is never in git. The model's address and name are settings in `si
 and its key is a Worker secret. In `site/`, `bun exact.mjs verify` tests the page against a
 stand-in endpoint, and `bun run test:worker` tests the Worker against a fake model.
 
+## The studio at studio.eggers.dev
+
+The studio is this app, reached from any browser at `https://studio.eggers.dev`. Only the owner can
+open it. The work is split between Cloudflare and the owner's machine.
+
+On Cloudflare, a Worker (`studio/`) serves the app's screens. Cloudflare Access asks for the
+sign-in. The Worker then checks the Access token again on every request. Without a valid token it
+serves nothing. The Worker sends each call to `/api/...` through a private Cloudflare Tunnel to
+the server. The tunnel has no public address.
+
+On the owner's machine, `bun tools/live.ts` runs the server, the worker and the tunnel. It starts
+each one again if it stops. Ctrl-C stops all three. The data stays on this machine. When the
+machine is off or `tools/live.ts` is not running, the screens still load, but each API call gets a
+502 that says the server is not running.
+
+To deploy, run `bun studio/tools/deploy.ts` (add `--dry-run` to build without uploading). It
+builds the screens for `https://studio.eggers.dev/api` and deploys the Worker with them. It refuses
+to build while a dev session runs, because both use `target/`. A deploy and the tunnel need
+`CLOUDFLARE_ACCOUNT_ID` in the environment. The Worker needs two secrets, set once with
+`wrangler secret put` in `studio/`: `ACCESS_TEAM_DOMAIN` (the Access team's host name) and
+`ACCESS_AUD` (the Access application's audience tag). Without them, the studio answers 503. In
+`studio/`, `bun run test` tests the Worker with its own keys and fake bindings.
+
 ## Earlier deployments
 
 Until 2026-11-13 this repository held a Next and Nx workspace with two apps: a public holding page

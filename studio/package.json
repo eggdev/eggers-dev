@@ -1,0 +1,12 @@
+{
+  "name": "studio",
+  "private": true,
+  "scripts": {
+    "test": "bun test worker",
+    "deploy": "bun tools/deploy.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "4.155.0"
+  }
+}

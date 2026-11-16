@@ -1,0 +1,39 @@
+// The Cloudflare Worker for the private studio at https://studio.eggers.dev: it checks the Access sign-in on every
+// request, serves the studio's built screens (dist/) and forwards /api/... to the server on the owner's machine.
+// Deploy with `bun studio/tools/deploy.ts` from the repository root, never with a bare `wrangler deploy`: the deploy
+// command builds the screens for this origin first.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "eggers-studio",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-15",
+
+  // Served only at https://studio.eggers.dev, a custom domain of this Worker that a Cloudflare Access application
+  // protects. The workers.dev address and preview URLs are off: Access does not cover them.
+  // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "studio.eggers.dev", "custom_domain": true }],
+
+  // The built screens. The Worker runs first for every path, files too, so nothing is served before its own
+  // Access check. html_handling "none" makes the binding a plain file lookup; the Worker itself applies the rule
+  // Exact's static host serves pages by (worker/studio.ts).
+  // https://developers.cloudflare.com/workers/static-assets/binding/
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "not_found_handling": "none",
+    "run_worker_first": true
+  },
+
+  // The API server on the owner's machine, reached through a private Cloudflare Tunnel (tools/live.ts runs it).
+  // The tunnel has no public hostname; only this binding reaches it. The service decides the host and port.
+  // https://developers.cloudflare.com/workers-vpc/
+  "vpc_services": [{ "binding": "SERVER", "service_id": "01a1e57c-488b-77c2-ac21-8db64302c409", "remote": true }],
+
+  // Two secrets, set with `wrangler secret put <NAME>` and never written in this file:
+  //   ACCESS_TEAM_DOMAIN  the Access team's host name, such as <team>.cloudflareaccess.com
+  //   ACCESS_AUD          the Access application's audience (AUD) tag
+  // Without both, the Worker answers every request with 503 and serves nothing.
+}

@@ -21,6 +21,13 @@
 /site/.wrangler/
 /site/.dev.vars*
 
+# The studio's Worker (studio/): the built screens copied in at deploy time, its wrangler install, wrangler's local
+# state (the dry-run bundle goes in studio/.wrangler/dry-run/) and local secrets for `wrangler dev`.
+/studio/dist/
+/studio/node_modules/
+/studio/.wrangler/
+/studio/.dev.vars*
+
 # Private data: the bank, the inbox, cloned repositories and resumes. This repository is public.
 /.data/
 /data/
