@@ -10,6 +10,14 @@
 //
 // The model is any service that speaks the OpenAI Chat Completions wire format with `stream: true`.
 // Its address, model name and reply cap are config (wrangler.jsonc "vars"); its key is the secret MODEL_API_KEY.
+//
+// The checks run cheapest first: the per-visitor limit per minute, the request, the config, the collection (read
+// from the R2 bucket through a 60-second cache, collection.ts), and last the daily limits (budget.ts: the visitor's
+// share and the day's total), which count the question just before the model call. One visitor key (visitor.ts)
+// names the visitor for both per-visitor limits.
+import { countQuestion, type BudgetNamespace, type Taken } from './budget.ts';
+import { collectionCache, type ContentBucket, type ReadCollection } from './collection.ts';
+import { visitorKey } from './visitor.ts';
 
 /** The Workers rate limiting binding: `limit` says whether this key is still under its limit. */
 export interface RateLimit {
@@ -24,6 +32,14 @@ export interface Assets {
 export interface Env {
   ASSETS: Assets;
   ASK_LIMIT: RateLimit;
+  /** The R2 bucket the studio publishes the collection to (collection.ts). */
+  CONTENT: ContentBucket;
+  /** The Durable Object that counts the questions of each UTC day, in total and per visitor (budget.ts). */
+  BUDGET: BudgetNamespace;
+  /** The most questions that may reach the model in one UTC day, for all visitors together. */
+  MAX_QUESTIONS_PER_DAY?: string;
+  /** The most questions one visitor may ask in one UTC day. */
+  MAX_QUESTIONS_PER_VISITOR_PER_DAY?: string;
   MODEL_API_KEY?: string;
   MODEL_BASE_URL?: string;
   MODEL?: string;
@@ -59,6 +75,8 @@ export const MESSAGES = {
   tooLarge: 'The request is too large.',
   method: 'Use POST.',
   notConfigured: 'The assistant is not set up yet.',
+  dailyLimit: 'The assistant has answered its limit of questions for today. Please come back tomorrow.',
+  visitorDailyLimit: "You have reached today's limit of questions. Please come back tomorrow.",
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -241,6 +259,13 @@ function cors(request: Request, env: Env): Record<string, string> {
   };
 }
 
+/** A var that must be a whole number, 0 or more; null when it is missing or anything else. */
+function wholeNumber(value: string | undefined): number | null {
+  if (value === undefined || !/^\d+$/.test(value)) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 const json = (status: number, error: string, headers: Record<string, string>) =>
   Response.json({ error }, { status, headers: { ...headers, 'cache-control': 'no-store' } });
 
@@ -249,10 +274,12 @@ export type Deps = {
   fetch: typeof fetch;
   /** Where operator messages go (Worker logs). Never the visitor. */
   log: (msg: string) => void;
+  /** Reads the collection from the bucket, through the isolate's cache (collection.ts). */
+  collection: ReadCollection;
 };
 
 /** Handles POST /ask (and its CORS preflight on a local run). */
-export async function ask(request: Request, env: Env, collection: string, deps: Deps): Promise<Response> {
+export async function ask(request: Request, env: Env, deps: Deps): Promise<Response> {
   const headers = cors(request, env);
   if (request.method === 'OPTIONS' && 'access-control-allow-origin' in headers) {
     return new Response(null, { status: 204, headers });
@@ -260,7 +287,7 @@ export async function ask(request: Request, env: Env, collection: string, deps: 
   if (request.method !== 'POST') return json(405, MESSAGES.method, { ...headers, allow: 'POST' });
 
   // The rate limit comes first, so a visitor over it costs no parsing and no model call.
-  const visitor = request.headers.get('cf-connecting-ip') ?? 'unknown';
+  const visitor = visitorKey(request.headers.get('cf-connecting-ip'));
   const { success } = await env.ASK_LIMIT.limit({ key: visitor });
   if (!success) return json(429, MESSAGES.rateLimited, { ...headers, 'retry-after': '60' });
 
@@ -278,6 +305,30 @@ export async function ask(request: Request, env: Env, collection: string, deps: 
     deps.log('config: MODEL_API_KEY, MODEL_BASE_URL, MODEL or MAX_REPLY_TOKENS is missing or wrong');
     return json(503, MESSAGES.notConfigured, headers);
   }
+  // Whole numbers, 0 or more. 0 turns the assistant off for every visitor.
+  const perDay = wholeNumber(env.MAX_QUESTIONS_PER_DAY);
+  const perVisitor = wholeNumber(env.MAX_QUESTIONS_PER_VISITOR_PER_DAY);
+  if (perDay === null || perVisitor === null) {
+    deps.log('config: MAX_QUESTIONS_PER_DAY or MAX_QUESTIONS_PER_VISITOR_PER_DAY is missing or wrong');
+    return json(503, MESSAGES.notConfigured, headers);
+  }
+
+  // No published collection (or an empty or too long one): nothing to answer from. collection.ts logs why.
+  const collection = await deps.collection(env.CONTENT);
+  if (collection === null) return json(503, MESSAGES.notConfigured, headers);
+
+  // The daily limits, counted last so only a question that goes on to the model counts. It counts even when the
+  // model then fails: the call may already have cost money. A counter that fails refuses the question: a broken
+  // counter must not mean unlimited spending.
+  let taken: Taken;
+  try {
+    taken = await countQuestion(env.BUDGET, { visitor, perVisitor, perDay });
+  } catch {
+    deps.log('budget: the daily question counter failed, so the question was refused');
+    return json(503, MESSAGES.notConfigured, headers);
+  }
+  if (taken === 'visitor') return json(429, MESSAGES.visitorDailyLimit, headers);
+  if (taken !== 'counted') return json(429, MESSAGES.dailyLimit, headers);
 
   // The model may take a while to start; it must start within FIRST_BYTE_MS. Once it streams, the timer stops.
   const abort = new AbortController();
@@ -318,13 +369,17 @@ export async function ask(request: Request, env: Env, collection: string, deps: 
   });
 }
 
-/** The whole Worker: /ask here, every other path from the built site. */
-export function worker(collection: string, deps: Partial<Deps> = {}) {
-  const all: Deps = { fetch: (...a) => fetch(...a), log: msg => console.log(msg), ...deps };
+/**
+ * The whole Worker: /ask here, every other path from the built site. Call it once per isolate (index.ts does at
+ * module load), so the collection's cache lives between requests.
+ */
+export function worker(deps: Partial<Deps> = {}) {
+  const log = deps.log ?? ((msg: string) => console.log(msg));
+  const all: Deps = { fetch: (...a) => fetch(...a), log, collection: collectionCache({ log, now: () => Date.now() }), ...deps };
   return {
     async fetch(request: Request, env: Env): Promise<Response> {
       const { pathname } = new URL(request.url);
-      if (pathname === '/ask') return ask(request, env, collection, all);
+      if (pathname === '/ask') return ask(request, env, all);
       return env.ASSETS.fetch(request);
     },
   };

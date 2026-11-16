@@ -1,6 +1,7 @@
 // The Cloudflare Worker for the public site: one origin serves the built page (dist/) and the chat endpoint
-// (POST /ask, worker/). Deploy with `bun tools/deploy.ts --origin https://<public origin>`, never with a bare
-// `wrangler deploy`: the deploy command builds the page for that origin and copies in the approved collection.
+// (POST /ask, worker/). Deploy with `bun tools/deploy.ts --origin https://eggers.dev`, never with a bare
+// `wrangler deploy`: the deploy command builds the page for that origin first. The collection is not part of a
+// deploy: the studio publishes it to the CONTENT bucket below, and the Worker reads it at request time.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "eggers-site",
@@ -24,21 +25,42 @@
     "run_worker_first": ["/ask"]
   },
 
-  // worker/index.ts imports the collection (worker/private/collection.md) as text.
-  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+  // The bucket the studio publishes the collection to, as the object collection.md (UTF-8 text; its custom metadata
+  // sha256 and publishedAt are for the studio). The Worker keeps what it read for 60 seconds per isolate, so a
+  // publish or an unpublish shows within about a minute (worker/collection.ts). The bucket already exists.
+  // For `wrangler dev`, put a collection in the local bucket first:
+  //   wrangler r2 object put eggers-site-content/collection.md --file worker/fixture/collection.md --local
+  // https://developers.cloudflare.com/r2/api/workers/workers-api-usage/
+  "r2_buckets": [{ "binding": "CONTENT", "bucket_name": "eggers-site-content" }],
+
+  // The daily limits on questions (worker/budget.ts): one Durable Object, named "budget", counts the questions that
+  // reached the model in each UTC day, in total and per visitor (stored as a SHA-256, never as an address). The
+  // class has SQLite storage (the declarative form of a migration).
+  // https://developers.cloudflare.com/durable-objects/
+  "durable_objects": {
+    "bindings": [{ "name": "BUDGET", "class_name": "QuestionBudget" }]
+  },
+  "exports": {
+    "QuestionBudget": { "type": "durable-object", "storage": "sqlite" }
+  },
 
   // Plain settings. The model's address and name live here and only here; change them to change provider or model.
   // MAX_REPLY_TOKENS caps each answer (sent as max_completion_tokens).
+  // MAX_QUESTIONS_PER_DAY is the most questions that may reach the model in one UTC day, for all visitors together.
+  // MAX_QUESTIONS_PER_VISITOR_PER_DAY is one visitor's share of that day (a visitor: an IPv4 address or an IPv6 /64).
   // LOCAL_RUN "true" allows a page on http://localhost or http://127.0.0.1 to call /ask; it stays "false" here.
   // The secret MODEL_API_KEY is set with `wrangler secret put MODEL_API_KEY`, never written in this file.
   "vars": {
     "MODEL_BASE_URL": "https://api.openai.com/v1",
     "MODEL": "gpt-6-luna",
     "MAX_REPLY_TOKENS": "400",
+    "MAX_QUESTIONS_PER_DAY": "300",
+    "MAX_QUESTIONS_PER_VISITOR_PER_DAY": "20",
     "LOCAL_RUN": "false"
   },
 
-  // A per-visitor limit on /ask: 10 questions in 60 seconds from one IP address, counted per Cloudflare location.
+  // A per-visitor limit on /ask: 10 questions in 60 seconds from one visitor (an IPv4 address or an IPv6 /64,
+  // worker/visitor.ts), counted per Cloudflare location.
   // namespace_id is any positive integer unique in the account. period may be 10 or 60.
   // https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
   "ratelimits": [
