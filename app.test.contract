@@ -393,3 +393,76 @@ test "experience is searched, a fact's category is changed, and an edit with cha
   tap "discard-edits-confirm"
   clock settle
   expect tree missing "edit-save"
+
+test "the public page says publishing works only in the deployed studio, fills the field from the bank, shows unsaved changes, and saves with its notes"
+  clock data
+  tap "tab-profile"
+  clock settle
+  tap "open-public"
+  clock data
+  clock settle
+  expect text "public-live" == "Publishing works only in the deployed studio. Here you can write and save the text."
+  expect tree missing "public-publish"
+  expect tree missing "public-unpublish"
+  expect disabled "public-save"
+  // The runner removes the database after a run but not the saved collection beside it, so start from an empty field.
+  type "public-text" ""
+  clock settle
+  request POST "/facts" {"kind": "accomplishment", "text": "Grew the club newsletter to 1,200 readers."}
+  tap "public-draft"
+  clock data
+  clock settle
+  expect text "public-unsaved" == "Changes not saved"
+  expect enabled "public-save"
+  expect tree has "public-note-0"
+  expect tree missing "public-notes-stale"
+  tap "public-save"
+  clock data
+  clock settle
+  expect tree has "public-saved"
+  expect disabled "public-save"
+  expect tree has "public-note-0"
+  type "public-text" "I build small tools for a chess club."
+  clock settle
+  expect text "public-unsaved" == "Changes not saved"
+  expect tree has "public-notes-stale"
+  tap "public-draft"
+  clock settle
+  tap "replace-public-cancel"
+  clock settle
+  expect text "public-text" == "I build small tools for a chess club."
+  tap "public-check"
+  clock data
+  clock settle
+  expect tree has "public-notes-none"
+  tap "public-save"
+  clock data
+  clock settle
+  expect state pub.text == "I build small tools for a chess club.\n"
+  expect tree has "public-saved"
+  expect tree has "public-notes-none"
+  reload
+  clock data
+  clock settle
+  expect text "public-text" == "I build small tools for a chess club."
+  expect tree has "public-saved"
+
+test "the system page opens from the profile header, says it works only in the deployed studio, and goes back"
+  clock data
+  tap "tab-profile"
+  clock settle
+  tap "open-system"
+  clock data
+  clock settle
+  expect state nav.tab == "profile"
+  expect text "system-absent" == "This screen works only in the deployed studio."
+  back
+  clock settle
+  expect tree has "open-public"
+  tap "open-public"
+  clock data
+  clock settle
+  expect tree has "public-text"
+  back
+  clock settle
+  expect tree has "open-system"

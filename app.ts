@@ -29,7 +29,78 @@ async function write(method: string, path: string, body?: unknown): Promise<Resu
   }
 }
 
+// A write whose reply carries data (a draft, notes): its JSON body, or a refusal in words.
+async function exchange(method: string, path: string, body: unknown, timeout = 10000): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API}${path}`, { method, exactTimeout: timeout, headers, body: JSON.stringify(body) });
+    const said = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (res.ok) return { ok: true, body: said };
+    return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.' };
+  } catch (e) {
+    if ((e as { code?: string }).code === 'bake') throw e;
+    return { ok: false, error: UNREACHABLE };
+  }
+}
+
+// The deployed studio's own controls. Its Worker answers ${API}/_studio/... itself (studio/worker/studio.ts), and
+// forwards only content-type and accept, so every write is a POST with a JSON body. Here, with no Worker, server.ts
+// has no such path: it answers 404 without CORS, which the browser reports as a network failure. So a network failure
+// while the server itself answers means "not available here"; one while it does not means the server is unreachable.
+type Studio = { kind: 'ok'; body: Record<string, unknown> } | { kind: 'absent' } | { kind: 'starting'; error: string } | { kind: 'timeout' } | { kind: 'refused'; error: string } | { kind: 'unreachable' };
+const STARTING = 'The machine is starting. Try again in a moment.';
+const ABSENT = 'This works only in the deployed studio.';
+const SLOW = 'The machine did not answer in time. It may still be working: check again in a moment.';
+const sentence = (s: string) => (s === '' ? '' : `${s[0].toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`);
+async function serverAnswers(): Promise<boolean> {
+  try { return (await fetch(`${API}/public`, { exactTimeout: 10000, headers })).ok; } catch (e) { if ((e as { code?: string }).code === 'bake') throw e; return false; }
+}
+async function studio(method: 'GET' | 'POST', path: string, body: unknown, timeout: number): Promise<Studio> {
+  let res: Response;
+  try {
+    res = await fetch(`${API}/_studio${path}`, { method, exactTimeout: timeout, headers, body: method === 'GET' ? undefined : JSON.stringify(body ?? {}) });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'bake') throw e;
+    if ((e as { kind?: string }).kind === 'Timeout') return { kind: 'timeout' };
+    return (await serverAnswers()) ? { kind: 'absent' } : { kind: 'unreachable' };
+  }
+  if (res.status === 404) return { kind: 'absent' };
+  const said = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  // 503: the machine is starting, or (a write) a refusal the Worker words itself, such as publishing not being set up.
+  if (res.status === 503) return { kind: 'starting', error: sentence(text(said.error)) };
+  if (res.ok && said.ok !== false) return { kind: 'ok', body: said };
+  return { kind: 'refused', error: sentence(text(said.error) || text(said.reason)) || 'The machine had a problem. Try again.' };
+}
+// A write to the machine as a reply in words.
+const outcome = (r: Studio, note = ''): Result<'backupNow'> =>
+  r.kind === 'ok' ? { ok: true, error: '', note }
+  : { ok: false, note: '', error: r.kind === 'absent' ? ABSENT : r.kind === 'starting' ? r.error || STARTING : r.kind === 'timeout' ? SLOW : r.kind === 'refused' ? r.error : UNREACHABLE };
+// A read of the machine: here, not here, or starting; anything else fails the resource.
+const reached = (r: Studio): { where: 'here' | 'absent' | 'starting'; body: Record<string, unknown> } => {
+  if (r.kind === 'ok') return { where: 'here', body: r.body };
+  if (r.kind === 'absent' || r.kind === 'starting') return { where: r.kind, body: {} };
+  // The reason is the failure's code, which the screen shows as it is.
+  const reason = r.kind === 'refused' ? r.error : r.kind === 'timeout' ? SLOW : UNREACHABLE;
+  throw Object.assign(new Error(reason), { reason });
+};
+
 const text = (v: unknown) => (typeof v === 'string' ? v : '');
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+// An exact time in words, '' for none.
+const when = (ms: number) => (ms > 0 ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(ms) : '');
+// One note per line: a line that matches several checks lists them together ("money; a link or an address").
+const notesOf = (v: unknown) => (Array.isArray(v) ? v : []).map((n) => obj(n) ?? {}).map((n) => ({ line: num(n.line), kind: text(n.kind), text: text(n.text) }))
+  .reduce<{ line: number; kind: string; text: string }[]>((all, n) => {
+    const last = all[all.length - 1];
+    if (last && last.line === n.line) last.kind = `${last.kind}; ${n.kind}`; else all.push({ ...n });
+    return all;
+  }, []);
+const loginOf = (v: unknown): Result<'loadSystem'>['login'] => {
+  const l = obj(v) ?? {};
+  // Only a web address is offered as a link.
+  return { state: text(l.state), url: /^https:\/\//i.test(text(l.url)) ? text(l.url) : '', code: text(l.code), detail: text(l.detail) };
+};
+const check = (v: unknown) => { const c = obj(v); return { state: c === null ? '' : typeof c.state === 'string' ? c.state : c.ok === true ? 'ok' : 'failed', detail: c === null ? '' : text(c.detail) }; };
 const rows = (v: unknown): Record<string, unknown>[] => {
   if (!Array.isArray(v)) throw new Error('The server returned something that isn’t a list.');
   return v as Record<string, unknown>[];
@@ -133,6 +204,57 @@ const sources: Sources = {
   loadDirection: async (): Promise<Result<'loadDirection'>> => ({ loaded: true, body: text(((await get('/direction')) as { body?: unknown }).body) }),
   saveDirection: ([body]) => write('POST', '/direction', { body }),
   askProfile: () => write('POST', '/profile/write'),
+  // The public collection. A draft and notes save nothing; only Save does.
+  loadPublic: async (): Promise<Result<'loadPublic'>> => {
+    const p = (await get('/public')) as Record<string, unknown>;
+    return { loaded: true, text: text(p.text), savedAt: num(p.savedAt), savedWhen: when(num(p.savedAt)), sha256: text(p.sha256), notes: notesOf(p.notes) };
+  },
+  draftPublic: async (): Promise<Result<'draftPublic'>> => {
+    const r = await exchange('POST', '/public/draft', {});
+    return r.ok ? { ok: true, error: '', text: text(r.body.text), notes: notesOf(r.body.notes) } : { ok: false, error: r.error, text: '', notes: [] };
+  },
+  checkPublic: async ([body]): Promise<Result<'checkPublic'>> => {
+    const r = await exchange('POST', '/public/notes', { text: body });
+    return r.ok ? { ok: true, error: '', text: body, notes: notesOf(r.body.notes) } : { ok: false, error: r.error, text: '', notes: [] };
+  },
+  savePublic: ([body]) => write('POST', '/public/save', { text: body }),
+  // What the public page answers from now: the Worker's, so 404 here.
+  loadLive: async (): Promise<Result<'loadLive'>> => {
+    const { where, body } = reached(await studio('GET', '/public', undefined, 30000));
+    const live = obj(body.live);
+    const at = live ? Date.parse(text(live.publishedAt)) : NaN;
+    return { loaded: true, where, live: live !== null, sha256: live ? text(live.sha256) : '', publishedAt: Number.isFinite(at) ? at : 0, publishedWhen: Number.isFinite(at) ? when(at) : '' };
+  },
+  // Publishing may wait for the machine to start.
+  publishPublic: async ([sha256]) => outcome(await studio('POST', '/publish', { sha256 }, 180000)),
+  unpublishPublic: async () => outcome(await studio('POST', '/unpublish', {}, 180000)),
+  // The machine: its backups, the model's sign-in and its programs.
+  loadSystem: async (): Promise<Result<'loadSystem'>> => {
+    const { where, body } = reached(await studio('GET', '/status', undefined, 30000));
+    const k = obj(body.keeper), c = obj(body.container), st = obj(k?.selfTest), lb = obj(k?.lastBackup), from = k?.restoredFrom;
+    const phase = text(k?.phase);
+    const machine = where !== 'here' ? '' : c && c.running === false ? 'stopped' : k === null || phase === 'restoring' ? 'starting' : phase;
+    const fromAt = num(obj(from)?.createdAt), fromKey = typeof from === 'string' ? from : text(obj(from)?.key);
+    const llm = obj(k?.llm), signedIn = check(st?.codexSignedIn), sandbox = check(st?.codexSandbox);
+    const programs = Object.entries(obj(st?.programs) ?? {}).map(([name, v]) => ({ name, ok: obj(v)?.ok === true, detail: text(obj(v)?.detail) }));
+    const startedAt = num(k?.startedAt), lastUsedAt = num(body.lastActivityAt), backupAt = num(lb?.at), unsavedSince = num(k?.unsavedSince);
+    return { loaded: true, where, machine, keeper: k !== null, note: text(k?.note),
+      startedAt, startedWhen: when(startedAt), lastUsedAt, lastUsedWhen: when(lastUsedAt), backupAt, backupWhen: when(backupAt),
+      backupError: text(k?.lastBackupError), unsaved: k?.unsaved === true, unsavedSince, unsavedWhen: when(unsavedSince),
+      startedFrom: from === 'empty' ? 'An empty start, with no backup' : fromAt > 0 ? `The backup made ${when(fromAt)}` : fromKey !== '' ? `The backup named ${fromKey}` : '',
+      llm: llm === null ? '' : llm.ok === true ? 'ok' : 'failed', llmDetail: text(llm?.detail),
+      signedIn: signedIn.state, signedInDetail: signedIn.detail, sandbox: sandbox.state, sandboxDetail: sandbox.detail,
+      login: loginOf(k?.codexLogin ?? body.codexLogin), programs };
+  },
+  // A backup can take up to five minutes.
+  backupNow: async () => {
+    const r = await studio('POST', '/backup', {}, 330000);
+    return outcome(r, r.kind === 'ok' && text(r.body.reason) !== '' ? sentence(text(r.body.reason)) : 'Backed up.');
+  },
+  // A sleeping machine is started first, which can take about 80 seconds.
+  // Its reply holds the one-time code, which is dropped here: the screen shows the code only from the latest status.
+  codexLogin: async () => outcome(await studio('POST', '/codex/login', {}, 150000)),
+  codexCancel: async () => outcome(await studio('POST', '/codex/cancel', {}, 30000)),
   saveFact: ([fact, body, detail, metric, roleId, kind]) => write('PATCH', `/facts/${id(fact)}`, { text: body, detail, metric, roleId, kind }),
   saveRole: ([role, standing, reach, partOf]) => write('PATCH', `/roles/${id(role)}`, { standing, reach, partOf }),
   removeFact: ([fact]) => write('DELETE', `/facts/${id(fact)}`),

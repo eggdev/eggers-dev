@@ -21,6 +21,8 @@ routes nav
   tab profile "/profile"
     direction "/profile/direction"
     details "/profile/details"
+    publicPage "/profile/public"
+    system "/profile/system"
   tab talk "/talk"
     questions "/talk/questions"
   tab jobs "/jobs"
@@ -346,6 +348,89 @@ shape Viewport
   width: number
   height: number
 
+// The public collection: the one text the public page's chat answers from. Only the person decides what is in it.
+shape PublicNote
+  line: number
+  kind: string
+  text: string
+
+shape PublicText
+  loaded: bool
+  text: string
+  // When it was saved, in milliseconds and in words: 0 and "" before the first save.
+  savedAt: number
+  savedWhen: string
+  // Its fingerprint, "" before the first save. Publishing names the saved text by it.
+  sha256: string
+  notes: PublicNote[]
+
+// A draft from the bank, or the notes for a text. Neither saves anything.
+shape PublicDraft
+  ok: bool
+  error: string
+  text: string
+  notes: PublicNote[]
+
+// What the public page answers from now. where: here | absent (no studio Worker, as in local work) | starting.
+shape PublicLive
+  loaded: bool
+  where: string
+  live: bool
+  sha256: string
+  publishedAt: number
+  publishedWhen: string
+
+// A write to the machine; note says what happened when it went well.
+shape Outcome
+  ok: bool
+  error: string
+  note: string
+
+// The model's sign-in. state: "" (the status leaves it out) | idle | waiting | done | failed.
+shape CodexLogin
+  state: string
+  url: string
+  code: string
+  detail: string
+
+shape ProgramCheck
+  name: string
+  ok: bool
+  detail: string
+
+// The cloud machine, as the studio's Worker reports it. Times are milliseconds (0: unknown) and words.
+shape SystemStatus
+  loaded: bool
+  where: string
+  // running | starting | stopping | stopped | failed, "" when not here
+  machine: string
+  // False while the machine starts and cannot report yet.
+  keeper: bool
+  note: string
+  startedAt: number
+  startedWhen: string
+  lastUsedAt: number
+  lastUsedWhen: string
+  backupAt: number
+  backupWhen: string
+  backupError: string
+  unsaved: bool
+  unsavedSince: number
+  unsavedWhen: string
+  startedFrom: string
+  // ok | failed | "" (not checked); the sandbox also unknown
+  llm: string
+  llmDetail: string
+  signedIn: string
+  signedInDetail: string
+  sandbox: string
+  sandboxDetail: string
+  login: CodexLogin
+  programs: ProgramCheck[]
+
+shape Clock
+  epochAtZero: number
+
 shape Reply
   ok: bool
   error: string
@@ -368,6 +453,20 @@ fn leadMeta(l: Lead): string = [l.salary, (l.posted != "" ? `posted ${l.posted}`
 fn leadWhere(l: Lead): string = l.place == "" ? l.company : `${l.company}, ${l.place}`
 fn coverageLabel(c: string): string = c == "strong" ? "Strong" : c == "partial" ? "Partial" : "Missing"
 fn loadError(code: string): string = code == "offline" ? "Can’t reach the server. Check that it’s running, then try again." : "The server couldn’t answer. Try again."
+// A failed read of the machine: the data module's own sentence, or the usual words for a lost connection.
+fn failText(code: string): string = code.includes(" ") ? code : loadError(code)
+fn plural(n: number, word: string): string = `${n} ${word}${n == 1 ? "" : "s"}`
+// How long ago, in words, from the ticked time; "" when unknown.
+fn ago(at: number, now: number): string = at <= 0 ? "" : now - at < 60000 ? "less than a minute ago" : now - at < 3600000 ? `${plural(floor((now - at) / 60000), "minute")} ago` : now - at < 86400000 ? `${plural(floor((now - at) / 3600000), "hour")} ago` : `${plural(floor((now - at) / 86400000), "day")} ago`
+// The relative time, then the exact one: "5 minutes ago (Nov 16, 2026, 3:04 PM)".
+fn agoAndWhen(at: number, words: string, now: number): string = at <= 0 ? "" : `${ago(at, now)} (${words})`
+fn pad3(n: number): string = n < 10 ? `00${n}` : n < 100 ? `0${n}` : `${n}`
+fn thousands(n: number): string = n < 1000 ? `${n}` : `${floor(n / 1000)},${pad3(n % 1000)}`
+fn noteLabel(n: PublicNote): string = `Line ${n.line} may mention ${n.kind}`
+// Whether the app can call the model, in one line: the sign-in first, then the sandbox, then the last call.
+fn modelLine(s: SystemStatus): string = s.signedIn == "failed" ? "Not signed in to ChatGPT, so the app can’t call the model. Sign in again." : s.sandbox == "failed" ? "Signed in to ChatGPT, but the model can’t run its tools on the machine." : s.llm == "failed" ? "Signed in to ChatGPT, but the last call to the model failed." : s.llm == "ok" ? "Signed in to ChatGPT. The app can call the model." : s.signedIn == "ok" ? "Signed in to ChatGPT. The model hasn’t been called yet." : "Not checked yet. The machine checks when it starts."
+fn modelDetail(s: SystemStatus): string = s.signedIn == "failed" ? s.signedInDetail : s.sandbox == "failed" ? s.sandboxDetail : s.llm == "failed" ? s.llmDetail : ""
+fn machineLine(s: SystemStatus): string = s.machine == "running" ? "Running" : s.machine == "starting" ? "Starting" : s.machine == "stopping" ? "Stopping" : s.machine == "stopped" ? "Stopped. It starts when the studio is next used." : s.machine == "failed" ? "Failed to start" : "Not known"
 
 component App
   state kind = "text"
@@ -529,11 +628,85 @@ component App
   // Why Add is disabled, under the form (not red: nothing has been refused).
   derive addHint = pending(added) ? "Adding…" : kind == "text" and addBody == "" ? "Paste some text to add it." : kind == "file" and addBody == "" ? "Choose a file to add it." : kind == "github" and addBody == "" ? "Tick the repositories worth reading." : kind == "repo" and addBody == "" ? "Enter the repository’s path to add it." : kind == "repo" and author.trim() == "" ? "Enter the name or email your commits use." : ""
 
+  // The Public page. The field shows the saved text until the person edits it or loads a draft; the edit is kept
+  // across a reload, and is unsaved while it differs from the saved text (the server trims space at the end; space at the start is left to Save).
+  state pubDraft = "" persist
+  state pubEdited = false persist
+  state pubAct = ""
+  // The notes for a text other than the saved one (a draft, or the field checked again), and that text.
+  state noteText = ""
+  state noteList: PublicNote[] = []
+  state sysAct = ""
+  // What "5 minutes ago" counts from on the Public and System pages, ticked while one is open.
+  state ticked = 0
+  resource time = exactTime() as shape Clock else empty()
+  derive onPublic = top(nav).name == "publicPage"
+  derive onSystem = top(nav).name == "system"
+  // Neither page is in the main poll: each loads when it opens, and System polls on its own while open.
+  resource pub = loadPublic() when onPublic as shape PublicText else empty()
+  resource live = loadLive() when onPublic as shape PublicLive else empty()
+  resource sys = loadSystem() when onSystem as shape SystemStatus else empty()
+  mutation drafted as shape PublicDraft then afterDraft
+  mutation checked as shape PublicDraft then afterCheck
+  mutation pubSaved as shape Reply refreshes pub
+  mutation published as shape Outcome refreshes live
+  mutation unpublished as shape Outcome refreshes live
+  mutation backedUp as shape Outcome refreshes sys
+  mutation loginAsked as shape Outcome refreshes sys
+  mutation loginCancelled as shape Outcome refreshes sys
+  derive nowMs = time.epochAtZero + ticked
+  derive pubField = pubEdited ? pubDraft : pub.text
+  derive pubDirty = pub.loaded and pubEdited and pubDraft.trim() != pub.text.trim()
+  derive pubTooLong = pubField.length > 120000
+  derive pubLoadError = match failure(pub) { case some(f) => loadError(f.code), case none => "" }
+  derive liveError = match failure(live) { case some(f) => failText(f.code), case none => "" }
+  derive draftOk = match drafted { case some(r) => r.ok, case none => false }
+  derive draftReply = match drafted { case some(r) => r.text, case none => "" }
+  derive draftNotes = match drafted { case some(r) => r.notes, case none => noteList }
+  derive draftError = pending(drafted) ? "" : match drafted { case some(r) => r.error, case none => "" }
+  derive checkOk = match checked { case some(r) => r.ok, case none => false }
+  derive checkReply = match checked { case some(r) => r.text, case none => "" }
+  derive checkNotes = match checked { case some(r) => r.notes, case none => noteList }
+  derive noteCheckError = pending(checked) ? "" : match checked { case some(r) => r.error, case none => "" }
+  derive pubSaveError = pending(pubSaved) ? "" : match pubSaved { case some(r) => r.error, case none => "" }
+  derive publishError = pending(published) ? "" : match published { case some(r) => r.error, case none => "" }
+  derive unpublishError = pending(unpublished) ? "" : match unpublished { case some(r) => r.error, case none => "" }
+  // The notes the list shows: the saved text's; else the field's own (its draft, or a check); else none fit the field.
+  derive notesStale = pubDirty and noteText != pubField
+  derive shownNotes = not pubDirty ? pub.notes : noteText == pubField ? noteList : []
+  derive liveHere = live.loaded and live.where == "here"
+  derive isLive = liveHere and live.live
+  derive liveDiffers = liveHere and pub.sha256 != "" and pub.sha256 != live.sha256
+  derive canPublish = liveDiffers and not pubDirty and not pending(pubSaved) and not pending(published) and not pending(unpublished)
+  derive liveLine = not live.loaded ? (liveError != "" ? `Couldn’t check what is published. ${liveError}` : "Checking what is published…") : live.where == "absent" ? "Publishing works only in the deployed studio. Here you can write and save the text." : live.where == "starting" ? "The machine is starting, so what is published can’t be checked yet. Try again in a moment." : not live.live ? "Nothing is published. The chat on the public page is off." : `Published ${agoAndWhen(live.publishedAt, live.publishedWhen, nowMs)}. The public chat answers from it.`
+  derive liveNote = not liveHere or pub.sha256 == "" ? "" : liveDiffers ? (live.live ? "Your saved text is different and is not published yet." : "Your saved text is not published yet.") : "What is published is your saved text."
+  derive pubState = pubTooLong ? `${thousands(pubField.length)} of 120,000 characters. Shorten it to save.` : pubDirty ? "Changes not saved" : pub.savedAt > 0 ? `Saved ${agoAndWhen(pub.savedAt, pub.savedWhen, nowMs)}` : "Nothing saved yet"
+  derive sysLoadError = match failure(sys) { case some(f) => failText(f.code), case none => "" }
+  // The sign-in in progress, only ever from the latest status: its one-time code is kept nowhere else.
+  derive loginNow = sys.login
+  derive loginWaiting = loginNow.state == "waiting"
+  derive loginError = pending(loginAsked) ? "" : match loginAsked { case some(r) => r.error, case none => "" }
+  derive cancelError = pending(loginCancelled) ? "" : match loginCancelled { case some(r) => r.error, case none => "" }
+  derive backupReply = pending(backedUp) ? "" : match backedUp { case some(r) => (r.ok ? r.note : r.error), case none => "" }
+  derive backupFailed = match backedUp { case some(r) => not r.ok, case none => false }
+
   task poll mount
     every(5000, pull)
   // A reply takes a few seconds: look for it more often than the rest while one is being written.
   task talkPoll mount
     every(1500, pullTalk)
+  // System: its status every 15 seconds while it is open, every 3 while a sign-in waits for the person.
+  task systemPoll when onSystem
+    every(15000, pullSystem)
+  task loginPoll when onSystem and loginWaiting
+    every(3000, pullSystem)
+  task publicTick when onPublic
+    every(30000, tickClock)
+  action tickClock
+    ticked = performanceNow()
+  action pullSystem
+    ticked = performanceNow()
+    refresh sys
   action pullTalk
     if talk.busy
       talkAct = ""
@@ -765,6 +938,74 @@ component App
   action openDetails
     refresh me
     nav = push(select(nav, "profile"), "/profile/details")
+  action openPublic
+    ticked = performanceNow()
+    pubAct = ""
+    if not pubDirty
+      pubEdited = false
+    nav = push(select(nav, "profile"), "/profile/public")
+  action openSystem
+    ticked = performanceNow()
+    sysAct = ""
+    nav = push(select(nav, "profile"), "/profile/system")
+  action editPublic(v: string)
+    pubDraft = v
+    pubEdited = true
+  // A draft replaces the field, so a field with text asks first.
+  action askDraft
+    if pubField.trim() != ""
+      showModal("replace-public")
+    else
+      pubAct = "draft"
+      send drafted = draftPublic()
+  action draftFromBank
+    pubAct = "draft"
+    send drafted = draftPublic()
+  action afterDraft
+    if draftOk
+      pubDraft = draftReply
+      pubEdited = true
+      noteText = draftReply
+      noteList = draftNotes
+  action checkAgain
+    pubAct = "check"
+    send checked = checkPublic(pubField)
+  action afterCheck
+    if checkOk
+      noteText = checkReply
+      noteList = checkNotes
+  action saveCollection
+    if pubDirty and not pubTooLong and pubField.trim() != "" and not pending(pubSaved)
+      pubAct = "save"
+      ticked = performanceNow()
+      send pubSaved = savePublic(pubField)
+  action askPublish
+    if canPublish
+      showModal("publish-public")
+  action publishNow
+    if canPublish
+      pubAct = "publish"
+      ticked = performanceNow()
+      send published = publishPublic(pub.sha256)
+  action askUnpublish
+    showModal("unpublish-public")
+  action unpublishNow
+    pubAct = "unpublish"
+    send unpublished = unpublishPublic()
+  action recheckLive
+    pubAct = ""
+    refresh live
+  action backUp
+    if not pending(backedUp)
+      sysAct = "backup"
+      send backedUp = backupNow()
+  action signIn
+    if not pending(loginAsked)
+      sysAct = "login"
+      send loginAsked = codexLogin()
+  action cancelSignIn
+    sysAct = "cancel"
+    send loginCancelled = codexCancel()
   action savePerson(name: string, location: string, email: string, phone: string, website: string, github: string, linkedin: string)
     if not pending(personSaved)
       send personSaved = savePerson(name.trim(), location.trim(), email.trim(), phone.trim(), website.trim(), github.trim(), linkedin.trim())
@@ -959,10 +1200,16 @@ component App
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0
                   header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
                     text "Profile" role="heading" aria-level=1 flex=1
+                    // Four buttons: like a bar's, their labels stop growing at a large text size, so the header fits a phone.
                     button press=openDetails testId="open-details"
-                      text "Details"
+                      text "Details" font-size="min(-exact-body, 22px)"
                     button press=openDirection testId="open-direction"
-                      text "Direction"
+                      text "Direction" font-size="min(-exact-body, 22px)"
+                    button press=openPublic testId="open-public"
+                      text "Public Page" font-size="min(-exact-body, 22px)" white-space="nowrap"
+                    // The machine's page is the quietest: a symbol, named for a screen reader.
+                    button press=openSystem aria-label="System" testId="open-system"
+                      image "symbol:settings" font-size="min(-exact-body, 22px)"
                   if not profile.loaded
                     if pending(profile)
                       column flex=1 justify-content="center" align-items="center"
@@ -1088,6 +1335,174 @@ component App
               if e.name == "direction"
                 if notes.loaded
                   EditDirection(route=e.id, body=notes.body, height=sheetList, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
+              // The public collection: written, saved and published here, each only by the person's own press.
+              if e.name == "publicPage"
+                column navigationKey=`${e.id}` navigationScroll="public-form" position="absolute" inset=0
+                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
+                    text "Public Page" role="heading" aria-level=2 flex=1
+                    if pub.loaded
+                      button press=saveCollection disabled=(not pubDirty or pubTooLong or pubField.trim() == "" or pending(pubSaved)) buttonStyle="bordered-prominent" testId="public-save"
+                        text (pending(pubSaved) ? "Saving…" : "Save")
+                  if not pub.loaded
+                    column flex=1 justify-content="center" align-items="center" padding=24
+                      if pubLoadError != ""
+                        text pubLoadError color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="public-load-error"
+                      else
+                        progress aria-label="Loading" testId="public-loading"
+                  else
+                    list id="public-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
+                      section
+                        header
+                          text "On the public page"
+                        row
+                          column flex=1 min-width=0 gap=4 padding-top=4 padding-bottom=4
+                            text liveLine hyphens="manual" testId="public-live"
+                            if liveNote != ""
+                              text liveNote font="-exact-subheadline" color="-exact-secondary-label" testId="public-live-note"
+                        if liveHere
+                          button press=askPublish disabled=(not canPublish) testId="public-publish"
+                            text (pending(published) ? "Publishing…" : "Publish Saved Text")
+                        if isLive
+                          button press=askUnpublish disabled=(pending(unpublished) or pending(published)) destructive=true testId="public-unpublish"
+                            text (pending(unpublished) ? "Taking the Chat Offline…" : "Take the Chat Offline")
+                        if (live.loaded and live.where == "starting") or liveError != ""
+                          button press=recheckLive disabled=pending(live) testId="public-recheck"
+                            text "Check Again"
+                        if (pubAct == "publish" and publishError != "") or (pubAct == "unpublish" and unpublishError != "")
+                          row
+                            text (pubAct == "publish" ? `Not published. ${publishError}` : `The chat is still on. ${unpublishError}`) color="-exact-system-red" flex=1 min-width=0 testId="public-live-error"
+                        footer
+                          text (not liveHere ? "The public chat answers only from text you publish." : pubDirty ? "Save your changes first. Only the saved text can be published." : "Publishing puts your saved text on the public page.")
+                      section
+                        header
+                          text "Public collection"
+                        row padding-top=8 padding-bottom=8
+                          textarea value=pubField input=editPublic rows=16 aria-label="Public collection" testId="public-text" flex=1 min-width=0
+                            placeholder="What anyone may ask the public chat about: your work, your projects and your interests, in your words."
+                        row gap=12
+                          text pubState flex=1 min-width=0 font="-exact-subheadline" font-weight=(pubDirty or pubTooLong ? 600 : 400)
+                            color=(pubTooLong ? "-exact-system-red" : pubDirty ? "-exact-label" : "-exact-secondary-label") testId=(pubDirty ? "public-unsaved" : "public-saved")
+                          if pubField.length > 96000 and not pubTooLong
+                            text `${thousands(pubField.length)} of 120,000 characters` font="-exact-subheadline" color="-exact-secondary-label" font-variant-numeric="tabular-nums" testId="public-count"
+                        if pubAct == "save" and pubSaveError != ""
+                          row
+                            text `Not saved. ${pubSaveError}` color="-exact-system-red" flex=1 min-width=0 testId="public-save-error"
+                      section
+                        button press=askDraft disabled=pending(drafted) accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start" testId="public-draft"
+                          image "symbol:document" aria-hidden=true
+                          text (pending(drafted) ? "Making a Draft…" : "Start from My Bank")
+                        if pubAct == "draft" and draftError != ""
+                          row
+                            text `No draft was made. ${draftError}` color="-exact-system-red" flex=1 min-width=0 testId="public-draft-error"
+                        footer
+                          text "Puts a draft made from the facts in your bank into the field. Nothing is saved until you press Save."
+                      section
+                        header
+                          text "Lines to check before you publish"
+                        if notesStale
+                          row
+                            text "These notes were for the text before your latest edits." color="-exact-secondary-label" flex=1 min-width=0 testId="public-notes-stale"
+                          button press=checkAgain disabled=pending(checked) testId="public-check"
+                            text (pending(checked) ? "Checking…" : "Check the Field Again")
+                          if pubAct == "check" and noteCheckError != ""
+                            row
+                              text noteCheckError color="-exact-system-red" flex=1 min-width=0 testId="public-check-error"
+                        else if shownNotes.length == 0
+                          row
+                            text "No lines to check." color="-exact-secondary-label" flex=1 min-width=0 testId="public-notes-none"
+                        else
+                          for n, i in shownNotes key=`${n.line} ${n.kind}`
+                            row
+                              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
+                                text noteLabel(n) font="-exact-footnote" color="-exact-secondary-label" testId=`public-note-${i}`
+                                text n.text overflow-wrap="break-word" testId=`public-note-text-${i}`
+                        footer
+                          text "Advice only: these lines may hold money, a person or client, a link, or inside knowledge. You decide what is public."
+              // The cloud machine, from the studio's Worker: backups first, then the model's sign-in, then the machine itself.
+              if e.name == "system"
+                column navigationKey=`${e.id}` navigationScroll="system-list" position="absolute" inset=0
+                  header display="flex" align-items="center" padding="8px 16px"
+                    text "System" role="heading" aria-level=2
+                  if not sys.loaded or sys.where != "here"
+                    column flex=1 justify-content="center" align-items="center" padding=24 gap=12
+                      if sys.loaded and sys.where == "absent"
+                        text "This screen works only in the deployed studio." color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-absent"
+                      else if sys.loaded and sys.where == "starting"
+                        text "The machine is starting. Try again in a moment." color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-starting"
+                        button press=pullSystem disabled=pending(sys) buttonStyle="bordered" testId="system-retry"
+                          text "Try Again"
+                      else if sysLoadError != ""
+                        text `Couldn’t check the machine. ${sysLoadError}` color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-error"
+                        button press=pullSystem disabled=pending(sys) buttonStyle="bordered" testId="system-retry"
+                          text "Try Again"
+                      else
+                        progress aria-label="Loading" testId="system-loading"
+                  else
+                    list id="system-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
+                      if sys.backupError != ""
+                        section
+                          row gap=12 align-items="flex-start" padding-top=8 padding-bottom=8
+                            image "symbol:alert-fill" color="-exact-system-red" font="-exact-title3" aria-hidden=true
+                            column flex=1 min-width=0 gap=4
+                              text "The last backup failed" font="-exact-headline" color="-exact-system-red"
+                              text sys.backupError overflow-wrap="break-word" testId="system-backup-error"
+                              text "Changes since the last good backup are only on the machine." font="-exact-subheadline" color="-exact-secondary-label"
+                      section
+                        header
+                          text "Data safety"
+                        Field(label="Last backup", value=(sys.backupAt > 0 ? agoAndWhen(sys.backupAt, sys.backupWhen, nowMs) : "None since the machine started"), testId="system-last-backup")
+                        Field(label="Changes not backed up", value=(not sys.unsaved ? "None" : sys.unsavedSince > 0 ? `Yes, since ${agoAndWhen(sys.unsavedSince, sys.unsavedWhen, nowMs)}` : "Yes"), testId="system-unsaved")
+                        if sys.startedFrom != ""
+                          Field(label="Started from", value=sys.startedFrom, testId="system-started-from")
+                        button press=backUp disabled=pending(backedUp) testId="system-backup"
+                          text (pending(backedUp) ? "Backing Up… This can take a few minutes." : "Back Up Now")
+                        if sysAct == "backup" and backupReply != ""
+                          row
+                            text backupReply color=(backupFailed ? "-exact-system-red" : "-exact-secondary-label") flex=1 min-width=0 testId="system-backup-result"
+                      section
+                        header
+                          text "ChatGPT sign-in"
+                        row
+                          column flex=1 min-width=0 gap=4 padding-top=4 padding-bottom=4
+                            text modelLine(sys) testId="system-model"
+                            if modelDetail(sys) != ""
+                              text modelDetail(sys) font="-exact-footnote" color="-exact-secondary-label" overflow-wrap="break-word"
+                        if loginWaiting
+                          row
+                            column flex=1 min-width=0 gap=8 padding-top=8 padding-bottom=8
+                              text "Open the address, sign in to ChatGPT, and type this code."
+                              text loginNow.code font="-exact-large-title" color="-exact-label" font-variant-numeric="tabular-nums" user-select="all" overflow-wrap="break-word" testId="system-login-code"
+                          link href=loginNow.url target="_blank" testId="system-login-url"
+                            text loginNow.url flex=1 min-width=0 overflow-wrap="break-word"
+                            image "symbol:forward-chevron"
+                          button press=cancelSignIn disabled=pending(loginCancelled) testId="system-login-cancel"
+                            text "Cancel"
+                        else
+                          if loginNow.state == "done"
+                            row
+                              text "Signed in to ChatGPT." color="-exact-secondary-label" flex=1 min-width=0 testId="system-login-result"
+                          if loginNow.state == "failed"
+                            row
+                              text `Sign-in failed. ${loginNow.detail}` color="-exact-system-red" flex=1 min-width=0 testId="system-login-result"
+                          button press=signIn disabled=pending(loginAsked) testId="system-sign-in"
+                            text (pending(loginAsked) ? "Starting Sign-In… This can take a minute or two." : "Sign In Again")
+                        if (sysAct == "login" and loginError != "") or (sysAct == "cancel" and cancelError != "")
+                          row
+                            text (sysAct == "login" ? loginError : cancelError) color="-exact-system-red" flex=1 min-width=0 testId="system-login-error"
+                      section
+                        header
+                          text "Machine"
+                        QuietRow(label="State", value=(sys.note != "" and sys.machine != "running" ? `${machineLine(sys)}. ${sys.note}` : machineLine(sys)), testId="system-machine")
+                        if not sys.keeper
+                          row
+                            text "Its details appear once it is up." font="-exact-footnote" color="-exact-secondary-label" flex=1 min-width=0 testId="system-machine-wait"
+                        if sys.startedAt > 0
+                          QuietRow(label="Started", value=agoAndWhen(sys.startedAt, sys.startedWhen, nowMs), testId="system-started")
+                        for p in sys.programs key=p.name
+                          row gap=8 align-items="center"
+                            image (p.ok ? "symbol:checkmark" : "symbol:alert") color=(p.ok ? "-exact-secondary-label" : "-exact-system-red") font="-exact-footnote" aria-hidden=true
+                            text p.name font="-exact-footnote" flex=1 min-width=0
+                            text (p.ok ? "Passed" : p.detail != "" ? `Failed: ${p.detail}` : "Failed") font="-exact-footnote" color=(p.ok ? "-exact-secondary-label" : "-exact-system-red") overflow-wrap="break-word" testId=`system-program-${p.name}`
               if e.name == "jobs"
                 // Beside a detail on a wide window the list is 400 wide, so its four stages fit on one line.
                 column navigationKey=`${e.id}` navigationScroll="job-list" navigationSplit=400 position="absolute" inset=0
@@ -1571,6 +1986,24 @@ component App
           text "Not for Me"
         button commandfor="dismiss-lead" command="close" testId="dismiss-lead-cancel"
           text "Cancel"
+      dialog id="replace-public" role="alertdialog" aria-label="Replace the text in the field?"
+        text "A fresh draft from your bank replaces what is in the field. Your saved text stays as it is until you press Save."
+        button press=draftFromBank destructive=true commandfor="replace-public" command="close" testId="replace-public-confirm"
+          text "Replace"
+        button commandfor="replace-public" command="close" testId="replace-public-cancel"
+          text "Cancel"
+      dialog id="publish-public" role="alertdialog" aria-label="Publish your saved text?"
+        text "Anyone can then ask the public chat about everything in this text, and it may quote any line of it."
+        button press=publishNow commandfor="publish-public" command="close" testId="publish-public-confirm"
+          text "Publish"
+        button commandfor="publish-public" command="close" testId="publish-public-cancel"
+          text "Cancel"
+      dialog id="unpublish-public" role="alertdialog" aria-label="Take the chat offline?"
+        text "The public chat stops answering within a minute and stays off until you publish again. Your saved text stays here."
+        button press=unpublishNow destructive=true commandfor="unpublish-public" command="close" testId="unpublish-public-confirm"
+          text "Take Offline"
+        button commandfor="unpublish-public" command="close" testId="unpublish-public-cancel"
+          text "Cancel"
       dialog id="discard-edits" role="alertdialog" aria-label="Discard your changes?"
         text "What you changed here hasn’t been saved."
         button press=back destructive=true commandfor="discard-edits" command="close" testId="discard-edits-confirm"
@@ -1628,6 +2061,17 @@ component Field
       column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
         text label font="-exact-footnote" color="-exact-secondary-label"
         text value hyphens="manual" testId=testId
+
+// A label and its value on one quiet line: the machine's details, which matter least on the System page.
+component QuietRow
+  props
+    label: string
+    value: string
+    testId: string
+  view
+    row gap=12 align-items="center"
+      text label font="-exact-footnote" color="-exact-secondary-label" flex-shrink=0
+      text value font="-exact-footnote" flex=1 min-width=0 text-align="end" overflow-wrap="break-word" testId=testId
 
 // One fact: its headline, the story behind it, where it belongs, what supports it.
 component FactSections
