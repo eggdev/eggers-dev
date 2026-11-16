@@ -13,9 +13,14 @@
   // Served only at https://studio.eggers.dev, a custom domain of this Worker that a Cloudflare Access application
   // protects. The workers.dev address and preview URLs are off: Access does not cover them.
   // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
+  // The second entry is a route for every path on the host. Cloudflare runs a route before a custom domain, so a
+  // route that another Worker holds on this host would take the traffic. This Worker holds that route itself.
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "studio.eggers.dev", "custom_domain": true }],
+  "routes": [
+    { "pattern": "studio.eggers.dev", "custom_domain": true },
+    { "pattern": "studio.eggers.dev/*", "zone_name": "eggers.dev" }
+  ],
 
   // The built screens. The Worker runs first for every path, files too, so nothing is served before its own
   // Access check. html_handling "none" makes the binding a plain file lookup; the Worker itself applies the rule
