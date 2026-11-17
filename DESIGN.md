@@ -188,3 +188,26 @@ causes one rewrite.
 
 Two known behaviours: a source read again gives its facts new reference numbers; a project deleted that came from a
 repository comes back, empty, when that repository is read again.
+
+What stage 2 adds to Experience:
+
+- **Questions for what is missing.** The studio finds what the record lacks and asks about it: where a repository
+  nobody placed belongs, when a role started, what a role with nothing in it held, a project's result (then what the
+  owner did, then the situation), and, for a measured fact an unsent job leans on, the number before and the owner's
+  own part. Experience says "The studio has N questions about this record" in one line and lists them on request,
+  each leading to its item. Home takes at most 7 of them at once, in that order, and at most 3 about numbers before
+  and own parts. "I don't know" and "I don't remember" are answers: they are kept, and never asked again. An answer
+  writes the one value it names, and nothing else. What I learned is never asked.
+- **How you work.** At most 3 lines counted from the record, with no model: the kinds of measured result that are
+  most of them, managing or hiring in several roles, a skill that runs through several roles, how many projects have
+  a measured result, and a lesson said on several projects. Each line says what it was counted from and shows its
+  items on request. Below its minimum a line is not drawn; with no line the section is not drawn. The owner keeps a
+  line or says it is not true, and can undo either. A kept line is only stored and shown in this stage.
+- **Suggested projects.** On a role with 6 or more facts in Day to day, "Suggest projects" asks a model once. It is
+  slow work, a row in Activity. A suggestion is a title, which facts belong to it, and which fact states the result;
+  code checks each and drops one that fails, never repairing it. Each shows on the role as a suggestion with Keep,
+  Edit and Not a project; Home has one item for a role with suggestions waiting. Keep checks again against the
+  record as it is then: a suggestion whose facts moved is out of date and is not kept until the owner edits it. Keep
+  files the facts in a new project and leaves their role as it was, so no resume is written again. A suggested
+  result is shown on the kept project for the owner to use or leave out. A title said not to be a project is not
+  suggested again.

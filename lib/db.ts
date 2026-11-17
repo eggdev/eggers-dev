@@ -82,6 +82,19 @@ db.run('CREATE TABLE IF NOT EXISTS id_floor (name TEXT PRIMARY KEY, high INTEGER
 // while after it, as after an answer (lib/raised.ts, holdSince), so one sitting of edits causes one rewrite.
 db.run('CREATE TABLE IF NOT EXISTS record_written (id INTEGER PRIMARY KEY CHECK (id = 1), at INTEGER NOT NULL DEFAULT 0)');
 db.run('INSERT OR IGNORE INTO record_written (id) VALUES (1)');
+// Stage 2 of the record (lib/derived.ts, lib/propose.ts). Both tables are new and only ever added to.
+// derived_lines: the owner's verdict on a line of "How you work" (kept | rejected), by the line's key, which holds what
+// the line counted ("results:latency+time saved"), so a different finding is asked afresh. basis: the items behind it.
+db.run(`CREATE TABLE IF NOT EXISTS derived_lines (
+  key TEXT PRIMARY KEY, verdict TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', basis TEXT NOT NULL DEFAULT '[]', judged_at INTEGER NOT NULL DEFAULT 0)`);
+// project_proposals: projects a model proposed from a role's unfiled facts, when the owner asked (roles.propose_status).
+// run: which request made it. fact_ids: JSON list of fact ids. result_fact: the fact that states the result (0 for none).
+// status: open | kept | rejected | stale. project_id: the project Keep made. result_state: '' until the owner says
+// whether the result fact is the project's Result (used | declined).
+db.run(`CREATE TABLE IF NOT EXISTS project_proposals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, role_id INTEGER NOT NULL, run INTEGER NOT NULL DEFAULT 1, title TEXT NOT NULL,
+  fact_ids TEXT NOT NULL DEFAULT '[]', result_fact INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'open',
+  project_id INTEGER, result_state TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0, decided_at INTEGER NOT NULL DEFAULT 0)`);
 // The record's triggers are dropped and made again each time the server or the worker starts, so a change to a body
 // here reaches an existing database. One transaction that takes the write lock first (immediate): the server and the
 // worker start together, and neither writes between the drop and the create.

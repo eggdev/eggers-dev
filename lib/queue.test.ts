@@ -3,7 +3,7 @@
 import { beforeEach, expect, test } from 'bun:test';
 import { db, role, seed } from './scratch.ts';
 import { syncQuestions } from './checks.ts';
-import { answer } from './raised.ts';
+import { answer, choiceAt } from './raised.ts';
 import { queue, QUIET_DAYS, snooze, SNOOZE_MS } from './queue.ts';
 
 const DAY = 86_400_000;
@@ -69,7 +69,7 @@ test('a timeline question says how many unsent resumes show one of its roles', (
   job('D', 'Umbrella', resume('Harborlight Systems'), 'applied', NOW - DAY);
   expect(queue(NOW).items[0].blocks).toBe('Blocks 2 resumes');
   // Answered, the question leaves the list.
-  expect(answer('two-current:1:4', 2, 'The advisory work is two hours a month.', NOW)).toBe('');
+  expect(answer('two-current:1:4', 2, 'The advisory work is two hours a month.', NOW, choiceAt('two-current:1:4', 2))).toBe('');
   syncQuestions(NOW);
   expect(queue(NOW).items.map((i) => i.kind)).toEqual(['talk']);
 });

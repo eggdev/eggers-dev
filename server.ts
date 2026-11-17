@@ -13,7 +13,8 @@ import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from 
 import { INBOX } from './lib/ingest.ts';
 import { fitOf, publish, refreshSkills, reflagOpen, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
-import { answer, openRaised, raisedByKey } from './lib/raised.ts';
+import { syncRecordQuestions } from './lib/gaps.ts';
+import { answer, inputsOf, openRaised, raisedByKey } from './lib/raised.ts';
 import { QUIET_DAYS, queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
@@ -21,7 +22,9 @@ import { type AtsCheck } from './lib/pdf.ts';
 import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
 import { activity, dismiss, failedRow, markSeen, stubStep, type Kind } from './lib/activity.ts';
 import { syncProjects } from './lib/projects.ts';
-import { addFact, addProject, addRole, deleteProject, deleteRole, fullFact, patchFact, patchProject, patchRole, readTree, removeFact, type Done } from './lib/record.ts';
+import { addFact, addProject, addRole, deleteProject, deleteRole, derivedNow, fullFact, patchFact, patchProject, patchRole, readTree, removeFact, type Done } from './lib/record.ts';
+import { askFor, checkProposals, decideResult, keepProposal, proposalsOf, rejectProposal, requestFor, storeProposals, type Decided } from './lib/propose.ts';
+import { judge } from './lib/derived.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -40,7 +43,20 @@ const curly = <T extends Record<string, unknown>>(o: T, keys: string[]): T => ({
 const STUB = process.argv.includes('--stub-github');
 // After a change to a role, a skill or an answer: the questions code raises and the flags that read them are taken
 // again. A failure here is logged and never fails the request that made the change.
-const follow = () => { try { syncProjects(); syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); } };
+// Each step runs on its own: one that fails (the database busy) is logged and the next ones still run.
+const step = (what: string, run: () => unknown) => { try { run(); } catch (e) { console.log(`${what} could not be checked: ${(e as Error).message}`); } };
+const follow = () => {
+  step('projects', () => syncProjects());
+  step('questions', () => syncQuestions(Date.now()));
+  step('the record’s questions', () => syncRecordQuestions(Date.now()));
+  step('flags', () => reflagOpen());
+};
+// A request's JSON body, when it is an object; null for no body, bad JSON, null, a list or a value.
+const objectBody = async (req: Request): Promise<Record<string, unknown> | null> => {
+  const b = await req.json().catch(() => null);
+  return b !== null && typeof b === 'object' && !Array.isArray(b) ? (b as Record<string, unknown>) : null;
+};
+const NOT_OBJECT = 'Send the request as a JSON object.';
 // A write by hand to the record (lib/record.ts) as the answer the app reads: what was made or changed, with its
 // reference, or the refusal in words.
 const done = (d: Done, made = 200) => (d.ok ? send({ ok: true, kind: d.kind, id: String(d.id), ref: d.ref, wrote: d.wrote, ...(d.madeRole ? { madeRole: String(d.madeRole) } : {}) }, made) : send({ error: d.error, ...(d.split ? { split: true } : {}) }, d.status));
@@ -180,6 +196,7 @@ function checkWatchlistAgain() {
 const AGAIN: Partial<Record<Kind, (subject: number) => Response>> = {
   'read-source': readSourceAgain, 'read-posting': readJobAgain, 'write-resume': writeResumeAgain, 'write-profile': () => writeProfileAgain(),
   'draft-messages': draftMessagesAgain, 'check-watchlist': () => checkWatchlistAgain(),
+  'propose-projects': (role) => { const refused = askFor(role); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
 };
 
 // Where it listens: HOST and PORT when set; else the app's API_BASE_URL when that is this machine
@@ -541,6 +558,52 @@ Bun.serve({ hostname, port, routes: {
     // Its own projects and its facts go with it; a repository's project group filed under it stays, not placed.
     DELETE: (req) => { const d = deleteRole(Number(req.params.id)); if (d.ok && d.wrote) follow(); return done(d); },
   },
+  // Suggested projects (lib/propose.ts): asked for on a role, read on it, and decided one by one.
+  '/roles/:id/propose': {
+    OPTIONS: preflight,
+    // It takes no body; one sent must be a JSON object.
+    POST: async (req) => {
+      const raw = (await req.text()).trim();
+      if (raw !== '') { let b: unknown = null; try { b = JSON.parse(raw); } catch { /* not JSON */ } if (b === null || typeof b !== 'object' || Array.isArray(b)) return send({ error: NOT_OBJECT }, 400); }
+      const refused = /^\d+$/.test(req.params.id) ? askFor(Number(req.params.id)) : 'That role is no longer in your record.';
+      return refused ? send({ error: refused }, 409) : send({ ok: true });
+    },
+  },
+  '/roles/:id/proposals': {
+    OPTIONS: preflight,
+    GET: (req) => send({ proposals: /^\d+$/.test(req.params.id) ? proposalsOf(Number(req.params.id)) : [] }),
+  },
+  // {keep: true, title?, facts?} keeps it (edited, with the owner's title and facts); {reject: true} says it is not a
+  // project; {result: "use" | "decline"} decides a kept project's suggested result.
+  '/proposals/:id': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      if (!/^\d+$/.test(req.params.id)) return send({ error: 'That suggestion is no longer there.' }, 404);
+      const b = await objectBody(req), id = Number(req.params.id), now = Date.now();
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const d: Decided = b.keep === true ? keepProposal(id, { ...(typeof b.title === 'string' ? { title: b.title } : {}), ...(Array.isArray(b.facts) ? { facts: b.facts } : {}) }, now)
+        : b.reject === true ? rejectProposal(id, now)
+        : b.result === 'use' || b.result === 'decline' ? decideResult(id, b.result === 'use', now)
+        : { ok: false, error: 'Say keep, reject, or what to do with the result.', status: 400 };
+      if (!d.ok) return send({ error: d.error }, d.status);
+      follow();
+      return send({ ok: true, ...(d.project ? { project: String(d.project) } : {}) });
+    },
+  },
+  // A verdict on a line of "How you work" (lib/derived.ts): kept, rejected, or '' to take it back.
+  '/derived/:key': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      let key: string;
+      // Read from the path as sent: Bun's own decoding of the name turns a broken escape into U+FFFD, and decoding its
+      // result again would break a name with a % in it ("cut costs by 20%").
+      try { key = decodeURIComponent(new URL(req.url).pathname.slice('/derived/'.length)); } catch { return send({ error: 'That line’s name could not be read.' }, 400); }
+      const refused = judge(derivedNow(), key, typeof b.verdict === 'string' ? b.verdict : 'none', Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
   // Projects (lib/record.ts): {title, roleId | side | newRole, when or start and end, and the parts}.
   '/projects': {
     OPTIONS: preflight,
@@ -584,15 +647,13 @@ Bun.serve({ hostname, port, routes: {
   // must be sent with it: "month" (YYYY-MM), "line" (one line of text) or "" (nothing).
   '/questions': {
     OPTIONS: preflight,
-    GET: () => { follow(); return send({ questions: openRaised().map((q) => {
-      const actions = (q.data.actions as { field?: string; value?: string }[] | undefined) ?? [];
-      return { key: q.key, kind: q.kind, text: q.text, choices: q.choices, about: q.about, inputs: q.choices.map((_, i) => (actions[i]?.value !== undefined ? '' : actions[i]?.field === 'end' ? 'month' : actions[i]?.field === 'note' ? 'line' : '')) };
-    }) }); },
-    // An answer: the question's key, the number of the choice (from 0), and the value that choice needs, if any.
+    GET: () => { follow(); return send({ questions: openRaised().map((q) => ({ key: q.key, kind: q.kind, text: q.text, choices: q.choices, about: q.about, inputs: inputsOf(q) })) }); },
+    // An answer: the question's key, the number of the choice (from 0), the words of that choice as the person saw them
+    // (`text`; required, and checked against the choice at that place now), and the value that choice needs, if any.
     POST: async (req) => {
       const b = await req.json().catch(() => ({}));
       const kind = raisedByKey(str(b.key))?.kind ?? '';
-      const refused = answer(str(b.key), Number(b.choice), str(b.value), Date.now());
+      const refused = answer(str(b.key), Number(b.choice), str(b.value), Date.now(), typeof b.text === 'string' ? b.text : undefined);
       if (refused) return send({ error: refused }, 400);
       // Only an answer about a skill changes the skills list, so only that one writes Skills lines again.
       const changed = kind === 'skill' ? refreshSkills() : [];
@@ -645,6 +706,14 @@ Bun.serve({ hostname, port, routes: {
     POST: (req) => (!/^\d+$/.test(req.params.id) ? send({ error: 'Say which piece of work, by its number.' }, 400)
       : dismiss(Number(req.params.id), Date.now()) ? send({ ok: true }) : send({ error: 'This work has already been tried again or put away.' }, 404)),
   },
+  // A test server only: stores proposals for a role as the worker would after its model request ({roleId, projects}),
+  // through the same checks, with no model.
+  ...(STUB ? { '/test/proposals': { OPTIONS: preflight, POST: async (req: Request) => {
+    const b = await req.json().catch(() => ({})), roleId = Number(b.roleId);
+    if (!Number.isInteger(roleId) || !db.query('SELECT id FROM roles WHERE id = ?').get(roleId)) return send({ error: 'No such role.' }, 404);
+    const r = requestFor(roleId);
+    return send({ ok: true, stored: storeProposals(roleId, checkProposals({ projects: b.projects }, r.facts, [...r.projects, ...r.rejected]), Date.now()) });
+  } } } : {}),
   // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
   ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
     const b = await req.json().catch(() => ({}));
@@ -655,7 +724,7 @@ Bun.serve({ hostname, port, routes: {
     OPTIONS: preflight,
     // A fact written by hand (or by a test) is the person's own word: confirmed unless it says otherwise. It goes in a
     // project ({projectId}), a role's Day to day ({roleId}), a role made on the spot ({newRole}), or General.
-    POST: async (req) => done(addFact(await req.json().catch(() => ({}))), 201),
+    POST: async (req) => { const d = addFact(await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d, 201); },
   },
   '/facts/:id': {
     OPTIONS: preflight,
@@ -663,8 +732,8 @@ Bun.serve({ hostname, port, routes: {
     GET: (req) => { const f = fullFact(Number(req.params.id)); return f ? send(f) : send({ error: 'That fact is no longer in your record.' }, 404); },
     // The person's own wording for a fact, and where it is filed: a later re-read of its source leaves it alone.
     // text, detail and metric are each their own field: one sent alone changes only itself.
-    PATCH: async (req) => done(patchFact(Number(req.params.id), await req.json().catch(() => ({})))),
-    DELETE: (req) => done(removeFact(Number(req.params.id))),
+    PATCH: async (req) => { const d = patchFact(Number(req.params.id), await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d); },
+    DELETE: (req) => { const d = removeFact(Number(req.params.id)); if (d.ok && d.wrote) follow(); return done(d); },
   },
   '/sources': {
     OPTIONS: preflight,

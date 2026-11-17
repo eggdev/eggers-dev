@@ -4,7 +4,7 @@
 // finished, and what finished since the owner last looked (the digest, announced once).
 //
 // The log follows the status columns the server and the worker already keep (sources.status, jobs.status,
-// jobs.resume_status, jobs.outreach_status, profile.status, talk.status, discovery.status). It is written by
+// jobs.resume_status, jobs.outreach_status, profile.status, talk.status, discovery.status, roles.propose_status). It is written by
 // triggers on those columns, so every place that asks for work, starts it or ends it (a route, the worker, a reset
 // when the worker starts again) is logged the same way, and nothing the worker does changes. Only the stage is
 // written by hand, by the worker, through setStage.
@@ -30,6 +30,7 @@ export const FOLLOW = [
   { kind: 'write-profile', table: 'profile', column: 'status', note: 'note', done: 'done' },
   { kind: 'write-reply', table: 'talk', column: 'status', note: 'note', done: 'done' },
   { kind: 'check-watchlist', table: 'discovery', column: 'status', note: 'note', done: 'idle' },
+  { kind: 'propose-projects', table: 'roles', column: 'propose_status', note: 'propose_note', done: 'done' },
 ] as const;
 export type Kind = (typeof FOLLOW)[number]['kind'];
 const JOB_KINDS = ['read-posting', 'write-resume', 'draft-messages'];
@@ -56,8 +57,9 @@ db.run('INSERT OR IGNORE INTO activity_seen (id) VALUES (1)');
 
 // Now, in milliseconds, as SQLite has it inside a trigger.
 const NOW = "CAST(ROUND((julianday('now') - 2440587.5) * 86400000) AS INTEGER)";
-// What the work is about, from the row that asked for it: a source's title; a job's title at its company.
+// What the work is about, from the row that asked for it: a source's title; a job's title at its company; a role's.
 const titleOf = (table: string, row: 'NEW' | 'OLD') => table === 'sources' ? `${row}.title`
+  : table === 'roles' ? `CASE WHEN ${row}.title != '' THEN ${row}.title || ' at ' || ${row}.company ELSE ${row}.company END`
   : table === 'jobs' ? `CASE WHEN ${row}.title != '' AND ${row}.company != '' THEN ${row}.title || ' at ' || ${row}.company ELSE ${row}.title || ${row}.company END` : "''";
 
 // The statements that move a kind's row when its column takes a new value, in order.
@@ -98,7 +100,7 @@ function follow(now: number) {
         db.run(`CREATE TRIGGER ${name}_insert AFTER INSERT ON ${f.table} WHEN NEW.${f.column} IN ('queued', 'running') BEGIN\n${moves(f)}\nEND`);
     }
     // Work whose subject is deleted is dropped, and a failure about it is put away: there is nothing to try again.
-    for (const [table, kinds] of [['sources', ['read-source']], ['jobs', JOB_KINDS], ['talk', ['write-reply']]] as const) {
+    for (const [table, kinds] of [['sources', ['read-source']], ['jobs', JOB_KINDS], ['talk', ['write-reply']], ['roles', ['propose-projects']]] as const) {
       const of = `kind IN (${kinds.map((k) => `'${k}'`).join(', ')}) AND subject = OLD.id`;
       db.run(`CREATE TRIGGER activity_${table}_delete AFTER DELETE ON ${table} BEGIN
         UPDATE activity SET state = 'dropped', ended_at = ${NOW}, stage = '' WHERE ${of} AND state IN ('waiting', 'running');
@@ -141,7 +143,7 @@ export function markSeen(at: number, now: number): string {
 }
 
 type Row = { id: number; kind: Kind; subject: number; title: string; asked_at: number; started_at: number; stage: string; ended_at: number; state: string; reason: string; result: string; cleared_at: number;
-  jtitle: string | null; jcompany: string | null; jfit: number | null; jstatus: string | null; stitle: string | null; last_ended: number | null; seen: number };
+  jtitle: string | null; jcompany: string | null; jfit: number | null; jstatus: string | null; stitle: string | null; rid: number | null; last_ended: number | null; seen: number };
 // Only a failed row can be retried or dismissed; it is null for any other.
 export const failedRow = (id: number) => db.query("SELECT * FROM activity WHERE id = ? AND state = 'failed' AND cleared_at = 0").get(id) as Row | null;
 export function dismiss(id: number, now: number): boolean {
@@ -165,6 +167,8 @@ export function usual(): Map<string, number> {
 // A job's reference number, as the screens write it: J-023.
 export const jobRef = (id: number) => `J-${String(id).padStart(3, '0')}`;
 const lower = (s: string) => s.replace(/[.!?]\s*$/, '');
+// A line of the digest starts lowercase, as the others do ("no project stood out…").
+const firstLower = (s: string) => (s === '' ? s : `${s[0].toLowerCase()}${s.slice(1)}`);
 
 // One row as the screens show it. ahead: how many pieces are ahead of it in its line while it waits, -1 otherwise.
 // since: how long ago it was asked for (waiting), started (running) or ended (done, failed). took: how long a finished
@@ -196,32 +200,37 @@ export function dueIn(now: number, signature: () => string): number {
 
 // What a row is about in words, and where the owner finds what it made.
 function about(r: Row) {
-  const job = JOB_KINDS.includes(r.kind), ref = job ? jobRef(r.subject) : '';
+  const job = JOB_KINDS.includes(r.kind), ref = job ? jobRef(r.subject) : r.kind === 'propose-projects' ? `R-${String(r.subject).padStart(2, '0')}` : '';
+  const role = `${ref}${r.title ? `, ${r.title}` : ''}`;
   const name = job ? (r.jtitle !== null ? (r.jtitle !== '' && r.jcompany ? `${r.jtitle} at ${r.jcompany}` : r.jtitle || r.jcompany || '') : r.title) : r.kind === 'read-source' ? (r.stitle ?? r.title) : '';
   const named = (s: string) => `${s} ${ref}${name ? `, ${name}` : ''}`;
   const source = name || 'a source';
   const what = { 'read-source': `Reading ${source}`, 'read-posting': named('Reading the posting for'), 'write-resume': named('Writing the resume for'),
-    'draft-messages': named('Drafting messages for'), 'write-profile': 'Writing your profile', 'write-reply': 'Writing a reply in Talk', 'check-watchlist': 'Checking your watchlist' }[r.kind];
-  const gone = (job && r.jtitle === null) || (r.kind === 'read-source' && r.stitle === null);
+    'draft-messages': named('Drafting messages for'), 'write-profile': 'Writing your profile', 'write-reply': 'Writing a reply in Talk', 'check-watchlist': 'Checking your watchlist',
+    'propose-projects': `Suggesting projects for ${role}` }[r.kind];
+  const gone = (job && r.jtitle === null) || (r.kind === 'read-source' && r.stitle === null) || (r.kind === 'propose-projects' && r.rid === null);
   const link = gone ? '' : { 'read-source': `/source/${r.subject}`, 'read-posting': `/job/${r.subject}`, 'write-resume': `/job/${r.subject}${r.state === 'done' ? '/resume' : ''}`,
-    'draft-messages': `/job/${r.subject}`, 'write-profile': '/profile', 'write-reply': '/talk', 'check-watchlist': '/jobs' }[r.kind];
+    'draft-messages': `/job/${r.subject}`, 'write-profile': '/profile', 'write-reply': '/talk', 'check-watchlist': '/jobs', 'propose-projects': `/record/role/${r.subject}` }[r.kind];
   // The digest's words for a finished row: what it made, or that it failed.
   const line = r.state === 'done'
     ? { 'read-source': `${source} was read`, 'read-posting': `the posting for ${ref} was read`, 'write-resume': `the resume for ${ref} is ready`, 'draft-messages': `messages for ${ref} are drafted`,
-      'write-profile': 'your profile is written', 'write-reply': 'a reply is waiting in Talk', 'check-watchlist': r.result ? `the watchlist was checked: ${lower(r.result)}` : 'the watchlist was checked' }[r.kind]
+      'write-profile': 'your profile is written', 'write-reply': 'a reply is waiting in Talk', 'check-watchlist': r.result ? `the watchlist was checked: ${lower(r.result)}` : 'the watchlist was checked',
+      'propose-projects': r.result ? `${firstLower(lower(r.result))} for ${ref}` : `projects are suggested for ${ref}` }[r.kind]
     : { 'read-source': `reading ${source} failed`, 'read-posting': `reading the posting for ${ref} failed`, 'write-resume': `the resume for ${ref} couldn’t be written`, 'draft-messages': `messages for ${ref} couldn’t be drafted`,
-      'write-profile': 'your profile couldn’t be written', 'write-reply': 'no reply was written in Talk', 'check-watchlist': 'the watchlist check failed' }[r.kind];
+      'write-profile': 'your profile couldn’t be written', 'write-reply': 'no reply was written in Talk', 'check-watchlist': 'the watchlist check failed',
+      'propose-projects': `projects couldn’t be suggested for ${ref}` }[r.kind];
   return { ref, what, link, line };
 }
 
 // GET /activity: one query for the rows in view, one for the usual durations. busy is true while anything waits or
 // runs that the worker will take (a resume waits behind its posting's reading, so that alone is not work in hand).
 export function activity(now: number, signature: () => string = () => ''): Activity {
-  const rows = db.query(`SELECT a.*, j.title AS jtitle, j.company AS jcompany, j.fit AS jfit, j.status AS jstatus, s.title AS stitle,
+  const rows = db.query(`SELECT a.*, j.title AS jtitle, j.company AS jcompany, j.fit AS jfit, j.status AS jstatus, s.title AS stitle, ro.id AS rid,
       (SELECT at FROM activity_seen WHERE id = 1) AS seen
     FROM activity a
     LEFT JOIN jobs j ON a.kind IN ('read-posting', 'write-resume', 'draft-messages') AND j.id = a.subject
     LEFT JOIN sources s ON a.kind = 'read-source' AND s.id = a.subject
+    LEFT JOIN roles ro ON a.kind = 'propose-projects' AND ro.id = a.subject
     WHERE a.state IN ('waiting', 'running') OR (a.state = 'failed' AND a.cleared_at = 0)
       OR a.id IN (SELECT id FROM activity WHERE state = 'done' AND by_hand = 0 ORDER BY ended_at DESC LIMIT 20)
       OR a.id IN (SELECT id FROM activity WHERE state IN ('done', 'failed') AND by_hand = 0 AND ended_at > (SELECT at FROM activity_seen WHERE id = 1) ORDER BY ended_at DESC LIMIT 20)`).all() as Row[];

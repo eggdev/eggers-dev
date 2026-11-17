@@ -11,12 +11,14 @@ import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
 import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
+import { syncRecordQuestions } from './lib/gaps.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
 import { holdSince, rewriteDue } from './lib/raised.ts';
 import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
 import { draft } from './lib/outreach.ts';
+import { runQueued } from './lib/propose.ts';
 // The log of slow work follows the status columns by itself; the worker adds only where a piece has got to.
 import { setStage } from './lib/activity.ts';
 
@@ -32,7 +34,18 @@ if (positions().length === 0) {
   if (old) console.log(`kept ${storePositions(old.body, old.id, Date.now())} LinkedIn positions from an export read earlier`);
 }
 // The questions code raises (job dates, LinkedIn differences, skills) and the flags that read them, as the bank now stands.
-try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); }
+// Each step runs on its own: one that fails does not keep the others from running.
+function checkQuestions(indent: string): void {
+  const steps: [string, () => unknown][] = [
+    ['questions', () => syncQuestions(Date.now())],
+    ['the record’s questions', () => syncRecordQuestions(Date.now())],
+    ['flags', () => reflagOpen()],
+  ];
+  for (const [name, run] of steps) {
+    try { run(); } catch (e) { console.log(`${indent}${name} could not be checked: ${(e as Error).message}`); }
+  }
+}
+checkQuestions('');
 
 // The watchlist is checked when asked, and by itself once a day.
 const DAY = 86_400_000;
@@ -154,6 +167,11 @@ void (async () => {
     catch (e) { db.query("UPDATE talk SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, turn.id); console.log(`talk: failed: ${(e as Error).message}`); }
   }
 })();
+// Projects suggested for a role are asked for beside everything else too: one request each, while the owner waits on the role.
+db.run("UPDATE roles SET propose_status = 'queued', propose_note = '' WHERE propose_status = 'running'");
+void (async () => {
+  for (;;) if (!(await runQueued(inData('inbox')))) await Bun.sleep(1000);
+})();
 // Outreach drafts are written beside everything else too: they are short, and asked for while the person is looking at the job.
 db.run("UPDATE jobs SET outreach_status = 'queued' WHERE outreach_status = 'running'");
 void (async () => {
@@ -201,7 +219,7 @@ for (;;) {
     if (n > 0) db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
     console.log(`  ${n} facts added`);
     // New roles, dates or skills can raise or settle a question for the person.
-    try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`  questions could not be checked: ${(e as Error).message}`); }
+    checkQuestions('  ');
   } catch (e) {
     db.query("UPDATE sources SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, source.id);
     console.log(`  failed: ${(e as Error).message}`);

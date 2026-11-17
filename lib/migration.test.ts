@@ -81,12 +81,20 @@ const { db, bankSignature } = await import('${lib}/db.ts');
 await import('${lib}/projects.ts');
 const { dueIn } = await import('${lib}/activity.ts');
 const { readTree } = await import('${lib}/record.ts');
+// Stage 2: what the server does after a change: the record's questions are raised; the queue is read.
+const { syncRecordQuestions } = await import('${lib}/gaps.ts');
+await import('${lib}/derived.ts'); await import('${lib}/propose.ts');
+const { queue } = await import('${lib}/queue.ts');
+syncRecordQuestions(Date.now());
+const home = queue(Date.now());
 const t = readTree();
 console.log(JSON.stringify({ sig: bankSignature(), due: dueIn(Date.now(), bankSignature),
   roles: db.query('SELECT id, company, title, start, end, location, summary, standing, reach, part_of FROM roles ORDER BY id').all(),
   facts: db.query('SELECT ${OLD_FACT_COLUMNS} FROM facts ORDER BY id').all(),
   jobs: db.query('SELECT id, resume, resume_status, bank_sig, edited FROM jobs ORDER BY id').all(),
   profile: db.query('SELECT status FROM profile').get(), activity: db.query('SELECT count(*) AS n FROM activity').get(),
+  proposals: db.query('SELECT count(*) AS n FROM project_proposals').get(), verdicts: db.query('SELECT count(*) AS n FROM derived_lines').get(),
+  record: db.query("SELECT key FROM raised_questions WHERE kind = 'record' ORDER BY key").all().map((r) => r.key), home: home.items.filter((i) => i.kind === 'record').length,
   projects: db.query('SELECT id, via_role, role_id, title FROM projects ORDER BY id').all(),
   tree: { roles: t.roles.map((r) => r.ref), projects: t.projects.map((p) => [p.ref, p.place, p.roleId, p.title]), facts: t.facts.map((f) => [f.ref, f.roleId, f.projectId]) } }));
 `;
@@ -104,6 +112,12 @@ test('the first start of the tree gives each project-like row one project, and c
     expect(got.jobs.map((j: { resume_status: string }) => j.resume_status)).toEqual(['done']);
     expect(got.profile).toEqual({ status: 'none' });
     expect(got.activity).toEqual({ n: 0 });
+    // Stage 2: its tables are there and empty; the record's questions are raised (a question is no work), the
+    // repository nobody placed among them, and Home shows them.
+    expect(got.proposals).toEqual({ n: 0 });
+    expect(got.verdicts).toEqual({ n: 0 });
+    expect(got.record).toContain('record:place:5');
+    expect(got.home).toBe(got.record.length);
     // One carried project for each of the three rows, and no second one on the second start.
     expect(got.projects).toEqual([{ id: 1, via_role: 3, role_id: null, title: '' }, { id: 2, via_role: 4, role_id: null, title: '' }, { id: 3, via_role: 5, role_id: null, title: '' }]);
   }

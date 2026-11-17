@@ -15,7 +15,7 @@ use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, Fa
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
 use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
-use Tree, FactFull, Made, ExpState, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
+use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
@@ -249,6 +249,15 @@ component App
   state justWord = "Just added"
   // The last role line was refused for saying "at" twice: the add-role form asks for the title and employer apart.
   state roleSplit = false
+  // Stage 2 (record.contract's ExpState says what each is).
+  state showQuestions = false
+  state derivedFilter = ""
+  state lastRejected = ""
+  state editingProposal = ""
+  state proposalOn = ""
+  state roleAsked = ""
+  // An empty list of fact ids, typed, for a decision that names none.
+  state noIds: string[] = []
   state shownAll: string[] = []
   state factSort = "ref"
   state factDesc = false
@@ -281,6 +290,9 @@ component App
   derive openKey = onExperience ? openOfRoute(topName, top(nav).params.id) : ""
   derive openFactId = keyKind(openKey) == "fact" ? keyId(openKey) : ""
   resource factFull = loadFact(openFactId) when openFactId != "" as shape FactFull else empty()
+  // The suggested projects of the role open, while one is.
+  derive openRoleId = keyKind(openKey) == "role" ? keyId(openKey) : ""
+  resource proposals = loadProposals(openRoleId) when openRoleId != "" as shape Proposals else empty()
   resource lib = loadSources() when sourcesShown as shape SourceList else empty()
   resource inbox = loadInbox() when topName == "add" as shape Inbox else empty()
   resource profile = loadProfile() when topName == "profile" as shape Profile else empty()
@@ -320,6 +332,10 @@ component App
   // A role, project or fact added by hand; one edited, moved or deleted.
   mutation made as shape Made refreshes tree, profile, activity then afterMade
   mutation changed as shape Made refreshes tree, factFull, overlaps, profile, activity then afterChanged
+  // Asking for suggested projects; deciding one; a verdict on a line of "How you work".
+  mutation proposeAsked as shape Reply refreshes tree, activity
+  mutation decided as shape Made refreshes proposals, tree, homeList, activity then afterDecided
+  mutation judged as shape Reply refreshes tree
   mutation added as shape Reply refreshes lib, inbox, hub, activity then afterAdd
   mutation reread as shape Reply refreshes lib, activity
   mutation jobAdded as shape Reply refreshes jobs, activity then afterJobAdd
@@ -393,8 +409,12 @@ component App
   derive madeKey = match made { case some(r) => (r.ok ? `${r.kind}:${r.id}` : ""), case none => "" }
   derive changeError = pending(changed) ? "" : match changed { case some(r) => r.error, case none => "" }
   derive changeOk = match changed { case some(r) => r.ok, case none => false }
+  derive proposeError = pending(proposeAsked) ? "" : match proposeAsked { case some(r) => r.error, case none => "" }
+  derive decideError = pending(decided) ? "" : match decided { case some(r) => r.error, case none => "" }
   derive expView = viewOfRoute(topName)
-  derive expState = ExpState(view=expView, open=openKey, just=just, justWord=justWord, q=bankQuery, adding=adding, editing=editing, deleting=deleting, shownAll=shownAll, madeError=madeError, madeSplit=roleSplit, changeError=changeError, changeOn=changeOn, busy=(pending(made) or pending(changed)), wide=wide, beside=(viewport.width >= lookBeside()), projectsOf=projectsFilter, sortKey=factSort, sortDesc=factDesc)
+  derive expState = ExpState(view=expView, open=openKey, just=just, justWord=justWord, q=bankQuery, adding=adding, editing=editing, deleting=deleting, shownAll=shownAll, madeError=madeError, madeSplit=roleSplit, changeError=changeError, changeOn=changeOn, busy=(pending(made) or pending(changed)), wide=wide, beside=(viewport.width >= lookBeside()), projectsOf=projectsFilter, sortKey=factSort, sortDesc=factDesc,
+    showQuestions=showQuestions, derivedFilter=derivedFilter, lastRejected=lastRejected, editingProposal=editingProposal, proposalOn=proposalOn, proposalError=decideError,
+    proposeError=(roleAsked == openRoleId ? proposeError : ""), work=activity.items, proposals=proposals)
   derive addError = match added { case some(r) => r.error, case none => "" }
   derive rereadError = pending(reread) ? "" : match reread { case some(r) => r.error, case none => "" }
   derive removeSourceError = pending(removedSource) ? "" : match removedSource { case some(r) => r.error, case none => "" }
@@ -916,6 +936,44 @@ component App
     lastChange = "delete"
     leaveTo = match first(chainOf(tree, key)) { case some(k) => hrefOf(expView, k), case none => viewHref(expView) }
     send changed = removeItem(keyKind(key), keyId(key))
+  // ---------- Stage 2 ----------
+  action toggleQuestions
+    showQuestions = not showQuestions
+  // Only the items behind a line of "How you work" are listed, until Show everything.
+  action showDerived(key: string)
+    just = ""
+    derivedFilter = key
+  action clearDerived
+    derivedFilter = ""
+  // Keep, Not true, or '' to take a verdict back. A line said not to be true can be undone from where it was.
+  action judgeLine(key: string, verdict: string)
+    lastRejected = verdict == "rejected" ? key : ""
+    derivedFilter = verdict == "rejected" and derivedFilter == key ? "" : derivedFilter
+    send judged = judgeLine(key, verdict)
+  action askProposals(roleId: string)
+    roleAsked = roleId
+    send proposeAsked = askProposals(roleId)
+  action keepProposal(id: string)
+    proposalOn = id
+    send decided = decideProposal(id, "keep", "", noIds, false)
+  action editProposal(id: string)
+    proposalOn = ""
+    editingProposal = id
+  action cancelProposal
+    editingProposal = ""
+  action keepEdited(id: string, title: string, facts: string[])
+    proposalOn = id
+    send decided = decideProposal(id, "keep", title.trim(), facts, true)
+  action rejectProposal(id: string)
+    proposalOn = id
+    send decided = decideProposal(id, "reject", "", noIds, false)
+  // A kept suggestion's result: used as the project's Result, or left out.
+  action decideResult(id: string, how: string)
+    proposalOn = id
+    send decided = decideProposal(id, how, "", noIds, false)
+  action afterDecided
+    if decideError == ""
+      editingProposal = ""
   action afterChanged
     if changeOk and lastChange == "edit"
       editing = ""
@@ -1033,7 +1091,7 @@ component App
               // testIds and its scrollers' ids are never on the page twice.
               if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
                 column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
-                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll)
+                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine)
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0

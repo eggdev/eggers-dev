@@ -1120,3 +1120,123 @@ test "on a wide window an item opens beside the list, and a reload lands on the 
   tap "pane-close"
   clock settle
   expect text "pane-none" == "Open a role, a project or a fact on the left. It opens here, and the list stays."
+
+// Stage 2. From here the record holds roles R-01 to R-06 (R-05 is the side project's own row) and facts up to F-0007.
+test "the record's questions are listed in Experience, each leading to its item, and one is answered on Home"
+  request POST "/roles" {"title": "Staff Engineer", "company": "Brightwater Health"}
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  expect tree has "questions-line"
+  tap "questions-toggle"
+  expect tree has "questions-list"
+  expect text "questions-toggle" == "Hide them"
+  tap "nav-home"
+  clock settle
+  clock data
+  tap "home-item-record:start:7"
+  expect text "home-focus-text" == "When did you start as Staff Engineer at Brightwater Health?"
+  expect text "home-focus-from" == "From what your record is missing"
+  tap "home-choice-0"
+  type "home-value" "2019-04"
+  tap "home-save"
+  clock +8000
+  clock data
+  expect tree missing "home-item-record:start:7"
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "role-7"
+  clock settle
+  clock data
+  expect text "official-start" == "Apr 2019"
+
+test "a line of How you work is kept, its verdict undone, said not to be true, and that undone too"
+  size 1280x800
+  request POST "/facts" {"roleId": 2, "text": "Hired 4 engineers for the platform team."}
+  request POST "/facts" {"roleId": 3, "text": "Managed a team of 6 support engineers."}
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  expect text "derived-0-text" == "Your record shows you managing, hiring or growing a team in 2 of 6 roles."
+  expect text "derived-0-basis" == "Counted from 2 facts about managing, hiring or the size of a team."
+  tap "derived-0-show"
+  expect text "bank-filter" == "Showing the items behind “Your record shows you managing, hiring or growing a team in 2 of 6 roles”"
+  expect tree has "role-2"
+  expect tree missing "role-4"
+  tap "bank-filter-clear"
+  expect tree has "role-4"
+  tap "derived-0-keep"
+  clock data
+  expect text "derived-0-kept" == "You kept this line."
+  tap "derived-0-undo"
+  clock data
+  expect tree has "derived-0-keep"
+  tap "derived-0-reject"
+  clock data
+  expect tree missing "derived-0"
+  expect text "derived-removed" == "Line removed."
+  tap "derived-removed-undo"
+  clock data
+  expect tree has "derived-0-keep"
+
+test "projects are suggested for a role on request; one is kept, one edited then kept with its result, and one is not a project"
+  size 1280x800
+  request POST "/facts" {"roleId": 4, "text": "Wrote the platform team's on-call guide."}
+  request POST "/facts" {"roleId": 4, "text": "Cut the cloud bill by 31%."}
+  request POST "/facts" {"roleId": 4, "text": "Interviewed 40 platform candidates."}
+  request POST "/facts" {"roleId": 4, "text": "Hired 3 platform engineers."}
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "role-4"
+  clock settle
+  clock data
+  expect text "suggest" == "Suggest projects"
+  tap "suggest"
+  clock data
+  expect text "suggestions-work-status" == "Waiting"
+  request POST "/test/work" {"kind": "propose-projects", "id": 4, "to": "running", "stage": "Grouping the facts into projects"}
+  request POST "/test/proposals" {"roleId": 4, "projects": [{"title": "Platform reviews", "facts": ["fact:7", "fact:10"], "result": ""}, {"title": "Cloud move", "facts": ["fact:6", "fact:11"], "result": "fact:6"}, {"title": "Hiring round", "facts": ["fact:12", "fact:13"], "result": ""}, {"title": "Invented", "facts": ["fact:9999", "fact:7"], "result": ""}]}
+  request POST "/test/work" {"kind": "propose-projects", "id": 4, "to": "done", "note": "3 projects suggested"}
+  reload
+  clock data
+  clock settle
+  expect text "proposal-1-title" == "Platform reviews"
+  expect text "proposal-2-result" == "What came of it, if you agree: F-0006, Moved 40 services in two quarters."
+  expect tree missing "proposal-4"
+  tap "nav-home"
+  clock settle
+  clock data
+  expect tree has "home-item-proposals:4"
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "proposal-1-keep"
+  clock data
+  clock settle
+  expect tree missing "proposal-1"
+  expect text "in-project-4" == "Platform reviews"
+  tap "proposal-2-edit"
+  type "proposal-title" "Moved to one cloud"
+  tap "proposal-fact-11"
+  tap "proposal-save"
+  clock data
+  clock settle
+  expect text "in-project-5" == "Moved to one cloud"
+  tap "proposal-3-reject"
+  clock data
+  clock settle
+  expect tree missing "proposal-3"
+  tap "in-project-5"
+  clock settle
+  clock data
+  expect text "suggested-result-text" == "Moved 40 services in two quarters."
+  tap "suggested-result-use"
+  clock data
+  clock settle
+  expect text "part-result" == "Moved 40 services in two quarters."
+  expect tree missing "suggested-result"

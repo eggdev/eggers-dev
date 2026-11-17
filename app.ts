@@ -158,16 +158,32 @@ const SEVERITY = ['high', 'warn', 'info'];
 const sources: Sources = {
   // The record as one tree (GET /tree): every role, project and fact with its reference.
   loadTree: async (): Promise<Result<'loadTree'>> => {
-    const t = (await get('/tree')) as { roles?: unknown; projects?: unknown; facts?: unknown };
+    const t = (await get('/tree')) as { roles?: unknown; projects?: unknown; facts?: unknown; questions?: unknown; derived?: unknown };
     return {
       loaded: true,
       roles: rows(t.roles).map((r) => { const m = obj(r.marks) ?? {}; return { id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end), location: text(r.location),
-        employment: text(r.employment), reach: text(r.reach), markCompany: text(m.company), markTitle: text(m.title), markStart: text(m.start), markEnd: text(m.end), markType: text(m.type), markLocation: text(m.location) }; }),
+        employment: text(r.employment), reach: text(r.reach), markCompany: text(m.company), markTitle: text(m.title), markStart: text(m.start), markEnd: text(m.end), markType: text(m.type), markLocation: text(m.location),
+        proposeStatus: text(r.proposeStatus), proposeNote: text(r.proposeNote) }; }),
       projects: rows(t.projects).map((p) => ({ id: text(p.id), ref: text(p.ref), roleId: text(p.roleId), place: text(p.place), carried: p.carried === true, title: text(p.title), start: text(p.start), end: text(p.end),
-        lives: text(p.lives), situation: text(p.situation), did: text(p.did), result: text(p.result), learned: text(p.learned) })),
+        lives: text(p.lives), situation: text(p.situation), did: text(p.did), result: text(p.result), learned: text(p.learned),
+        suggestedResult: text(p.suggestedResult), suggestedFact: text(p.suggestedFact), proposal: text(p.proposal) })),
       facts: rows(t.facts).map((f) => ({ id: text(f.id), ref: text(f.ref), roleId: text(f.roleId), projectId: text(f.projectId), text: text(f.text), metric: text(f.metric), kind: text(f.kind) })),
+      questions: rows(t.questions ?? []).map((q) => ({ key: text(q.key), text: text(q.text), route: text(q.route) })),
+      derived: rows(t.derived ?? []).map((l) => ({ key: text(l.key), text: text(l.text), basis: text(l.basis), items: rows(l.items ?? []).map((x) => text(x)), verdict: text(l.verdict) })),
     };
   },
+  // The suggested projects of one role, while it is open.
+  loadProposals: async ([role]): Promise<Result<'loadProposals'>> => {
+    if (role === '') return { loaded: false, role: '', items: [] };
+    const b = (await get(`/roles/${id(role)}/proposals`)) as { proposals?: unknown };
+    return { loaded: true, role, items: rows(b.proposals ?? []).map((p) => ({ id: text(p.id), title: text(p.title), result: text(p.result), status: text(p.status), staleNote: text(p.staleNote),
+      facts: rows(p.facts ?? []).map((f) => ({ id: text(f.id), ref: text(f.ref), text: text(f.text) })) })) };
+  },
+  askProposals: ([role]) => write('POST', `/roles/${id(role)}/propose`),
+  // how: keep (as suggested, or edited: its title and facts), reject, use or decline (a kept project's suggested result).
+  decideProposal: ([proposal, how, title, facts, edited]) =>
+    made('POST', `/proposals/${id(proposal)}`, how === 'keep' ? { keep: true, ...(edited ? { title, facts } : {}) } : how === 'reject' ? { reject: true } : { result: how }),
+  judgeLine: ([key, verdict]) => write('POST', `/derived/${id(key)}`, { verdict }),
   // One fact whole, while it is open.
   loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
     const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '', source: '', added: '', edited: false };
@@ -301,7 +317,8 @@ const sources: Sources = {
       items: rows(q.items).map((i) => ({ key: text(i.key), kind: text(i.kind), text: text(i.text), from: text(i.from), blocks: text(i.blocks),
         choices: rows(i.choices ?? []).map((c) => text(c)), inputs: rows(i.inputs ?? []).map((c) => text(c)), route: text(i.route) })) };
   },
-  answerQuestion: async ([key, choice, value]): Promise<Result<'answerQuestion'>> => ({ ...(await write('POST', '/questions', { key, choice, value })), key }),
+  // With the place of the choice, the words the owner saw: an answer is refused when those words are no longer that choice.
+  answerQuestion: async ([key, choice, text, value]): Promise<Result<'answerQuestion'>> => ({ ...(await write('POST', '/questions', { key, choice, text, value })), key }),
   snoozeQueueItem: async ([key]): Promise<Result<'snoozeQueueItem'>> => ({ ...(await write('POST', '/queue/snooze', { key })), key }),
   sendTalk: ([body]) => write('POST', '/talk', { body }),
   askTalk: ([question]) => write('POST', '/talk', { question }),

@@ -22,19 +22,32 @@ const shape = (r: Row): Raised => ({ key: r.key, kind: r.kind, text: r.text, cho
 
 // Brings one kind's questions in step with what was just found. New findings are added. An open question
 // takes the finding's current wording. Questions whose finding is gone stop being live. Answered ones are left alone.
+// Only what differs is written: a sync that finds nothing new makes no write and takes no write lock (each write would
+// look like a change to the backup keeper). When it must write, it takes the lock first (immediate), since the server
+// and the worker sync at the same moments.
 export function raise(kind: string, found: Finding[], now: number): void {
+  const rows = new Map((db.query('SELECT * FROM raised_questions WHERE kind = ?').all(kind) as Row[]).map((r) => [r.key, r]));
+  const keys = new Set(found.map((f) => f.key));
+  const args = (f: Finding) => [f.text, JSON.stringify(f.choices ?? []), f.about ?? '', JSON.stringify(f.data ?? {})] as const;
+  const flips = [...rows.values()].filter((r) => r.live !== (keys.has(r.key) ? 1 : 0));
+  const added = found.filter((f) => !rows.has(f.key));
+  const reworded = found.filter((f) => { const r = rows.get(f.key), a = args(f); return r !== undefined && r.answered_at === 0 && (r.text !== a[0] || r.choices !== a[1] || r.about !== a[2] || r.data !== a[3]); });
+  if (flips.length + added.length + reworded.length === 0) return;
   db.transaction(() => {
-    const keys = new Set(found.map((f) => f.key));
-    for (const r of db.query('SELECT key FROM raised_questions WHERE kind = ?').all(kind) as { key: string }[]) {
-      db.query('UPDATE raised_questions SET live = ? WHERE key = ?').run(keys.has(r.key) ? 1 : 0, r.key);
-    }
-    for (const f of found) {
-      const args = [f.text, JSON.stringify(f.choices ?? []), f.about ?? '', JSON.stringify(f.data ?? {})];
-      db.query('INSERT OR IGNORE INTO raised_questions (key, kind, text, choices, about, data, raised_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(f.key, kind, ...args, now);
-      db.query('UPDATE raised_questions SET text = ?, choices = ?, about = ?, data = ? WHERE key = ? AND answered_at = 0').run(...args, f.key);
-    }
-  })();
+    for (const r of flips) db.query('UPDATE raised_questions SET live = ? WHERE key = ?').run(keys.has(r.key) ? 1 : 0, r.key);
+    for (const f of added) db.query('INSERT OR IGNORE INTO raised_questions (key, kind, text, choices, about, data, raised_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(f.key, kind, ...args(f), now);
+    for (const f of reworded) db.query('UPDATE raised_questions SET text = ?, choices = ?, about = ?, data = ? WHERE key = ? AND answered_at = 0').run(...args(f), f.key);
+  }).immediate();
 }
+
+// What each choice needs beside the tap: "month" (YYYY-MM), "line" (one line of text) or "" (nothing). A kind states
+// it as data.actions[i].input; the timeline's answers say it by what they write (an end date, a note), as before.
+export function inputsOf(q: Raised): string[] {
+  const actions = (q.data.actions as { field?: string; value?: string; input?: string }[] | undefined) ?? [];
+  return q.choices.map((_, i) => actions[i]?.input ?? (actions[i]?.value !== undefined ? '' : actions[i]?.field === 'end' ? 'month' : actions[i]?.field === 'note' ? 'line' : ''));
+}
+// Where a question with no choice to tap is settled: data.route when its kind gives one, else the record.
+export const routeOf = (q: Raised): string => (q.choices.length > 0 ? '' : typeof q.data.route === 'string' && q.data.route !== '' ? q.data.route : '/record');
 
 // The questions still waiting for the person, oldest first.
 export const openRaised = (): Raised[] => (db.query('SELECT * FROM raised_questions WHERE live = 1 AND answered_at = 0 ORDER BY raised_at, key').all() as Row[]).map(shape);
@@ -66,14 +79,26 @@ type Applier = (q: Raised, choice: number, value: string, now: number) => string
 const appliers = new Map<string, Applier>();
 export const onAnswer = (kind: string, apply: Applier) => { appliers.set(kind, apply); };
 
+// The words of a question's choice as it stands now ('' past its last): what a screen shows, and sends back with
+// the choice's place so the answer is checked against it.
+export const choiceAt = (key: string, choice: number): string => raisedByKey(key)?.choices[choice] ?? '';
+export const CHANGED = 'This question changed. Look at it again.';
+
 // Records the person's answer and does what it asks. Returns '' when done, else why not (nothing is then recorded).
-export function answer(key: string, choice: number, value: string, now: number): string {
+// `said` is the words of the choice the person saw. A question's choices are found again on every sync and can change
+// (a role added, two roles' order); an answer is taken only when those words are still the choice at that place, so
+// a tap can never land on another choice. An answer that does not say them is refused too.
+export function answer(key: string, choice: number, value: string, now: number, said?: string): string {
   const q = raisedByKey(key);
   if (!q || !q.live) return 'That question is no longer open.';
   // An answer is applied once. A second one would run its action again.
   if (q.answeredAt > 0) return 'That question is already answered.';
+  // A question with no choices is settled where it leads (it closes when what it asks about is done), not here.
+  if (q.choices.length === 0) return 'This question has no answer to give here. It closes once what it asks about is done.';
   if (value.length > MAX_VALUE || /[\r\n]/.test(value)) return `Keep what you write to one line of at most ${MAX_VALUE} characters.`;
-  if (q.choices.length > 0 && !(Number.isInteger(choice) && choice >= 0 && choice < q.choices.length)) return 'Choose one of the listed answers.';
+  if (!(Number.isInteger(choice) && choice >= 0 && choice < q.choices.length)) return 'Choose one of the listed answers.';
+  if (typeof said !== 'string') return 'Say which answer you chose, in its words.';
+  if (q.choices[choice] !== said) return CHANGED;
   const refused = appliers.get(q.kind)?.(q, choice, value, now) ?? '';
   if (refused) return refused;
   db.query('UPDATE raised_questions SET answered_at = ?, answer = ? WHERE key = ?').run(now, [q.choices[choice] ?? '', value].filter(Boolean).join(': '), key);

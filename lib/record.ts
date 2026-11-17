@@ -6,6 +6,11 @@
 import { db, deleteFact, KINDS, nextId } from './db.ts';
 import { employmentFields, employmentOf, factRef, marksOf, levelOf, placeOf, projectRef, roleRef, tree, type Employment, type FactLean, type ProjectRow, type TreeRoleRow } from './tree.ts';
 import { syncProjects } from './projects.ts';
+import { howYouWork, shownLines, verdicts, type DerivedInput } from './derived.ts';
+import { inventory } from './metrics.ts';
+import { suggestedResults } from './propose.ts';
+import { openRaised } from './raised.ts';
+import { allSkills } from './skills.ts';
 
 type Body = Record<string, unknown>;
 // wrote: false when the request changed nothing (a Save with no change), so no time of a hand write is kept for it.
@@ -25,7 +30,9 @@ const done = (kind: 'role' | 'project' | 'fact', id: number, ref: string, wrote:
 export const handWrote = (now: number) => db.query('UPDATE record_written SET at = max(at, ?) WHERE id = 1').run(now);
 // A title, an employer or a project's name: one line of at most 200 characters. The owner's text is never cut.
 export const MAX_NAME = 200;
-const nameRefused = (v: string, what: string): Done | null => (v.includes('\n') || v.length > MAX_NAME ? refuse(`Keep the ${what} to one line of at most ${MAX_NAME} characters.`) : null);
+// One line: no control or format character (a tab, a zero-width space) and no line or paragraph separator.
+const NOT_ONE_LINE = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+const nameRefused = (v: string, what: string): Done | null => (NOT_ONE_LINE.test(v) || v.length > MAX_NAME ? refuse(`Keep the ${what} to one line of at most ${MAX_NAME} characters.`) : null);
 
 export const FIRST_LINE = 'Write the first line. Everything else can wait.';
 export const ROLE_LINE = 'Write the role as title at employer, such as Director of Engineering at Harborlight Systems.';
@@ -93,10 +100,34 @@ export function readTree() {
   // A row the worker or another writer added since is given its project first.
   syncProjects();
   const facts = db.query('SELECT id, role_id, project_id, text, metric, kind FROM facts ORDER BY id').all() as FactLean[];
-  const t = tree(rolesNow(), projectsNow(), facts);
-  return { ...t, questions: [] as unknown[], derived: [] as unknown[],
+  const rows = rolesNow(), t0 = tree(rows, projectsNow(), facts);
+  // Each role's request for suggested projects, and a kept project's suggested result (lib/propose.ts).
+  const asked = new Map(rows.map((r) => [String(r.id), { proposeStatus: (r as { propose_status?: string }).propose_status ?? '', proposeNote: (r as { propose_note?: string }).propose_note ?? '' }]));
+  const suggested = suggestedResults();
+  const t = { roles: t0.roles.map((r) => ({ ...r, ...(asked.get(r.id) ?? { proposeStatus: '', proposeNote: '' }) })),
+    projects: t0.projects.map((p) => { const s = suggested.get(Number(p.id)); return { ...p, suggestedResult: s ? s.text : '', suggestedFact: s ? factRef(s.fact) : '', proposal: s ? String(s.proposal) : '' }; }),
+    facts: t0.facts };
+  // The record's open questions (lib/gaps.ts), each with where its item is, in Home's order.
+  const questions = openRaised().filter((q) => q.kind === 'record').sort((a, b) => Number(a.data.rank ?? 0) - Number(b.data.rank ?? 0))
+    .map((q) => ({ key: q.key, text: q.text, route: typeof q.data.route === 'string' ? q.data.route : '/record' }));
+  const derived = shownLines(howYouWork(derivedInput(t0)), verdicts());
+  return { ...t, questions, derived,
     counts: { roles: t.roles.length, projects: t.projects.filter((p) => p.place === 'role').length, sides: t.projects.filter((p) => p.place === 'side').length,
       unplaced: t.projects.filter((p) => p.place === 'unplaced').length, facts: t.facts.length } };
+}
+
+// What "How you work" counts from (lib/derived.ts): the tree, each fact's skills, the metrics inventory, the skills list.
+export function derivedInput(t: { roles: { id: string }[]; projects: { id: string; learned: string }[]; facts: { id: string; roleId: string; projectId: string; text: string; metric: string }[] }): DerivedInput {
+  const skills = new Map((db.query('SELECT id, skills FROM facts').all() as { id: number; skills: string }[]).map((f) => [String(f.id), f.skills]));
+  const metrics = inventory(db.query("SELECT id, role_id, metric FROM facts WHERE metric != ''").all() as { id: number; role_id: number | null; metric: string }[]);
+  return { roles: t.roles, projects: t.projects, facts: t.facts.map((f) => ({ ...f, skills: skills.get(f.id) ?? '' })), metrics: metrics.map((m) => ({ fact: String(m.fact), kind: m.kind })),
+    skills: allSkills().map((s) => ({ name: s.name, kind: s.kind, mark: s.mark })) };
+}
+
+// The lines of "How you work" that hold for the record as it is now, for a verdict to be checked against.
+export function derivedNow() {
+  const facts = db.query('SELECT id, role_id, project_id, text, metric, kind FROM facts ORDER BY id').all() as FactLean[];
+  return howYouWork(derivedInput(tree(rolesNow(), projectsNow(), facts)));
 }
 
 const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -211,6 +242,7 @@ export function deleteRole(id: number, now = Date.now()): Done {
   db.transaction(() => {
     for (const f of db.query('SELECT id FROM facts WHERE role_id = ?').all(id) as { id: number }[]) deleteFact(f.id, now);
     db.query('DELETE FROM projects WHERE role_id = ? AND via_role IS NULL').run(id);
+    db.query('DELETE FROM project_proposals WHERE role_id = ?').run(id);
     db.query('UPDATE roles SET part_of = NULL WHERE part_of = ?').run(id);
     db.query('DELETE FROM roles WHERE id = ?').run(id);
   })();

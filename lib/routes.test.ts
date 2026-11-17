@@ -66,22 +66,28 @@ test('Home’s list puts the raised question first with what it blocks, and a sn
   expect(back.body.items[0].key).toBe(KEY);
 });
 
+// The words of a choice as the screen shows it now, which every answer sends with the choice's place.
+const said = async (key: string, choice: number) => ((await call('GET', '/questions')).body.questions.find((x: { key: string }) => x.key === key)?.choices ?? [])[choice];
+
 test('an answer that cannot be applied is refused, and the question stays open', async () => {
-  expect(await call('POST', '/questions', { key: KEY, choice: 0, value: 'soon' })).toMatchObject({ status: 400, body: { error: 'Give the end date as a year and a month, like 2023-06.' } });
-  expect(await call('POST', '/questions', { key: KEY, choice: 0, value: '2019-01' })).toMatchObject({ status: 400, body: { error: 'That end date is before the job’s start date.' } });
-  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'x'.repeat(201) })).toMatchObject({ status: 400 });
+  // An answer that does not say the words of the choice it means, or whose words are not that choice now, is refused.
+  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'A line.' })).toMatchObject({ status: 400, body: { error: 'Say which answer you chose, in its words.' } });
+  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'A line.', text: await said(KEY, 1) })).toMatchObject({ status: 400, body: { error: 'This question changed. Look at it again.' } });
+  expect(await call('POST', '/questions', { key: KEY, choice: 0, value: 'soon', text: await said(KEY, 0) })).toMatchObject({ status: 400, body: { error: 'Give the end date as a year and a month, like 2023-06.' } });
+  expect(await call('POST', '/questions', { key: KEY, choice: 0, value: '2019-01', text: await said(KEY, 0) })).toMatchObject({ status: 400, body: { error: 'That end date is before the job’s start date.' } });
+  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'x'.repeat(201), text: await said(KEY, 2) })).toMatchObject({ status: 400 });
   expect(await call('POST', '/questions', { key: KEY, choice: 7 })).toMatchObject({ status: 400, body: { error: 'Choose one of the listed answers.' } });
   expect((await call('GET', '/questions')).body.questions.map((x: { key: string }) => x.key)).toContain(KEY);
 });
 
 test('a timeline answer changes the role, closes the question, and changes no stored resume', async () => {
-  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'My own studio, run on weekends beside the Harborlight job.' })).toMatchObject({ status: 200, body: { ok: true } });
+  expect(await call('POST', '/questions', { key: KEY, choice: 2, value: 'My own studio, run on weekends beside the Harborlight job.', text: await said(KEY, 2) })).toMatchObject({ status: 200, body: { ok: true } });
   expect(resumes()).toEqual(START);
   expect((await call('GET', '/questions')).body.questions.map((x: { key: string }) => x.key)).not.toContain(KEY);
   const role = (await call('GET', '/bank')).body.places.length;
   expect(role).toBeGreaterThan(0);
   // A second answer to the same question is refused: an answer is applied once.
-  expect((await call('POST', '/questions', { key: KEY, choice: 1, value: '2024-01' })).status).toBe(400);
+  expect((await call('POST', '/questions', { key: KEY, choice: 1, value: '2024-01', text: 'Both are current: write one line that says how they relate' })).status).toBe(400);
   const d = new Database(file, { readonly: true });
   expect(d.query('SELECT end, note FROM roles WHERE id = 4').get()).toEqual({ end: '', note: 'My own studio, run on weekends beside the Harborlight job.' });
   d.close();
@@ -161,4 +167,91 @@ test('a project and a fact go to a role made on the spot, which must read title 
   expect((await call('GET', '/tree')).body.facts.find((x: { id: string }) => x.id === '3')).toMatchObject({ roleId: '5', projectId: '' });
   // No stored resume changed: writing them again is the worker's, after the record has been still for a while.
   expect(resumes()).toEqual(stored);
+});
+
+// Stage 2 over HTTP: the record's questions, "How you work", and suggested projects, each refusing bad input in words.
+test('the record’s questions are listed with what each choice needs, and the tree carries them', async () => {
+  const q = (await call('GET', '/questions')).body.questions.filter((x: { kind: string }) => x.kind === 'record');
+  const start = q.find((x: { key: string }) => x.key.startsWith('record:start:'));
+  if (start) expect(start.inputs).toEqual(['month', '']);
+  const t = (await call('GET', '/tree')).body;
+  expect(Array.isArray(t.questions)).toBe(true);
+  expect(t.questions.every((x: { key: string; route: string }) => x.key.startsWith('record:') && x.route.startsWith('/record'))).toBe(true);
+  expect(Array.isArray(t.derived)).toBe(true);
+});
+
+test('a verdict on a line that does not hold, a suggestion request on a small role, and a bad suggestion are refused in words', async () => {
+  expect(await call('POST', '/derived/nothing:here', { verdict: 'kept' })).toMatchObject({ status: 400, body: { error: 'That line no longer holds for your record.' } });
+  expect(await call('POST', '/derived/nothing:here', { verdict: 7 })).toMatchObject({ status: 400, body: { error: 'Say kept, rejected, or nothing to take a verdict back.' } });
+  expect(await call('POST', '/roles/1/propose')).toMatchObject({ status: 409, body: { error: 'Suggestions need at least 6 facts in this role’s Day to day.' } });
+  expect(await call('POST', '/roles/999/propose')).toMatchObject({ status: 409, body: { error: 'That role is no longer in your record.' } });
+  expect(await call('POST', '/roles/abc/propose')).toMatchObject({ status: 409 });
+  expect(await call('POST', '/proposals/abc', { keep: true })).toMatchObject({ status: 404 });
+  expect(await call('POST', '/proposals/999', { keep: true })).toMatchObject({ status: 404, body: { error: 'That suggestion is no longer there.' } });
+  expect(await call('POST', '/proposals/999', {})).toMatchObject({ status: 400, body: { error: 'Say keep, reject, or what to do with the result.' } });
+  expect((await call('GET', '/roles/1/proposals')).body).toEqual({ proposals: [] });
+});
+
+test('suggestions asked for on a role with 6 facts in Day to day: stored through the checks, kept, and the signature unchanged', async () => {
+  const facts: string[] = [];
+  for (let i = 0; i < 6; i++) facts.push((await call('POST', '/facts', { roleId: 2, text: `Ran the invented review number ${i}.` })).body.id);
+  expect(await call('POST', '/roles/2/propose')).toMatchObject({ status: 200 });
+  expect(await call('POST', '/roles/2/propose')).toMatchObject({ status: 409, body: { error: 'Projects are being suggested for this role now.' } });
+  const a = (await call('GET', '/activity')).body.items.find((i: { kind: string }) => i.kind === 'propose-projects');
+  expect(a).toMatchObject({ subject: '2', status: 'waiting', link: '/record/role/2' });
+  expect((await call('POST', '/test/proposals', { roleId: 2, projects: [{ title: 'Review rounds', facts: [`fact:${facts[0]}`, `fact:${facts[1]}`], result: '' }, { title: 'Invented', facts: ['fact:9999', `fact:${facts[2]}`], result: '' }] })).body).toEqual({ ok: true, stored: 1 });
+  const [p] = (await call('GET', '/roles/2/proposals')).body.proposals;
+  expect(p).toMatchObject({ title: 'Review rounds', status: 'open' });
+  expect((await call('GET', '/queue')).body.items.some((i: { key: string }) => i.key === 'proposals:2')).toBe(true);
+  const d = new Database(file, { readonly: true });
+  const before = d.query('SELECT id, role_id FROM facts ORDER BY id').all();
+  d.close();
+  expect(await call('POST', `/proposals/${p.id}`, { keep: true, title: 'x'.repeat(201) })).toMatchObject({ status: 400 });
+  expect(await call('POST', `/proposals/${p.id}`, { keep: true })).toMatchObject({ status: 200, body: { ok: true } });
+  const e = new Database(file, { readonly: true });
+  expect(e.query('SELECT id, role_id FROM facts ORDER BY id').all()).toEqual(before);
+  e.close();
+  expect((await call('GET', '/queue')).body.items.some((i: { key: string }) => i.key === 'proposals:2')).toBe(false);
+});
+
+test('adding, moving and deleting a fact checks the record’s questions again at once', async () => {
+  const r = await call('POST', '/roles', { title: 'Analyst', company: 'Corbel Yard', start: '2019-03' });
+  expect(r.status).toBe(201);
+  const empty = `record:empty:${r.body.id}`;
+  const open = async () => ((await call('GET', '/tree')).body.questions as { key: string }[]).some((q) => q.key === empty);
+  expect(await open()).toBe(true);
+  const f = await call('POST', '/facts', { roleId: Number(r.body.id), text: 'Wrote the invented weekly report.' });
+  expect(f.status).toBe(201);
+  expect(await open()).toBe(false);
+  // Moved to another role, the role is empty again; moved back, it is not.
+  expect((await call('PATCH', `/facts/${f.body.id}`, { roleId: 4 })).status).toBe(200);
+  expect(await open()).toBe(true);
+  expect((await call('PATCH', `/facts/${f.body.id}`, { roleId: Number(r.body.id) })).status).toBe(200);
+  expect(await open()).toBe(false);
+  expect((await call('DELETE', `/facts/${f.body.id}`)).status).toBe(200);
+  expect(await open()).toBe(true);
+});
+
+test('the new routes refuse a body that is not a JSON object, and a line name that cannot be read, in words', async () => {
+  const raw = async (method: string, path: string, body: string) => { const r = await fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json' }, body }); return { status: r.status, body: (await r.json()) as Record<string, any> }; };
+  for (const path of ['/proposals/1', '/derived/results', '/roles/2/propose'])
+    for (const body of ['null', '[]', '[1, 2]', '"keep"', '7'])
+      expect(await raw('POST', path, body)).toEqual({ status: 400, body: { error: 'Send the request as a JSON object.' } });
+  expect(await call('POST', '/derived/%E0%A4%A', { verdict: 'kept' })).toEqual({ status: 400, body: { error: 'That line’s name could not be read.' } });
+  // A name with a % in it is read once, as sent.
+  expect(await call('POST', `/derived/${encodeURIComponent('learned:cut 20%')}`, { verdict: 'kept' })).toMatchObject({ status: 400, body: { error: 'That line no longer holds for your record.' } });
+  // A good body is read as before.
+  expect(await call('POST', '/derived/nothing:here', { verdict: 'kept' })).toMatchObject({ status: 400, body: { error: 'That line no longer holds for your record.' } });
+});
+
+test('Activity’s Try again on failed project suggestions asks again by the role’s own path', async () => {
+  for (let i = 0; i < 2; i++) await call('POST', '/facts', { roleId: 2, text: `Ran the invented audit number ${i}.` });
+  expect((await call('POST', '/test/work', { kind: 'propose-projects', id: 2, to: 'failed', note: 'The model did not answer.' })).body).toEqual({ ok: true });
+  const failed = (await call('GET', '/activity')).body.items.find((i: { kind: string; subject: string }) => i.kind === 'propose-projects' && i.subject === '2');
+  expect(failed).toMatchObject({ status: 'failed' });
+  expect(await call('POST', `/activity/${failed.id}/retry`)).toEqual({ status: 200, body: { ok: true } });
+  const d = new Database(file, { readonly: true });
+  expect(d.query('SELECT propose_status, propose_note FROM roles WHERE id = 2').get()).toEqual({ propose_status: 'queued', propose_note: '' });
+  d.close();
+  expect(await call('POST', `/activity/${failed.id}/retry`)).toMatchObject({ status: 404 });
 });

@@ -4,7 +4,7 @@ import { beforeEach, expect, test } from 'bun:test';
 import { db, reset, role } from './scratch.ts';
 import type { RoleRow } from './db.ts';
 import { csvRows, diffPositions, positions, positionsIn, storePositions, syncLinkedin } from './linkedin.ts';
-import { answer, openRaised } from './raised.ts';
+import { answer, openRaised, choiceAt } from './raised.ts';
 
 beforeEach(reset);
 const CSV = `Company Name,Title,Description,Location,Started On,Finished On
@@ -68,9 +68,9 @@ test('each difference is a question, and "LinkedIn is right" writes its value in
   storePositions(flattened, 7, 100);
   syncLinkedin(200);
   expect(openRaised().map((q) => q.key)).toEqual(['linkedin:end:2:2021-03', 'linkedin:missing:nimbus yard|analyst|2008', 'linkedin:title:2:principal engineer']);
-  expect(answer('linkedin:title:2:principal engineer', 0, '', 300)).toBe('');
-  expect(answer('linkedin:end:2:2021-03', 1, '', 300)).toBe('');
-  expect(answer('linkedin:missing:nimbus yard|analyst|2008', 0, '', 300)).toBe('');
+  expect(answer('linkedin:title:2:principal engineer', 0, '', 300, choiceAt('linkedin:title:2:principal engineer', 0))).toBe('');
+  expect(answer('linkedin:end:2:2021-03', 1, '', 300, choiceAt('linkedin:end:2:2021-03', 1))).toBe('');
+  expect(answer('linkedin:missing:nimbus yard|analyst|2008', 0, '', 300, choiceAt('linkedin:missing:nimbus yard|analyst|2008', 0))).toBe('');
   expect(db.query('SELECT title, end FROM roles WHERE id = 2').get()).toEqual({ title: 'Senior Engineer', end: '2021-03' });
   expect(db.query("SELECT title, start, end, standing FROM roles WHERE company = 'Nimbus Yard'").get()).toEqual({ title: 'Analyst', start: '2008', end: '2009', standing: 'employer' });
   // The title still differs, but the person said the bank is right: it is not asked again.
@@ -89,7 +89,7 @@ test('"Both are right" changes nothing in the bank, and the two are compared apa
   // Paired by employer alone: the title and both dates differ.
   expect(openRaised().map((q) => q.key)).toEqual(['linkedin:end:2:2022-08', 'linkedin:start:2:2021-03', 'linkedin:title:2:principal engineer']);
   const before = db.query('SELECT * FROM roles ORDER BY id').all();
-  expect(answer('linkedin:title:2:principal engineer', 2, '', 300)).toBe('');
+  expect(answer('linkedin:title:2:principal engineer', 2, '', 300, choiceAt('linkedin:title:2:principal engineer', 2))).toBe('');
   expect(db.query('SELECT * FROM roles ORDER BY id').all()).toEqual(before);
   expect(db.query("SELECT answer FROM raised_questions WHERE key = 'linkedin:title:2:principal engineer'").get()).toEqual({ answer: 'Both are right: they were separate roles' });
   syncLinkedin(400);

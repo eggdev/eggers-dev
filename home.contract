@@ -37,10 +37,10 @@ shape Sent
 
 fn thingsLine(n: number): string = n == 1 ? "1 thing needs you" : `${n} things need you`
 // The words of the button that leads to where an item is settled.
-fn goLabel(i: QueueItem): string = i.kind == "talk" ? "Answer in Talk" : i.kind == "quiet" ? "Open the job" : "Open your record"
+fn goLabel(i: QueueItem): string = i.kind == "talk" ? "Answer in Talk" : i.kind == "quiet" ? "Open the job" : i.kind == "proposals" ? "See the suggestions" : "Open your record"
 // What choice n of an item needs beside the tap.
 fn inputOf(i: QueueItem, n: number): string = match i.inputs.at(n) { case some(x) => x, case none => "" }
-fn inputLabel(kind: string): string = kind == "month" ? "End date, as a year and a month" : "One line"
+fn inputLabel(kind: string): string = kind == "month" ? "A year and a month" : "One line"
 fn inputHint(kind: string): string = kind == "month" ? "Year and month, like 2023-06" : "One line, at most 200 characters"
 
 members App
@@ -58,6 +58,8 @@ members App
   state heldKey = ""
   state heldWhat = ""
   state heldChoice = -1
+  // The words of the choice tapped, sent with its place: the server takes the answer only if they are still that choice.
+  state heldText = ""
   state heldValue = ""
   state heldLine = ""
   state heldSeq = 0
@@ -103,6 +105,7 @@ members App
     heldKey = key
     heldWhat = "answer"
     heldChoice = choice
+    heldText = label
     heldValue = value
     heldLine = `Answered: ${label}${value != "" ? ` (${value})` : ""}.`
     heldSeq = heldSeq + 1
@@ -131,7 +134,7 @@ members App
   // Sends what is held, if anything: when its time ends, when the next item is answered, or when Home is left.
   action sendHeld
     if heldKey != "" and heldWhat == "answer"
-      send answerSent = answerQuestion(heldKey, heldChoice, heldValue)
+      send answerSent = answerQuestion(heldKey, heldChoice, heldText, heldValue)
     if heldKey != "" and heldWhat == "snooze"
       send snoozeSent = snoozeQueueItem(heldKey)
     if heldKey != ""

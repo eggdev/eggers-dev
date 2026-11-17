@@ -17,7 +17,9 @@ async function start(file: string, code: string) {
   const [exit, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
   return { exit, out, err: err.slice(-400) };
 }
-const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts');`;
+// As the server and the worker start: the record's tables and triggers, the log of slow work (which now follows a
+// role's request for suggested projects), and the stage 2 modules.
+const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts'); await import('${lib}/activity.ts'); await import('${lib}/gaps.ts'); await import('${lib}/derived.ts'); await import('${lib}/propose.ts'); await import('${lib}/queue.ts');`;
 
 test('two processes that start together on an old database both start, every time, and each row gets one project', async () => {
   const file = join(dir, 'together.db');
@@ -33,6 +35,25 @@ test('two processes that start together on an old database both start, every tim
     .toEqual([{ name: 'facts_id_floor' }, { name: 'roles_id_above_floor' }, { name: 'roles_id_floor' }, { name: 'roles_mark_cleared' }]);
   d.close();
 }, 120_000);
+
+// As the worker and a page load check the questions at once: each step on its own, as worker.ts does it, so one
+// that fails does not skip the others. Neither may fail with "database is locked".
+const SYNC = `${OPEN} const { syncQuestions } = await import('${lib}/checks.ts'); const { syncRecordQuestions } = await import('${lib}/gaps.ts');
+  for (const [name, run] of [['questions', () => syncQuestions(Date.now())], ['record', () => syncRecordQuestions(Date.now())]]) {
+    try { run(); } catch (e) { console.log(name + ' could not be checked: ' + e.message); }
+  }`;
+
+test('two processes that check the questions together never fail with a locked database', async () => {
+  for (let round = 0; round < 6; round++) {
+    const file = join(dir, `sync-${round}.db`);
+    oldTreeDatabase(file);
+    const both = await Promise.all([start(file, SYNC), start(file, SYNC)]);
+    expect(both.map((b) => (b.exit === 0 && !b.out.includes('could not') && !`${b.out}${b.err}`.includes('locked') ? 'checked' : `failed: ${b.err}${b.out}`))).toEqual(['checked', 'checked']);
+    // And again on the same database, now that the questions are there.
+    const again = await Promise.all([start(file, SYNC), start(file, SYNC)]);
+    expect(again.map((b) => (b.exit === 0 && !b.out.includes('could not') ? 'checked' : `failed: ${b.err}${b.out}`))).toEqual(['checked', 'checked']);
+  }
+}, 180_000);
 
 test('with nothing to do, giving rows their projects writes nothing', async () => {
   const file = join(dir, 'idle.db');

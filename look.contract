@@ -1013,3 +1013,12 @@ component ItemTitle
     testId: string
   view
     text text role="heading" aria-level=2 font-size=lookTitle() font-weight=look().strong line-height=lookTitleLeading() color="look.ink" overflow-wrap="break-word" testId=testId
+
+// A part of an opened item set apart from what is above it (its suggested projects): a row's space more above it.
+component PaneSection
+  props
+    testId: string
+  slot
+  view
+    column gap=look().rowGap padding-top=look().rowGap testId=testId
+      children

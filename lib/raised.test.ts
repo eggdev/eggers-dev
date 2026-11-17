@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { db, fact, reset, role } from './scratch.ts';
 import { codeFlags, syncQuestions } from './checks.ts';
-import { answer, ANSWER_HOLD_MS, lastAnswerAt, openRaised, raise, raisedByKey, rewriteDue } from './raised.ts';
+import { answer, ANSWER_HOLD_MS, lastAnswerAt, openRaised, raise, raisedByKey, rewriteDue, choiceAt } from './raised.ts';
 import { fakeAsk, type Ask } from './llm.ts';
 import { storePositions } from './linkedin.ts';
 import { markSkills, syncSkills } from './skills.ts';
@@ -24,14 +24,14 @@ test('the same finding is never asked twice', () => {
 
 test('an answered question stays answered, however often it is found again', () => {
   raise('demo', two, 100);
-  expect(answer('demo:1', 5, '', 150)).toBe('Choose one of the listed answers.');
-  expect(answer('demo:1', 1, '', 150)).toBe('');
+  expect(answer('demo:1', 5, '', 150, choiceAt('demo:1', 5))).toBe('Choose one of the listed answers.');
+  expect(answer('demo:1', 1, '', 150, choiceAt('demo:1', 1))).toBe('');
   expect(raisedByKey('demo:1')).toMatchObject({ answeredAt: 150, answer: 'No' });
   raise('demo', two, 200);
   raise('demo', [{ ...two[0], text: 'Asked in other words?' }], 300);
   expect(openRaised().map((q) => q.key)).toEqual([]);
   expect(raisedByKey('demo:1')).toMatchObject({ answeredAt: 150, answer: 'No', text: 'Is the first thing right?' });
-  expect(answer('demo:9', 0, '', 400)).toBe('That question is no longer open.');
+  expect(answer('demo:9', 0, '', 400, choiceAt('demo:9', 0))).toBe('That question is no longer open.');
 });
 
 test('a finding that is gone is not asked, and comes back if it is found again unanswered', () => {
@@ -51,20 +51,20 @@ test('Talk does not list them, and nothing Talk records can close one', () => {
   // Its wording in Talk's own table of answered questions changes nothing: only answer() closes it.
   db.query('INSERT INTO answered (question, at) VALUES (?, ?)').run('Is the first thing right?', 200);
   expect(openRaised().map((q) => q.key)).toEqual(['demo:1']);
-  expect(answer('demo:1', 0, '', 300)).toBe('');
+  expect(answer('demo:1', 0, '', 300, choiceAt('demo:1', 0))).toBe('');
   expect(openRaised()).toEqual([]);
 });
 
 test('an answer is applied once, to a question that is still live, with one short line at most', () => {
   raise('demo', two, 100);
-  expect(answer('demo:1', 0, 'x'.repeat(201), 150)).toBe('Keep what you write to one line of at most 200 characters.');
-  expect(answer('demo:1', 0, 'two\nlines', 150)).toBe('Keep what you write to one line of at most 200 characters.');
-  expect(answer('demo:1', 0, '', 150)).toBe('');
-  expect(answer('demo:1', 1, '', 160)).toBe('That question is already answered.');
+  expect(answer('demo:1', 0, 'x'.repeat(201), 150, choiceAt('demo:1', 0))).toBe('Keep what you write to one line of at most 200 characters.');
+  expect(answer('demo:1', 0, 'two\nlines', 150, choiceAt('demo:1', 0))).toBe('Keep what you write to one line of at most 200 characters.');
+  expect(answer('demo:1', 0, '', 150, choiceAt('demo:1', 0))).toBe('');
+  expect(answer('demo:1', 1, '', 160, choiceAt('demo:1', 1))).toBe('That question is already answered.');
   expect(raisedByKey('demo:1')).toMatchObject({ answeredAt: 150, answer: 'Yes' });
   // The finding is gone: there is nothing left to answer.
   raise('demo', [], 200);
-  expect(answer('demo:2', 0, '', 250)).toBe('That question is no longer open.');
+  expect(answer('demo:2', 0, '', 250, choiceAt('demo:2', 0))).toBe('That question is no longer open.');
   expect(raisedByKey('demo:2')!.answeredAt).toBe(0);
 });
 
@@ -84,10 +84,11 @@ test('the worker waits 15 minutes after the last answer before it writes resumes
   }
   expect(queuedAt).toEqual([t0 + 31 * MIN]);
   // The last answer is read from the table.
-  raise('demo', two, 100);
+  // (A question with no choices is not answered here: the second one has a choice to tap.)
+  raise('demo', [two[0], { ...two[1], choices: ['Yes'] }], 100);
   expect(lastAnswerAt()).toBe(0);
-  answer('demo:1', 0, '', 700);
-  answer('demo:2', 0, '', 900);
+  answer('demo:1', 0, '', 700, choiceAt('demo:1', 0));
+  answer('demo:2', 0, '', 900, choiceAt('demo:2', 0));
   expect(lastAnswerAt()).toBe(900);
 });
 
@@ -100,14 +101,14 @@ test('a timeline question is raised from the roles, and its answer changes the r
   syncQuestions(now + 1);
   expect(openRaised().map((q) => [q.key, q.about])).toEqual([['overlap:3:1', 'role:3,role:1'], ['two-current:1:2', 'role:1,role:2']]);
   // The note needs a line of text, and an end date a month.
-  expect(answer('two-current:1:2', 2, '', now + 2)).toMatch(/Write one line/);
-  expect(answer('two-current:1:2', 0, 'last spring', now + 2)).toMatch(/year and a month/);
+  expect(answer('two-current:1:2', 2, '', now + 2, choiceAt('two-current:1:2', 2))).toMatch(/Write one line/);
+  expect(answer('two-current:1:2', 0, 'last spring', now + 2, choiceAt('two-current:1:2', 0))).toMatch(/year and a month/);
   // The same rule as PATCH /roles/:id: a job cannot end before it starts.
-  expect(answer('two-current:1:2', 0, '2020-12', now + 2)).toBe('That end date is before the job’s start date.');
+  expect(answer('two-current:1:2', 0, '2020-12', now + 2, choiceAt('two-current:1:2', 0))).toBe('That end date is before the job’s start date.');
   expect((db.query('SELECT end FROM roles WHERE id = 1').get() as { end: string }).end).toBe('');
-  expect(answer('two-current:1:2', 2, 'My own studio, run on weekends beside the Harborlight job.', now + 2)).toBe('');
+  expect(answer('two-current:1:2', 2, 'My own studio, run on weekends beside the Harborlight job.', now + 2, choiceAt('two-current:1:2', 2))).toBe('');
   expect((db.query('SELECT note FROM roles WHERE id = 2').get() as { note: string }).note).toBe('My own studio, run on weekends beside the Harborlight job.');
-  expect(answer('overlap:3:1', 2, '', now + 2)).toBe('');
+  expect(answer('overlap:3:1', 2, '', now + 2, choiceAt('overlap:3:1', 2))).toBe('');
   expect((db.query('SELECT label FROM roles WHERE id = 3').get() as { label: string }).label).toBe('Part-time');
   syncQuestions(now + 3);
   expect(openRaised()).toEqual([]);
@@ -157,11 +158,37 @@ test('a Talk reply and a prune never close a timeline, LinkedIn or skill questio
   expect(db.query('SELECT note, title FROM roles ORDER BY id').all()).toEqual([{ note: '', title: 'Director of Engineering' }, { note: '', title: 'Founder' }]);
   expect(db.query("SELECT mark FROM skills WHERE key = 'redis'").get()).toEqual({ mark: '' });
   // Each closes only by its own answer, which does what it says.
-  expect(answer(raised.find((q) => q.kind === 'skill')!.key, 0, '', now + 6)).toBe('');
-  expect(answer(raised.find((q) => q.kind === 'linkedin')!.key, 1, '', now + 6)).toBe('');
-  expect(answer(raised.find((q) => q.kind === 'timeline')!.key, 2, 'My own studio, run on weekends.', now + 6)).toBe('');
+  expect(answer(raised.find((q) => q.kind === 'skill')!.key, 0, '', now + 6, choiceAt(raised.find((q) => q.kind === 'skill')!.key, 0))).toBe('');
+  expect(answer(raised.find((q) => q.kind === 'linkedin')!.key, 1, '', now + 6, choiceAt(raised.find((q) => q.kind === 'linkedin')!.key, 1))).toBe('');
+  expect(answer(raised.find((q) => q.kind === 'timeline')!.key, 2, 'My own studio, run on weekends.', now + 6, choiceAt(raised.find((q) => q.kind === 'timeline')!.key, 2))).toBe('');
   syncQuestions(now + 7);
   expect(openRaised()).toEqual([]);
   expect(db.query('SELECT note, title FROM roles ORDER BY id').all()).toEqual([{ note: '', title: 'Head of Engineering' }, { note: 'My own studio, run on weekends.', title: 'Founder' }]);
+  expect(db.query("SELECT mark FROM skills WHERE key = 'redis'").get()).toEqual({ mark: 'confident' });
+});
+
+test('for each kind, an answer whose words are no longer the choice at its place is refused and changes nothing; the right words are taken', () => {
+  const now = new Date(2026, 10, 16).getTime();
+  role({ id: 1, company: 'Harborlight Systems', title: 'Director of Engineering', start: '2021-03' });
+  role({ id: 2, company: 'Lantern Notes', title: 'Founder', start: '2023-06', standing: 'own' });
+  fact(1, 'Built the console.', '', 'Go');
+  syncSkills(now);
+  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, now + 1)).toEqual({ marked: 1 });
+  fact(1, 'Moved the queue.', '', 'Redis');
+  storePositions('## Positions.csv\nCompany Name,Title,Started On,Finished On\nHarborlight Systems,Head of Engineering,Mar 2021,\nLantern Notes,Founder,Jun 2023,\n', 1, now + 2);
+  syncQuestions(now + 3);
+  const raised = openRaised();
+  expect(raised.map((q) => q.kind).sort()).toEqual(['linkedin', 'skill', 'timeline']);
+  const state = () => ({ roles: db.query('SELECT * FROM roles ORDER BY id').all(), skills: db.query('SELECT key, mark FROM skills ORDER BY key').all() });
+  const before = state();
+  // The tap landed on choice 0, but the person saw the words of choice 1 there.
+  for (const q of raised) expect(answer(q.key, 0, '', now + 4, q.choices[1])).toBe('This question changed. Look at it again.');
+  for (const q of raised) expect(answer(q.key, 0, '', now + 4)).toBe('Say which answer you chose, in its words.');
+  expect(state()).toEqual(before);
+  expect(openRaised().map((q) => q.key)).toEqual(raised.map((q) => q.key));
+  // With the words of the choice at that place, each is taken.
+  // Choice 0 of the timeline question needs a month (inputsOf); the others need nothing beside the tap.
+  for (const q of raised) expect(answer(q.key, 0, q.kind === 'timeline' ? '2023-05' : '', now + 5, choiceAt(q.key, 0))).toBe('');
+  expect(openRaised()).toEqual([]);
   expect(db.query("SELECT mark FROM skills WHERE key = 'redis'").get()).toEqual({ mark: 'confident' });
 });
