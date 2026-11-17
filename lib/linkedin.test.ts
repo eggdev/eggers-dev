@@ -51,10 +51,10 @@ test('the differences are title, employer, start and end, and what only one side
     ['linkedin:missing:nimbus yard|analyst|2008', '', 'Analyst, Nimbus Yard'],
     ['linkedin:absent:3', 'Support Lead, Tessellate Freight', ''],
   ]);
-  expect(diffs[0].text).toBe('Your bank says your title at Quillfeather Labs was “Senior Engineer”. LinkedIn says “Principal Engineer”. A background check compares them. Which one is right?');
+  expect(diffs[0].text).toBe('Your record says your title at Quillfeather Labs was “Senior Engineer”. LinkedIn says “Principal Engineer”. A background check compares them. Which one is right?');
   // A title paired by its employer alone may be a different real role, so that difference has a third answer.
-  expect(diffs[0].choices).toEqual(['The bank is right: Senior Engineer', 'LinkedIn is right: Principal Engineer', 'Both are right: they were separate roles']);
-  expect(diffs[1].choices).toEqual(['The bank is right: Feb 2021', 'LinkedIn is right: Mar 2021']);
+  expect(diffs[0].choices).toEqual(['Your record is right: Senior Engineer', 'LinkedIn is right: Principal Engineer', 'Both are right: they were separate roles']);
+  expect(diffs[1].choices).toEqual(['Your record is right: Feb 2021', 'LinkedIn is right: Mar 2021']);
   // The same title and start under another employer's name is an employer difference. A different start is a start difference.
   expect(diffPositions([{ company: 'Harbourlite Group', title: 'Director of Engineering', start: '2021-03', end: '', location: '' }], roles.slice(0, 1)).map((d) => d.field)).toEqual(['company']);
   expect(diffPositions([{ company: 'Harborlight Systems', title: 'Director of Engineering', start: '2020-11', end: '', location: '' }], roles.slice(0, 1)).map((d) => d.field)).toEqual(['start']);

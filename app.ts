@@ -124,6 +124,22 @@ function partsOf(body: string): { head: string; lines: { kind: string; text: str
   end();
   return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') })).filter((p) => p.head !== '' || p.lines.length > 0);
 }
+// A resume's Markdown as the lines its page sets: the name (# …) and the line under it (its contact line), each
+// section (## …), each role (### …), each bullet, and each paragraph, the inline marks taken out.
+function resumeLinesOf(body: string): { id: string; kind: string; text: string }[] {
+  const out: { kind: string; text: string }[] = [];
+  let para: string[] = [];
+  const end = () => { if (para.length > 0) out.push({ kind: out.length > 0 && out[out.length - 1].kind === 'name' ? 'contact' : 'para', text: plain(para.join(' ')) }); para = []; };
+  for (const line of body.split('\n')) {
+    const head = /^(#{1,6})\s+(.*)$/.exec(line), item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
+    if (line.trim() === '' || /^\s*(---+|\*\*\*+)\s*$/.test(line)) end();
+    else if (head) { end(); out.push({ kind: head[1].length === 1 ? 'name' : head[1].length === 2 ? 'section' : 'role', text: plain(head[2]) }); }
+    else if (item) { end(); out.push({ kind: 'item', text: plain(item[1]) }); }
+    else para.push(line.trim());
+  }
+  end();
+  return out.filter((l) => l.text !== '').map((l, i) => ({ id: String(i), ...l }));
+}
 // A flag's severity, the most serious first.
 const SEVERITY = ['high', 'warn', 'info'];
 
@@ -167,23 +183,26 @@ const sources: Sources = {
   addGithub: ([repos]) => write('POST', '/sources/github', { repos }),
   loadJobs: async (): Promise<Result<'loadJobs'>> => ({ loaded: true,
     items: rows(await get('/jobs')).map((j) => ({ id: text(j.id), title: text(j.title), company: text(j.company), place: text(j.place), status: text(j.status), note: text(j.note), fit: typeof j.fit === 'number' ? j.fit : -1, outcome: text(j.outcome),
-      stage: text(j.stage) || 'saved', salary: text(j.salary), posted: text(j.posted), added: text(j.added), contact: text(j.contact) })) }),
+      stage: text(j.stage) || 'saved', salary: text(j.salary), posted: text(j.posted), added: text(j.added), contact: text(j.contact),
+      sent: text(j.sent), quiet: j.quiet === true, from: text(j.from), resumeStatus: text(j.resumeStatus), hasResume: j.hasResume === true,
+      atsScore: typeof j.atsScore === 'number' ? j.atsScore : -1, atsRequired: typeof j.atsRequired === 'number' ? j.atsRequired : 85 })) }),
   // The job a route shows; none is selected while the list alone is on screen.
   loadJob: async ([job]): Promise<Result<'loadJob'>> => {
-    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
+    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', resumeLines: [], pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
     if (job === '') return none;
     const j = (await get(`/jobs/${id(job)}`)) as Record<string, unknown>;
     const list = (v: unknown) => rows(v ?? []).map((x) => text(x));
     const n = (v: unknown) => (typeof v === 'number' ? v : 0);
     return { loaded: true, id: text(j.id), url: text(j.url), title: text(j.title), company: text(j.company), place: text(j.place), status: text(j.status), note: text(j.note),
-      fit: typeof j.fit === 'number' ? j.fit : -1, outcome: text(j.outcome), outcomeNote: text(j.outcomeNote), contact: text(j.contact), pdf: text(j.pdf) === '' ? '' : `${API}${text(j.pdf)}`, pages: j.pages === 1 ? 1 : 2, atsOk: j.atsOk === true,
+      fit: typeof j.fit === 'number' ? j.fit : -1, outcome: text(j.outcome), outcomeNote: text(j.outcomeNote), contact: text(j.contact),
+      posted: text(j.posted), added: text(j.added), sent: text(j.sent), quiet: j.quiet === true, from: text(j.from), posting: text(j.posting), resumeLines: resumeLinesOf(text(j.resume)), pdf: text(j.pdf) === '' ? '' : `${API}${text(j.pdf)}`, pages: j.pages === 1 ? 1 : 2, atsOk: j.atsOk === true,
       atsScore: typeof j.atsScore === 'number' ? j.atsScore : -1, atsRequired: typeof j.atsRequired === 'number' ? j.atsRequired : 85, atsParts: text(j.atsParts),
       ats: rows(j.ats ?? []).map((a) => ({ id: text(a.id), label: text(a.label), ok: a.ok === true, note: text(a.note) })), covered: n(j.covered), asked: n(j.asked), verdict: text(j.verdict), strengths: list(j.strengths), risks: list(j.risks), changes: list(j.changes), gaps: list(j.gaps), resume: text(j.resume),
       weighed: j.weighed === true, termsIn: list(j.termsIn), termsBank: list(j.termsBank), termsMissing: list(j.termsMissing),
       checks: rows(j.checks ?? []).map((c) => ({ id: text(c.id), question: text(c.question), answer: text(c.answer), note: text(c.note) })),
       knockouts: rows(j.knockouts ?? []).map((k) => ({ id: text(k.id), question: text(k.question), answer: text(k.answer), note: text(k.note) })),
       doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
-      requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, coverage: text(r.coverage), evidence: text(r.evidence), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
+      requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, need: text(r.need) || (r.must === true ? 'must' : 'nice'), coverage: text(r.coverage), evidence: text(r.evidence), bestText: text(r.bestText), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
       // The serious flags first; the server keeps each severity's own order.
       flags: rows(j.flags ?? []).map((f) => ({ id: text(f.id), kind: text(f.kind), severity: text(f.severity), text: text(f.text), items: list(f.items) }))
         .sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity)),
@@ -196,9 +215,9 @@ const sources: Sources = {
       items: rows(d.items).map((l) => ({ id: text(l.id), title: text(l.title), company: text(l.company), place: text(l.place), score: num(l.score), reason: text(l.reason), salary: text(l.salary), posted: text(l.posted), fresh: l.fresh === true })) };
   },
   loadLead: async ([lead]): Promise<Result<'loadLead'>> => {
-    if (lead === '') return { loaded: false, id: '', title: '', company: '', place: '', url: '', score: 0, reason: '', posting: '' };
+    if (lead === '') return { loaded: false, id: '', title: '', company: '', place: '', url: '', score: 0, reason: '', posting: '', posted: '' };
     const l = (await get(`/leads/${id(lead)}`)) as Record<string, unknown>;
-    return { loaded: true, id: text(l.id), title: text(l.title), company: text(l.company), place: text(l.place), url: text(l.url), score: typeof l.score === 'number' ? l.score : 0, reason: text(l.reason), posting: text(l.posting) };
+    return { loaded: true, id: text(l.id), title: text(l.title), company: text(l.company), place: text(l.place), url: text(l.url), score: typeof l.score === 'number' ? l.score : 0, reason: text(l.reason), posting: text(l.posting), posted: text(l.posted) };
   },
   loadCompanies: async (): Promise<Result<'loadCompanies'>> => ({ loaded: true,
     items: rows(await get('/companies')).map((c) => ({ id: text(c.id), name: text(c.name), board: text(c.board), open: typeof c.open === 'number' ? c.open : 0, note: text(c.note) })) }),

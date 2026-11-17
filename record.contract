@@ -2,7 +2,7 @@
 // (`RecordNav`, drawn once by the root under the main line) holds Experience (the roles and their facts, at /record), Profile, Direction, Details and Sources.
 // Each screen is one document column (`Page`), drawn only with the shared pieces of look.contract. The data and
 // the actions are the root's (app.contract); a screen with a form keeps its drafts itself.
-use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, statusWord, look from "./look.contract"
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, statusWord, look, lookTight from "./look.contract"
 
 shape Role
   id: string
@@ -150,7 +150,7 @@ component RecordWait
           Line(text=message, testId=`${testId}-message`)
 
 // The marker on a role that says Present beside another that also does (DESIGN.md, Overlap marker), with the way
-// to settle it on Home.
+// to settle it on Home on its own line under it, so it reads the same on every role whatever the names' length.
 component OverlapLine
   props
     other: string
@@ -158,7 +158,7 @@ component OverlapLine
     home: action
     testId: string
   view
-    Actions(testId=`${testId}-line`)
+    column align-items="start" gap=lookTight() testId=`${testId}-line`
       StrongLine(text=`Overlaps ${roleRef(other)}, ${otherName}. Both say Present.`, testId=testId)
       Action(label="Settle it on Home", press=home, disabled=false, keys="", testId=`${testId}-go`)
 
@@ -194,7 +194,7 @@ component ExperienceScreen
             QuietLine(text="Loading your record…", testId="bank-loading")
       else if bank.facts.length == 0
         Section(testId="bank-empty")
-          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and what Claude finds in it appears here, by role.", testId="bank-empty-text")
+          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and the facts found in it appear here, by role.", testId="bank-empty-text")
           MainAction(label="Add a source", press=add, disabled=false, keys="", testId="bank-add")
       else
         Section(testId="bank-find")
@@ -426,7 +426,7 @@ component ProfileScreen
           else if askError != ""
             FailLine(text=askError, testId="profile-failed")
           else
-            Line(text=`Claude can write it from the ${factCount(profile.facts)} in your record: who you are, how you work, what you delivered and why to hire you.`, testId="profile-empty-text")
+            Line(text=`It can be written from the ${factCount(profile.facts)} in your record: who you are, how you work, what you delivered and why to hire you.`, testId="profile-empty-text")
           MainAction(label="Write profile", press=write, disabled=asking, keys="", testId="profile-write")
       else
         Section(testId="profile-about")
@@ -437,7 +437,7 @@ component ProfileScreen
           else if askError != ""
             FailLine(text=askError, testId="profile-state")
           else
-            QuietLine(text=(profile.stale ? `Written by Claude on ${profile.written}. Your record has changed since. Rewrite it to include the changes.` : `Written by Claude on ${profile.written}, from your record.`), testId="profile-state")
+            QuietLine(text=(profile.stale ? `Written on ${profile.written}. Your record has changed since. Rewrite it to include the changes.` : `Written on ${profile.written}, from your record.`), testId="profile-state")
           Action(label="Rewrite", press=write, disabled=(writing or asking), keys="", testId="profile-rewrite")
         column gap=look().sectionGap testId="profile-body"
           for p, i in profile.parts key=`${i}`

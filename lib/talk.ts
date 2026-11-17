@@ -43,7 +43,7 @@ export const messages = () => db.query('SELECT * FROM talk ORDER BY id').all() a
 
 // What the person said, and a reply for the worker to write. Refused while a reply is still being written.
 export function say(body: string, now: number): string {
-  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'Claude is still answering. Wait for the reply, then send.';
+  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'A reply is still being written. Wait for it, then send.';
   db.transaction(() => {
     db.query("INSERT INTO talk (who, body, created_at) VALUES ('you', ?, ?)").run(body.trim(), now);
     db.query("INSERT INTO talk (who, status, created_at) VALUES ('claude', 'queued', ?)").run(now + 1);
@@ -52,7 +52,7 @@ export function say(body: string, now: number): string {
 }
 // An open question, put to the person as Claude's turn: no model is needed to ask what is already written.
 export function put(question: string, now: number): string {
-  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'Claude is still answering. Wait for the reply, then pick a question.';
+  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'A reply is still being written. Wait for it, then pick a question.';
   db.query("INSERT INTO talk (who, body, created_at) VALUES ('claude', ?, ?)").run(question.trim(), now);
   return '';
 }

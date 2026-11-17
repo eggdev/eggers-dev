@@ -4,17 +4,17 @@
 //   document written from the whole record, and the questions whose answers would strengthen it; Direction and
 //   Details, the person's own notes and contact line; Sources, what has been added to read and how each reading
 //   went. What the person supplies is taken as true, so nothing waits for review.
-// Jobs and Talk: still in the platform's look (a later stage converts them).
+// Jobs (jobs.contract): the job list, one job as a record with its posting map, its resume as a document, adding a
+//   job, a posting found on the watchlist, and the watchlist. Talk (talk.contract): the conversation and its questions.
 // System: the Public page and the machine (backups and sign-in).
-// server.ts keeps it all; worker.ts reads and writes with Claude Code. All polled.
-use Badge, EmptyState from "exact:content"
+// server.ts keeps it all; worker.ts does the slow reading and writing. All polled.
 use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
+use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
+use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
 use Bank, Overlap, Profile, Direction, Person, ExperienceScreen, RoleScreen, FactScreen, EditFactScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, roleName, factCount, plainLoadError from "./record.contract"
 
-// The look is DESIGN.md's: Geist, one ink, one paper, two greys, hairline rules (look.contract). Jobs and Talk
-// still keep the earlier look: neutral greys, the platform's controls and sheets, and a burnt orange
-// (app.tamber's AccentColor) for a sheet's main action.
+// The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
 font "Geist" = "assets/fonts/Geist.ttf"
 
 routes nav
@@ -71,224 +71,6 @@ shape HubRepo
   added: bool
   // A fork or an archived repository: hidden until asked for.
   extra: bool
-
-// A job in the list: its fit is 0 to 100 once read, -1 before.
-shape JobRow
-  id: string
-  title: string
-  company: string
-  place: string
-  status: string
-  note: string
-  fit: number
-  // What became of it: "" | applied | interviewed | rejected | no-response | offer.
-  outcome: string
-  // Where it sits in the search: saved | active | done.
-  stage: string
-  // The pay the posting states, when it went up and when it was added, in words; "" when unknown.
-  salary: string
-  posted: string
-  added: string
-  contact: string
-
-// A posting found on a watchlisted company's job board, with a quick first score.
-shape Lead
-  id: string
-  title: string
-  company: string
-  place: string
-  score: number
-  reason: string
-  salary: string
-  posted: string
-  // Posted within the last seven days.
-  fresh: bool
-
-shape LeadList
-  loaded: bool
-  // idle | queued | running | failed: the state of the watchlist check
-  status: string
-  note: string
-  companies: number
-  unscored: number
-  // Lower-scored postings from before this week that the list leaves out.
-  unlisted: number
-  // Postings left out because their stated pay tops out under the floor in the person's notes.
-  underPay: number
-  checked: string
-  items: Lead[]
-
-shape LeadDetail
-  loaded: bool
-  id: string
-  title: string
-  company: string
-  place: string
-  url: string
-  score: number
-  reason: string
-  posting: string
-
-shape Company
-  id: string
-  name: string
-  board: string
-  open: number
-  note: string
-
-shape CompanyList
-  loaded: bool
-  items: Company[]
-
-shape JobList
-  loaded: bool
-  items: JobRow[]
-
-// One thing a posting asks for, and what in the bank supports it.
-shape Need
-  id: string
-  text: string
-  must: bool
-  // strong | partial | none
-  coverage: string
-  evidence: string
-  // The work it rests on ("Acme, employer, in production, recent") and how much it counted, 0 to 100; -1 before weighing existed.
-  basis: string
-  counted: number
-
-// One finding from reading a resume's PDF back as a tracking system's parser would.
-shape AtsLine
-  id: string
-  label: string
-  ok: bool
-  note: string
-
-// One question of the person's own fit test, answered for a posting: yes | partly | no | unknown.
-shape Check
-  id: string
-  question: string
-  answer: string
-  note: string
-
-// One message of the conversation. status is done | queued | running | failed (a reply being written); added lists the facts a reply put in the bank.
-shape TalkMessage
-  id: string
-  mine: bool
-  body: string
-  status: string
-  note: string
-  added: string[]
-
-// An open question the person can pick: what would strengthen the bank, and where it came from.
-shape TalkQuestion
-  id: string
-  text: string
-  from: string
-
-shape Talk
-  loaded: bool
-  // A reply is being written.
-  busy: bool
-  messages: TalkMessage[]
-  questions: TalkQuestion[]
-
-// One drafted message to open a door at a company: who it is for, how to find them, why this way in, and the words.
-shape Door
-  id: string
-  to: string
-  find: string
-  why: string
-  message: string
-
-// One reader on the council that reviews a resume, with their score out of 10 as text ("8.5").
-shape Seat
-  id: string
-  seat: string
-  // The model in this seat ("Claude Haiku"), "" for a review from before seats had their own.
-  model: string
-  // Each round's score in order ("6 → 7 → 8"), or "no score".
-  score: string
-  note: string
-
-// A yes-or-no question the application form is likely to ask.
-shape Knockout
-  id: string
-  question: string
-  // yes | no | unknown
-  answer: string
-  note: string
-
-// A job read against the bank: the fit, why, and the resume written for it.
-shape Job
-  loaded: bool
-  id: string
-  url: string
-  title: string
-  company: string
-  place: string
-  status: string
-  note: string
-  fit: number
-  outcome: string
-  outcomeNote: string
-  // Who the person knows at the company, in their words.
-  contact: string
-  // The address of the resume's PDF on the server, "" before there is one.
-  pdf: string
-  // The length the resume is written to: 1 or 2 pages.
-  pages: number
-  atsOk: bool
-  // The rule-based score of the PDF out of 100, and the four parts it is weighed from. -1 before one was made.
-  atsScore: number
-  // The score a resume needs before it is ready to send.
-  atsRequired: number
-  atsParts: string
-  ats: AtsLine[]
-  covered: number
-  asked: number
-  verdict: string
-  strengths: string[]
-  risks: string[]
-  changes: string[]
-  gaps: string[]
-  resume: string
-  requirements: Need[]
-  weighed: bool
-  // The posting's own keywords: in the resume, in the bank but not the resume, and in neither.
-  termsIn: string[]
-  termsBank: string[]
-  termsMissing: string[]
-  knockouts: Knockout[]
-  checks: Check[]
-  // The council's review of the resume: "" before one has run. reviewPassed is 8 of 10 or better.
-  // Drafted messages for reaching someone at the company. doorsStatus is "" | queued | running | done | failed.
-  // The resume being written after the first reading: "" | queued | running | done | failed.
-  resumeStatus: string
-  resumeNote: string
-  // The bank changed after this unsent resume was written.
-  resumeStale: bool
-  doors: Door[]
-  doorsStatus: string
-  doorsNote: string
-  // The person has edited this resume by hand, so writing it again would replace their work.
-  edited: bool
-  reviewScore: string
-  reviewPassed: bool
-  reviewRounds: number
-  seats: Seat[]
-  reviewChanges: string[]
-  // What to look at on this resume, in plain words (lib/checks.ts): the serious ones first.
-  flags: JobFlag[]
-  // What a six-second skim of the resume concluded, "" when none was made.
-  skimConclusion: string
-
-// One thing to look at on a resume. severity: high (it disagrees with the bank) | warn (a rule is broken) | info.
-shape JobFlag
-  id: string
-  kind: string
-  severity: string
-  text: string
-  items: string[]
 
 // GitHub as the server's own sign-in sees it.
 shape Hub
@@ -388,16 +170,10 @@ shape Reply
   error: string
 
 // A source's reading in one line, and where it waits (the data module counts what is ahead of it).
-fn sourceLine(s: Source): string = s.status == "queued" ? "Read in turn, one source at a time. Usually a few minutes each." : s.status == "running" ? "Claude is reading it. Usually a few minutes; a repository can take longer." : s.status == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
+fn sourceLine(s: Source): string = s.status == "queued" ? "Read in turn, one source at a time. Usually a few minutes each." : s.status == "running" ? "Being read now. Usually a few minutes; a repository can take longer." : s.status == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
 fn sourceKind(k: string): string = k == "github" ? "Repository" : k == "repo" ? "Folder" : k == "file" ? "File" : "Pasted text"
 fn sourcePlace(s: Source): string = s.ahead < 0 ? "" : s.ahead == 0 ? "next" : `${s.ahead} ahead`
-fn jobWhere(j: JobRow): string = j.company == "" ? (j.status == "queued" ? "Waiting to be read" : j.status == "running" ? "Being read now" : j.status == "failed" ? "Couldn’t be read" : j.place) : j.place == "" ? j.company : `${j.company}, ${j.place}`
-fn outcomeLabel(o: string): string = o == "applied" ? "Applied" : o == "interviewed" ? "Interviewed" : o == "rejected" ? "Rejected" : o == "no-response" ? "No response" : o == "offer" ? "Offer" : ""
 fn companyCount(n: number): string = `${n} ${n == 1 ? "company" : "companies"}`
-fn jobMeta(j: JobRow): string = [j.salary, (j.posted != "" ? `posted ${j.posted}` : j.added != "" ? `added ${j.added}` : ""), (j.contact != "" ? "you know someone there" : "")].filter(x => x != "").join(", ")
-fn leadMeta(l: Lead): string = [l.salary, (l.posted != "" ? `posted ${l.posted}` : "")].filter(x => x != "").join(", ")
-fn leadWhere(l: Lead): string = l.place == "" ? l.company : `${l.company}, ${l.place}`
-fn coverageLabel(c: string): string = c == "strong" ? "Strong" : c == "partial" ? "Partial" : "Missing"
 fn loadError(code: string): string = code == "offline" ? "Can’t reach the server. Check that it’s running, then try again." : "The server couldn’t answer. Try again."
 // A failed read of the machine: the data module's own sentence, or the usual words for a lost connection.
 fn failText(code: string): string = code.includes(" ") ? code : loadError(code)
@@ -480,9 +256,6 @@ component App
   resource viewport = exactViewport() as shape Viewport else empty()
   // Only the root reads the window; the new-look screens are told whether it is wide (two columns, a ledger).
   derive wide = viewport.width >= lookNarrow()
-  // On a wide window a sheet (Jobs, Talk) is a dialog as tall as its content, so a long list is given a height to scroll in.
-  // A phone's sheet fills the screen and its list already scrolls.
-  derive sheetList = viewport.width >= 900 ? max(240, viewport.height - 340) : 100000
   // Which place of the main line is shown, and which screen of Record's second line: Sources marks its own
   // screens too, and Profile marks the profile's (Direction and Details mark themselves).
   derive inRecord = nav.tab == "bank"
@@ -522,7 +295,7 @@ component App
   mutation removedSource as shape Reply refreshes lib, bank, profile then afterRemoveSource
   derive selectedFact = match stack(nav).filter(e => e.name == "fact").at(-1) { case some(e) => e.params.id, case none => "" }
   derive selectedJob = match stack(nav).filter(e => e.name == "job" or e.name == "resume" or e.name == "editResume").at(-1) { case some(e) => e.params.id, case none => "" }
-  derive jobsError = match failure(jobs) { case some(f) => loadError(f.code), case none => "" }
+  derive jobsError = match failure(jobs) { case some(f) => plainLoadError(f.code), case none => "" }
   derive jobAddError = match jobAdded { case some(r) => r.error, case none => "" }
   derive rereadJobError = pending(jobReread) ? "" : match jobReread { case some(r) => r.error, case none => "" }
   derive removeJobError = pending(jobRemoved) ? "" : match jobRemoved { case some(r) => r.error, case none => "" }
@@ -539,9 +312,9 @@ component App
   derive takeError = pending(leadTaken) ? "" : match leadTaken { case some(r) => r.error, case none => "" }
   derive dismissError = pending(leadDismissed) ? "" : match leadDismissed { case some(r) => r.error, case none => "" }
   derive leadError = actedLead != selectedLead ? "" : lastLeadAct == "dismiss" ? dismissError : takeError
-  derive talkLoadError = match failure(talk) { case some(f) => loadError(f.code), case none => "Can’t reach the server. Check that it’s running, then try again." }
+  derive talkLoadError = match failure(talk) { case some(f) => plainLoadError(f.code), case none => plainLoadError("offline") }
   derive resumeError = pending(resumeSaved) ? "" : match resumeSaved { case some(r) => r.error, case none => "" }
-  derive jobHint = pending(jobAdded) ? "Adding…" : jobUrl.trim() == "" and jobText.trim() == "" ? "Paste the posting or its link to add it." : ""
+  derive jobHint = pending(jobAdded) ? "Adding it." : jobUrl.trim() == "" and jobText.trim() == "" ? "Paste the posting or its link to add it." : ""
   derive savedJobs = jobs.items.filter(j => j.stage == "saved").length
   derive activeJobs = jobs.items.filter(j => j.stage == "active").length
   derive doneJobs = jobs.items.filter(j => j.stage == "done").length
@@ -551,10 +324,10 @@ component App
   derive companyError = pending(companyAdded) ? "" : match companyAdded { case some(r) => r.error, case none => "" }
   derive checking = leads.status == "queued" or leads.status == "running"
   derive checkError = pending(checkAsked) ? "" : match checkAsked { case some(r) => r.error, case none => "" }
-  derive companiesError = match failure(companies) { case some(f) => loadError(f.code), case none => "" }
-  derive leadsError = match failure(leads) { case some(f) => loadError(f.code), case none => "" }
+  derive companiesError = match failure(companies) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive leadsError = match failure(leads) { case some(f) => plainLoadError(f.code), case none => "" }
   derive removeCompanyError = pending(companyRemoved) ? "" : match companyRemoved { case some(r) => r.error, case none => "" }
-  derive leadsNote = leadsError != "" ? `Found postings couldn’t be loaded. ${leadsError}` : leads.companies == 0 ? "Add companies to your watchlist and their open jobs are found and scored for you." : checking ? `Checking ${companyCount(leads.companies)} now. This takes a few minutes.` : leads.status == "failed" ? `The last check failed. ${leads.note}` : leads.checked == "" ? `${companyCount(leads.companies)} on your watchlist, not checked yet.` : `Checked ${leads.checked}. ${leads.note} Quick scores are a first sort; read a job fully for its real fit.`
+  derive leadsNote = leadsError != "" ? `Found postings couldn’t be loaded. ${leadsError}` : leads.companies == 0 ? "Add companies to your watchlist and their open jobs are found and scored for you." : checking ? `Checking ${companyCount(leads.companies)} now. This takes a few minutes.` : leads.status == "failed" ? `The last check failed. ${leads.note}` : leads.checked == "" ? `${companyCount(leads.companies)} on your watchlist, not checked yet.` : `Checked ${leads.checked}. ${leads.note} A quick fit is a first sort; read a job fully for its real fit.`
   derive selectedSource = match stack(nav).filter(e => e.name == "source").at(-1) { case some(e) => e.params.id, case none => "" }
   derive readCount = lib.items.filter(s => s.status == "done").length
   derive writing = profile.status == "queued" or profile.status == "running"
@@ -563,6 +336,8 @@ component App
   derive talkError = pending(talkSent) ? "" : match talkSent { case some(r) => r.error, case none => "" }
   derive clearTalkError = pending(talkCleared) ? "" : match talkCleared { case some(r) => r.error, case none => "" }
   derive askTalkError = pending(talkAsked) ? "" : match talkAsked { case some(r) => r.error, case none => "" }
+  // What was last tried in Talk and refused: said once, over the entry field.
+  derive talkTried = talkAct == "send" ? talkError : talkAct == "ask" ? askTalkError : talkAct == "clear" and clearTalkError != "" ? `The conversation wasn’t cleared. ${clearTalkError}` : ""
   derive lastTalk = match talk.messages.at(-1) { case some(m) => m.id, case none => "" }
   derive personError = pending(personSaved) ? "" : match personSaved { case some(r) => r.error, case none => "" }
   derive askError = pending(asked) ? "" : match asked { case some(r) => r.error, case none => "" }
@@ -579,7 +354,7 @@ component App
   derive hubShown = hub.repos.filter(r => r.full.toLowerCase().includes(hubQuery.trim().toLowerCase()) and (showExtra or not r.extra or chosen.includes(r.full)))
   derive hubExtras = hub.repos.filter(r => r.extra).length
   // Why Add is disabled, under the form (not red: nothing has been refused).
-  derive addHint = pending(added) ? "Adding…" : kind == "text" and addBody == "" ? "Paste some text to add it." : kind == "file" and addBody == "" ? "Choose a file to add it." : kind == "github" and addBody == "" ? "Tick the repositories worth reading." : kind == "repo" and addBody == "" ? "Enter the repository’s path to add it." : kind == "repo" and author.trim() == "" ? "Enter the name or email your commits use." : ""
+  derive addHint = pending(added) ? "Adding it." : kind == "text" and addBody == "" ? "Paste some text to add it." : kind == "file" and addBody == "" ? "Choose a file to add it." : kind == "github" and addBody == "" ? "Tick the repositories worth reading." : kind == "repo" and addBody == "" ? "Enter the repository’s path to add it." : kind == "repo" and author.trim() == "" ? "Enter the name or email your commits use." : ""
 
   // The Public page. The field shows the saved text until the person edits it or loads a draft; the edit is kept
   // across a reload, and is unsaved while it differs from the saved text (the server trims space at the end; space at the start is left to Save).
@@ -702,13 +477,17 @@ component App
       openSystem()
     else
       openPublic()
-  // A row is a link; Back, Forward and a deep link arrive here too. A phone pushes the
-  // detail; a wide window replaces the one beside the list.
+  // A row is a link; Back, Forward and a deep link arrive here too. Every screen is a page of its own, pushed over
+  // the one it was opened from; a fact or source opened from another of its kind takes its place.
   action follow(url: string)
     rowTried = false
     if url != "/"
       sendHeld()
-    nav = (top(nav).name == "fact" and url.startsWith("/record/fact/") and not url.endsWith("/edit")) or (top(nav).name == "source" and url.startsWith("/source/")) or (top(nav).name == "job" and url.startsWith("/job/") and not url.endsWith("/resume") and not url.endsWith("/edit")) or (top(nav).name == "lead" and url.startsWith("/lead/")) ? replace(nav, url) : go(nav, url)
+    nav = (top(nav).name == "fact" and url.startsWith("/record/fact/") and not url.endsWith("/edit")) or (top(nav).name == "source" and url.startsWith("/source/")) ? replace(nav, url) : go(nav, url)
+  // The resume's page goes back to its job: the page under it, or (after a reload or a link straight to the resume)
+  // the job's page in its place.
+  action backToJob(id: string)
+    nav = stack(nav).filter(e => e.name == "job").length > 0 ? back(nav) : replace(nav, path("job", id))
   action searchBank(v: string)
     bankQuery = v
   action setStage(v: string)
@@ -716,8 +495,8 @@ component App
     stageTab = v
   action searchJobs(v: string)
     jobQuery = v
-  action toggleFresh
-    freshOnly = not freshOnly
+  action setFresh(on: bool)
+    freshOnly = on
   // The list's picker hands its job first, then the outcome chosen.
   action pickRowOutcome(id: string, outcome: string)
     rowTried = true
@@ -1143,91 +922,17 @@ component App
                       RecordWait(title="Edit fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your record." : bankError), backLabel="Back to Experience", back=back, testId="edit-gone")
                     for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
                       EditFactScreen(fact=f, places=bank.places, error=(actedFact == f.id and lastFactAct == "save" ? saveFactError : ""), busy=pending(savedFact), save=saveFact, cancel=back)
-              if e.name == "editResume" and not (job.loaded and job.id == e.params.id)
-                SheetWait(route=e.id, title="Edit Resume", waiting=(not failed(job)), message="Couldn’t load this job. It may have been deleted.", close=back)
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0
                     ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=profileAhead, write=writeProfile, ask=askQuestion, add=openAdd, retry=pull)
               if e.name == "talk"
-                column navigationKey=`${e.id}` navigationScroll="transcript" position="absolute" inset=0
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Talk" role="heading" aria-level=1 flex=1
-                    if talk.messages.length > 0
-                      button press=openQuestions testId="open-questions"
-                        text (talk.questions.length == 0 ? "Questions" : talk.questions.length >= 30 ? "Questions 30+" : `Questions ${talk.questions.length}`)
-                      button press=askClearTalk disabled=pending(talkCleared) testId="talk-clear"
-                        text "Start Over"
-                  if not talk.loaded
-                    if pending(talk)
-                      column flex=1 justify-content="center" align-items="center"
-                        progress aria-label="Loading" testId="talk-loading"
-                    else
-                      EmptyState(symbol="symbol:alert", title="Can’t Load Talk", message=talkLoadError)
-                        button press=pull testId="talk-retry"
-                          text "Try Again"
-                  else if talk.messages.length == 0
-                    EmptyState(symbol="symbol:messages", title="Talk Through Your Work", message="Answer an open question, or tell Claude about your work. What you say is added to your bank.")
-                      button press=openQuestions testId="talk-questions"
-                        text "Questions"
-                  else
-                    // A wide window keeps the conversation to a readable column.
-                    list id="transcript" appearance="none" virtualized=true scroll-start="end" scrollFollowEnd=true flex=1 min-height=0 width="100%" max-width="46rem" align-self="center"
-                      for m in talk.messages key=m.id
-                        row justify-content=(m.mine ? "flex-end" : "flex-start") padding="6px 16px"
-                          if m.mine
-                            text m.body padding="10px 14px" border-radius=18 max-width="85%" overflow-wrap="break-word" white-space="pre-wrap"
-                              background-color="AccentColor" color="AccentColorText" testId=`talk-${m.id}`
-                          else
-                            column gap=6 max-width="85%" min-width=0
-                              text "Claude" font="-exact-footnote" color="-exact-secondary-label"
-                              if m.status == "queued" or m.status == "running"
-                                row gap=8 align-items="center" testId=`talk-${m.id}`
-                                  progress aria-label="Writing a reply"
-                                  text "Writing a reply…" color="-exact-secondary-label"
-                              else if m.status == "failed"
-                                text `Couldn’t write a reply. ${m.note}` color="-exact-system-red" overflow-wrap="break-word" testId=`talk-${m.id}`
-                              else
-                                text m.body overflow-wrap="break-word" white-space="pre-wrap" testId=`talk-${m.id}`
-                              if m.added.length > 0
-                                column gap=4 padding="10px 14px" border-radius=12 background-color="surface.note"
-                                  text (m.added.length == 1 ? "Saved to your bank" : `Saved to your bank (${m.added.length})`) font="-exact-footnote" color="text.muted"
-                                  for a, i in m.added key=a
-                                    text a font="-exact-subheadline" overflow-wrap="break-word" testId=`talk-${m.id}-added-${i}`
-                  if (talkAct == "send" and talkError != "") or (talkAct == "ask" and askTalkError != "") or (talkAct == "clear" and clearTalkError != "")
-                    text (talkAct == "send" ? talkError : talkAct == "ask" ? askTalkError : `The conversation wasn’t cleared. ${clearTalkError}`) color="-exact-system-red" padding="0 16px" testId="talk-error"
-                  if talk.loaded
-                    row align-self="center" width="100%" max-width="46rem" box-sizing="border-box" padding="6px 12px"
-                      row flex=1 min-width=0 align-items="flex-end" padding="0 4px 0 12px" border-radius=20 border="1px solid -exact-separator"
-                        textarea id="composer" value=talkDraft input=editTalk rows=1 field-sizing="content" max-height=140
-                          placeholder=(talk.busy ? "Claude is writing a reply" : "What you did, or what’s on your mind") aria-label="Message" testId="talk-composer" flex=1 min-width=0 padding="12px 0"
-                          border="none" background-color="transparent"
-                        button press=sendTalk disabled=(talkDraft.trim() == "" or talk.busy or pending(talkSent)) buttonStyle="filled" margin="4px 0"
-                          retainFocus=true aria-label="Send" testId="talk-send"
-                          image "symbol:send"
+                column navigationKey=`${e.id}` navigationScroll=(talk.loaded and talk.messages.length > 0 ? "transcript" : "talk-scroll") navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                  TalkScreen(talk=talk, failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
               if e.name == "questions"
-                column navigationKey=`${e.id}` navigationPresentation="modal" navigationScroll="question-list" position="absolute" inset=0
-                  header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-                    button id="back" press=back aria-label="Close" testId="questions-close"
-                      image "symbol:close"
-                    text "Questions" role="heading"
-                  list id="question-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=sheetList
-                    if talk.questions.length == 0
-                      section
-                        row
-                          text "Nothing open right now. Questions come from your profile and from the jobs you read." color="-exact-secondary-label" flex=1 min-width=0 testId="questions-none"
-                    else
-                      section
-                        for q in talk.questions key=q.id
-                          button press=askQuestion(q.text) disabled=pending(talkAsked) accent-color="-exact-label" text-align="start" testId=`question-${q.id}`
-                            column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                              text q.text
-                              text q.from font="-exact-footnote" color="-exact-secondary-label"
-                        if askTalkError != ""
-                          row
-                            text askTalkError color="-exact-system-red" flex=1 min-width=0 testId="questions-error"
-                        footer
-                          text "Pick one and Claude asks it. Your answer goes into your bank."
+                column navigationKey=`${e.id}` navigationScroll="questions-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="questions-scroll" flex=1 min-height=0
+                    QuestionsScreen(talk=talk, error=askTalkError, asking=pending(talkAsked), back=back, ask=askQuestion)
               if e.name == "details"
                 column navigationKey=`${e.id}` navigationScroll="details-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="details-scroll" flex=1 min-height=0
@@ -1380,260 +1085,45 @@ component App
                             else
                               FailLine(text=(p.detail != "" ? `${p.name} failed: ${p.detail}` : `${p.name} failed.`), testId=`system-program-${p.name}`)
               if e.name == "jobs"
-                // Beside a detail on a wide window the list is 400 wide, so its four stages fit on one line.
-                column navigationKey=`${e.id}` navigationScroll="job-list" navigationSplit=400 position="absolute" inset=0
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Jobs" role="heading" aria-level=1 flex=1
-                    button press=openCompanies testId="open-companies"
-                      text "Watchlist"
-                    button press=openAddJob aria-label="Add Job" testId="add-job"
-                      image "symbol:add"
-                  if not jobs.loaded
-                    if pending(jobs)
-                      column flex=1 justify-content="center" align-items="center"
-                        progress aria-label="Loading" testId="jobs-loading"
-                    else
-                      EmptyState(symbol="symbol:alert", title="Can’t Load Jobs", message=jobsError)
-                        button press=pull testId="jobs-retry"
-                          text "Try Again"
-                  else if jobs.items.length == 0 and leads.items.length == 0 and leads.companies == 0
-                    EmptyState(symbol="symbol:search", title="No Jobs Yet", message="Add a posting to see how well you fit it and get a resume written for it from your bank.")
-                      button press=openAddJob testId="jobs-add"
-                        text "Add a Job"
-                  else
-                    // Pinned above the list: which stage is shown, with its count, and a search across both jobs and found postings.
-                    column gap=12 padding="12px 16px"
-                      row role="radiogroup" aria-label="Stage" align-self="stretch"
-                        button role="radio" aria-checked=(stageTab == "saved") press=setStage("saved") testId="stage-saved" flex="1 1 0" min-width=0
-                          text `Saved ${savedJobs}`
-                        button role="radio" aria-checked=(stageTab == "active") press=setStage("active") testId="stage-active" flex="1 1 0" min-width=0
-                          text `Active ${activeJobs}`
-                        button role="radio" aria-checked=(stageTab == "done") press=setStage("done") testId="stage-done" flex="1 1 0" min-width=0
-                          text `Done ${doneJobs}`
-                        button role="radio" aria-checked=(stageTab == "found") press=setStage("found") testId="stage-found" flex="1 1 0" min-width=0
-                          text `Found ${leads.items.length}`
-                      input type="search" value=jobQuery input=searchJobs placeholder="Search title or company" aria-label="Search jobs"
-                        autocapitalize="none" autocomplete="off" testId="job-search"
-                    list id="job-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      if stageTab != "found"
-                        // Each job is its own card: what it is and how it fits, then its status, changed in place.
-                        for j in shownJobs key=j.id
-                          section
-                            link href=path("job", j.id) testId=`job-${j.id}`
-                              row flex=1 min-width=0 gap=12 align-items="center"
-                                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                  text j.title
-                                  text jobWhere(j) font="-exact-subheadline" color="-exact-secondary-label" testId=`job-line-${j.id}`
-                                  if jobMeta(j) != ""
-                                    text jobMeta(j) font="-exact-footnote" color="-exact-secondary-label" font-variant-numeric="tabular-nums"
-                                if j.status == "done"
-                                  text `${j.fit}%` font="-exact-title3" font-variant-numeric="tabular-nums" flex="0 0 auto" testId=`fit-${j.id}`
-                                if j.status == "queued"
-                                  Badge(label="Waiting", tint=none)
-                                if j.status == "running"
-                                  Badge(label="Reading", tint=none)
-                                if j.status == "failed"
-                                  Badge(label="Failed", tint=some("-exact-system-red"))
-                              image "symbol:forward-chevron"
-                            row
-                              text "Outcome"
-                              select value=j.outcome change=pickRowOutcome(j.id) aria-label=`Outcome of ${j.title}` testId=`status-${j.id}`
-                                option "Not applied" value=""
-                                option "Applied" value="applied"
-                                option "Interviewed" value="interviewed"
-                                option "Rejected" value="rejected"
-                                option "No response" value="no-response"
-                                option "Offer" value="offer"
-                            if rowError != "" and rowJob == j.id
-                              row
-                                text `That outcome wasn’t saved. ${rowError}` color="-exact-system-red" flex=1 min-width=0 testId="row-error"
-                        section
-                          if shownJobs.length == 0
-                            row
-                              text (jobQuery.trim() != "" ? `No job here matches “${jobQuery.trim()}”.` : stageTab == "saved" ? "Nothing saved. Add a posting, or read one from Found." : stageTab == "active" ? "Nothing in progress. A job moves here when you mark it Applied." : "Nothing finished yet.") color="-exact-secondary-label" flex=1 min-width=0 testId="jobs-none"
-                          footer
-                            text (stageTab == "saved" ? "Jobs still being read come first, then best fit. Mark a job Applied and it moves to Active." : stageTab == "active" ? "Applied and interviewing. After fourteen days with nothing heard, a job moves to Done as No response." : "Rejected, no response, or an offer.") testId="stage-note"
-                      else
-                        section
-                          button role="checkbox" aria-checked=freshOnly press=toggleFresh testId="found-fresh"
-                            display="flex" align-items="center" gap=8 text-align="start" accent-color="-exact-label"
-                            text "Posted this week only" flex=1 min-width=0
-                            image "symbol:checkmark" aria-hidden=true visibility=(freshOnly ? "visible" : "hidden")
-                        section
-                          for l in shownLeads key=l.id
-                            link href=path("lead", l.id) testId=`lead-${l.id}`
-                              row flex=1 min-width=0 gap=12 align-items="center"
-                                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                  text l.title
-                                  text leadWhere(l) font="-exact-subheadline" color="-exact-secondary-label"
-                                  if leadMeta(l) != ""
-                                    text leadMeta(l) font="-exact-footnote" color="-exact-secondary-label" font-variant-numeric="tabular-nums"
-                                text `${l.score}%` font="-exact-title3" font-variant-numeric="tabular-nums" flex="0 0 auto"
-                              image "symbol:forward-chevron"
-                          if shownLeads.length == 0
-                            row
-                              text (checking ? "Looking…" : jobQuery.trim() != "" ? `No found posting matches “${jobQuery.trim()}”.` : freshOnly ? "Nothing found was posted this week." : "Nothing found yet.") color="-exact-secondary-label" flex=1 min-width=0 testId="leads-none"
-                          footer
-                            text `${leadsNote}${leads.unlisted > 0 ? ` Listed: the best 80 and everything posted this week. ${leads.unlisted} older, lower-scored postings are left out.` : ""}${leads.underPay > 0 ? ` ${leads.underPay} more are left out because their pay tops out under the floor in your direction notes.` : ""}` testId="leads-note"
-                    column navigationSplit="placeholder" flex=1 justify-content="center" align-items="center" padding=24
-                      text "Select a job to see how you fit it, requirement by requirement, and the resume written for it." color="-exact-secondary-label" text-align="center" max-width="26.25rem"
+                column navigationKey=`${e.id}` navigationScroll="jobs-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="jobs-scroll" flex=1 min-height=0
+                    JobsScreen(jobs=jobs, leads=leads, failed=failed(jobs), error=jobsError, stage=stageTab, query=jobQuery, freshOnly=freshOnly, shown=shownJobs, shownLeads=shownLeads, saved=savedJobs, active=activeJobs, done=doneJobs, checking=checking, leadsNote=leadsNote, rowError=rowError, rowJob=rowJob, wide=wide, setStage=setStage, search=searchJobs, setFresh=setFresh, pickOutcome=pickRowOutcome, add=openAddJob, watchlist=openCompanies, retry=pull)
               if e.name == "job"
-                column navigationKey=`${e.id}` navigationScroll="job-detail" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "Job" role="heading" aria-level=2
-                  if not job.loaded or job.id != e.params.id
-                    column flex=1 justify-content="center" align-items="center"
-                      if failed(job)
-                        text "Couldn’t load this job. It may have been deleted." color="-exact-secondary-label" text-align="center" padding=24
-                      else
-                        progress aria-label="Loading" testId="job-loading"
-                  else
-                    // What to look at on the resume, in the new look, above everything else on the job. A grouped list
-                    // draws every section as a box, so this sits above the list in a scroll of its own, at most half the
-                    // window high, and the list keeps the rest.
-                    if job.flags.length > 0 or job.skimConclusion != ""
-                      scroll id="job-flags-scroll" flex-shrink=0 max-height="50%" background-color="look.paper"
-                        JobFlags(flags=job.flags, skim=job.skimConclusion)
-                    list id="job-detail" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      JobSections(job=job, doorsError=doorsError, doorsBusy=pending(doorsAsked), copied=copied, draftDoors=draftDoors, copyDoor=copyDoor, lengthError=jobLengthError, writeError=writeError, writeBusy=pending(resumeAsked), writeAgain=writeAgain, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, askGap=askQuestion, saveContact=saveContact, editResume=openEditResume, setLength=setLength, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote)
-              if e.name == "lead"
-                column navigationKey=`${e.id}` navigationScroll="lead-detail" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "Found Job" role="heading" aria-level=2
-                  if not lead.loaded or lead.id != e.params.id
-                    column flex=1 justify-content="center" align-items="center"
-                      if failed(lead)
-                        text "Couldn’t load this posting. It may have closed." color="-exact-secondary-label" text-align="center" padding=24
-                      else
-                        progress aria-label="Loading" testId="lead-loading"
-                  else
-                    list id="lead-detail" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      section
-                        row padding-top=10 padding-bottom=10
-                          text lead.title flex=1 min-width=0 font="-exact-title3" hyphens="manual" testId="lead-title"
-                        Field(label="Company", value=lead.company, testId="lead-company")
-                        if lead.place != ""
-                          Field(label="Location", value=lead.place, testId="lead-place")
-                      section
-                        row gap=12 align-items="center" padding-top=8 padding-bottom=8
-                          text `${lead.score}%` font="-exact-large-title" font-variant-numeric="tabular-nums" flex="0 0 auto" white-space="nowrap" testId="lead-score"
-                          column flex=1 min-width=0 gap=2
-                            text "Quick score"
-                            text lead.reason font="-exact-subheadline" color="-exact-secondary-label" testId="lead-reason"
-                        if leadError != ""
-                          row
-                            text leadError color="-exact-system-red" flex=1 min-width=0 testId="lead-error"
-                        button press=takeLead disabled=pending(leadTaken) testId="lead-read" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-                          image "symbol:book" aria-hidden=true
-                          text "Read Fully"
-                        button press=askDismissLead destructive=true testId="lead-dismiss"
-                          text "Not for Me"
-                        footer
-                          text "Claude’s first sort, from your profile and the posting’s opening. Read Fully moves it to Saved, checks every requirement against your bank and writes its resume."
-                      section
-                        header
-                          text "Posting"
-                        row padding-top=10 padding-bottom=10
-                          text lead.posting flex=1 min-width=0 white-space="pre-wrap" hyphens="manual" testId="lead-posting"
-                        if lead.url != ""
-                          link href=lead.url target="_blank" testId="lead-url"
-                            text "Open the Posting" flex=1
-                            image "symbol:forward-chevron"
-              if e.name == "companies"
-                column navigationKey=`${e.id}` navigationPresentation="modal" navigationScroll="company-list" position="absolute" inset=0
-                  header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-                    button id="back" press=back aria-label="Done" testId="companies-done"
-                      image "symbol:close"
-                    text "Watchlist" role="heading"
-                    button press=checkNow disabled=(checking or pending(checkAsked) or companies.items.length == 0) testId="companies-check"
-                      text "Check Now"
-                  list id="company-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=sheetList
-                    section
-                      row gap=8 align-items="center"
-                        input value=companyLink input=editCompanyLink submit=addCompany placeholder="Link to a company’s job board" aria-label="Link to a company’s job board" type="url"
-                          autocapitalize="none" autocomplete="off" enterkeyhint="done" aria-invalid=(watchAct == "add" and companyError != "") testId="company-link" flex=1 min-width=0
-                        button press=addCompany disabled=(companyLink.trim() == "" or pending(companyAdded)) buttonStyle="bordered" testId="company-add"
-                          text "Add"
-                      if watchAct == "add" and companyError != ""
-                        row
-                          text companyError color="-exact-system-red" flex=1 min-width=0 testId="company-error"
-                      if watchAct == "check" and checkError != ""
-                        row
-                          text checkError color="-exact-system-red" flex=1 min-width=0 testId="check-error"
-                      if watchAct == "remove" and removeCompanyError != ""
-                        row
-                          text `That company wasn’t removed. ${removeCompanyError}` color="-exact-system-red" flex=1 min-width=0 testId="company-remove-error"
-                      footer
-                        text (checking ? "Checking now. Found jobs appear on the Jobs list." : "Boards on Greenhouse, Lever and Ashby can be read. They are checked once a day.") testId="companies-hint"
-                    if not companies.loaded
-                      section
-                        row
-                          text (companiesError != "" ? `Your watchlist couldn’t be loaded. ${companiesError}` : "Loading your watchlist…") color=(companiesError != "" ? "-exact-system-red" : "-exact-secondary-label") flex=1 min-width=0 testId="companies-state"
-                    section
-                      for c in companies.items key=c.id
-                        row
-                          row flex=1 min-width=0 gap=12 align-items="center"
-                            column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                              text c.name
-                              text (c.note != "" ? c.note : `${c.board}. ${c.open} ${c.open == 1 ? "job" : "jobs"} found`) font="-exact-subheadline" color=(c.note != "" ? "-exact-system-red" : "-exact-secondary-label")
-                            button press=askRemoveCompany(c.id, c.name) aria-label=`Remove ${c.name}` testId=`company-remove-${c.id}`
-                              image "symbol:delete"
-              if e.name == "editResume"
-                if job.loaded and job.id == e.params.id
-                  EditResume(route=e.id, body=job.resume, height=sheetList, error=resumeError, busy=pending(resumeSaved), save=saveResume, cancel=back)
+                column navigationKey=`${e.id}` navigationScroll="job-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="job-scroll" flex=1 min-height=0
+                    if not job.loaded or job.id != e.params.id
+                      RecordWait(title="Job", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=back, testId="job-wait")
+                    else
+                      JobScreen(job=job, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength)
               if e.name == "resume"
-                column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Resume" role="heading" aria-level=2 flex=1
-                    if job.loaded and job.id == e.params.id
-                      button press=openEditResume disabled=(job.status == "queued" or job.status == "running" or job.resumeStatus == "queued" or job.resumeStatus == "running") testId="resume-edit"
-                        text "Edit"
+                column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-scroll" flex=1 min-height=0
-                    column gap=24 padding=16 max-width="45rem" width="100%" box-sizing="border-box" margin-left="auto" margin-right="auto"
-                      if not (job.loaded and job.id == e.params.id)
-                        column align-items="center" padding=24
-                          if failed(job)
-                            text "Couldn’t load this job. It may have been deleted." color="-exact-secondary-label" text-align="center"
-                          else
-                            progress aria-label="Loading"
-                      if job.loaded and job.id == e.params.id
-                        text `Written by Claude for ${job.title}${job.company == "" ? "" : ` at ${job.company}`}, from your bank.` font="-exact-footnote" color="-exact-secondary-label" testId="resume-for"
-                        text job.resume markup="markdown" testId="resume-body"
-                        if job.changes.length > 0
-                          column gap=8 padding=16 border-radius=12 background-color="surface.note"
-                            text "What changed from your resume" role="heading" aria-level=2 font="-exact-headline"
-                            for c, i in job.changes key=c
-                              text c testId=`change-${i}`
+                    if not job.loaded or job.id != e.params.id
+                      RecordWait(title="Resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
+                    else
+                      ResumeScreen(job=job, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
+              if e.name == "editResume"
+                column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="resume-editor-scroll" flex=1 min-height=0
+                    if not job.loaded or job.id != e.params.id
+                      RecordWait(title="Edit the resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back", back=back, testId="resume-editor-wait")
+                    else
+                      EditResumeScreen(body=job.resume, error=resumeError, busy=pending(resumeSaved), save=saveResume, cancel=back)
+              if e.name == "lead"
+                column navigationKey=`${e.id}` navigationScroll="lead-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="lead-scroll" flex=1 min-height=0
+                    if not lead.loaded or lead.id != e.params.id
+                      RecordWait(title="Found job", waiting=(not failed(lead)), message="This posting couldn’t be loaded. It may have closed.", backLabel="Back to jobs", back=back, testId="lead-wait")
+                    else
+                      LeadScreen(lead=lead, error=leadError, taking=pending(leadTaken), back=back, take=takeLead, askDismiss=askDismissLead)
+              if e.name == "companies"
+                column navigationKey=`${e.id}` navigationScroll="companies-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="companies-scroll" flex=1 min-height=0
+                    CompaniesScreen(companies=companies, loadError=companiesError, link=companyLink, act=watchAct, addError=companyError, checkError=checkError, removeError=removeCompanyError, adding=pending(companyAdded), checking=checking, checkBusy=pending(checkAsked), wide=wide, back=back, editLink=editCompanyLink, add=addCompany, check=checkNow, askRemove=askRemoveCompany)
               if e.name == "addJob"
-                column navigationKey=`${e.id}` navigationPresentation="modal" navigationScroll="job-form" position="absolute" inset=0
-                  header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-                    button id="back" press=leaveAddJob aria-label="Cancel" testId="job-cancel"
-                      image "symbol:close"
-                    text "New Job" role="heading"
-                    button press=addJob buttonStyle="bordered-prominent" aria-label="Add" testId="job-save"
-                      disabled=(jobHint != "")
-                      image "symbol:checkmark"
-                  list id="job-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=sheetList
-                    section
-                      row
-                        input value=jobUrl input=editJobUrl submit=addJob placeholder="Link to the posting" aria-label="Link to the posting" type="url"
-                          autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="done" aria-invalid=(jobRefusal != "" and jobUrl.trim() != "") testId="job-url" flex=1 min-width=0
-                      if jobRefusal != "" and jobUrl.trim() != "" and not pending(jobAdded)
-                        row
-                          text jobRefusal color="-exact-system-red" flex=1 min-width=0 testId="job-error"
-                      footer
-                        text "Some job sites block reading by link. If it fails, paste the text below."
-                    section
-                      header
-                        text "Or paste the posting"
-                      row padding-top=8 padding-bottom=8
-                        textarea value=jobText input=editJobText placeholder="The whole posting, including requirements" aria-label="Posting text"
-                          rows=10 testId="job-text" flex=1 min-width=0
-                      if jobRefusal != "" and jobUrl.trim() == "" and not pending(jobAdded)
-                        row
-                          text jobRefusal color="-exact-system-red" flex=1 min-width=0 testId="job-error"
-                      footer
-                        text (jobHint != "" ? jobHint : "Claude Code on the server reads it against your bank.") testId="job-hint"
+                column navigationKey=`${e.id}` navigationScroll="add-job-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="add-job-scroll" flex=1 min-height=0
+                    AddJobScreen(url=jobUrl, posting=jobText, refusal=jobRefusal, sending=pending(jobAdded), hint=jobHint, editUrl=editJobUrl, editText=editJobText, add=addJob, cancel=leaveAddJob)
               if e.name == "sources"
                 column navigationKey=`${e.id}` navigationScroll="sources-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
                   scroll id="sources-scroll" flex=1 min-height=0
@@ -1641,7 +1131,7 @@ component App
                       Section(testId="sources-top")
                         Title(text="Sources", testId="sources-title")
                         if lib.loaded and lib.items.length > 0
-                          QuietLine(text=`${readCount} of ${lib.items.length} read. Claude reads each source for facts about your work, one at a time.`, testId="sources-count")
+                          QuietLine(text=`${readCount} of ${lib.items.length} read. Each source is read for facts about your work, one at a time.`, testId="sources-count")
                           MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="add-source")
                       if not lib.loaded
                         Section(testId="sources-wait")
@@ -1652,7 +1142,7 @@ component App
                             QuietLine(text="Loading your sources…", testId="sources-loading")
                       else if lib.items.length == 0
                         Section(testId="sources-empty")
-                          Line(text="A source is something Claude reads for facts about your work: pasted text, a file or a git repository.", testId="sources-empty-text")
+                          Line(text="A source is something the studio reads for facts about your work: pasted text, a file or a git repository.", testId="sources-empty-text")
                           MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="sources-add")
                       else
                         Section(testId="sources-list")
@@ -1757,9 +1247,9 @@ component App
                               autocapitalize="none" autocomplete="off" enterkeyhint="done" testId="add-author"
                           if refusal != "" and not pending(added)
                             FailLine(text=refusal, testId="add-error")
-                          QuietLine(text="A repository folder on the studio’s computer. Only commits by this author count as yours. Claude reads the history and the code, and can’t change the repository.", testId="add-repo-hint")
+                          QuietLine(text="A repository folder on the studio’s computer. Only commits by this author count as yours. The history and the code are read, and the repository is never changed.", testId="add-repo-hint")
                       Section(testId="add-actions")
-                        QuietLine(text=(addHint != "" ? addHint : "Claude reads what you add and puts what it finds in your record."), testId="add-hint")
+                        QuietLine(text=(addHint != "" ? addHint : "What you add is read, and what is found in it goes into your record."), testId="add-hint")
                         Actions(testId="add-actions-row")
                           MainAction(label="Add", press=add, disabled=(addHint != ""), keys="", testId="add-save")
                           Action(label="Cancel", press=leaveAdd, disabled=false, keys="", testId="add-cancel")
@@ -1770,21 +1260,21 @@ component App
         button commandfor="remove-fact" command="close" testId="remove-fact-cancel"
           text "Cancel"
       dialog id="clear-talk" role="alertdialog" aria-label="Start the conversation over?"
-        text "The messages are cleared. Facts already added to your bank stay."
+        text "The messages are cleared. Facts already added to your record stay."
         button press=clearTalk destructive=true commandfor="clear-talk" command="close" testId="clear-talk-confirm"
-          text "Start Over"
+          text "Start over"
         button commandfor="clear-talk" command="close" testId="clear-talk-cancel"
           text "Cancel"
       dialog id="replace-edits" role="alertdialog" aria-label="Replace your edits?"
         text "You edited this resume by hand. Writing it again replaces your edits."
         button press=replaceEdits destructive=true commandfor="replace-edits" command="close" testId="replace-edits-confirm"
-          text "Replace My Edits"
+          text "Replace my edits"
         button press=keepEdits commandfor="replace-edits" command="close" testId="replace-edits-cancel"
           text "Cancel"
       dialog id="dismiss-lead" role="alertdialog" aria-label="Not for you?"
         text "This posting leaves Found and won’t be shown again."
         button press=dismissLead destructive=true commandfor="dismiss-lead" command="close" testId="dismiss-lead-confirm"
-          text "Not for Me"
+          text "Not for me"
         button commandfor="dismiss-lead" command="close" testId="dismiss-lead-cancel"
           text "Cancel"
       dialog id="replace-public" role="alertdialog" aria-label="Replace the text in the field?"
@@ -1812,7 +1302,7 @@ component App
         button commandfor="discard-edits" command="close" testId="discard-edits-cancel"
           text "Keep editing"
       dialog id="remove-job" role="alertdialog" aria-label="Delete this job?"
-        text "Its fit and the resume written for it are deleted. This can’t be undone."
+        text "Its reading and the resume written for it are deleted. This can’t be undone."
         button press=removeJob destructive=true commandfor="remove-job" command="close" testId="remove-job-confirm"
           text "Delete"
         button commandfor="remove-job" command="close" testId="remove-job-cancel"
@@ -1839,375 +1329,3 @@ component SystemNav
     SubLine(label="System")
       SubLink(label="Public page", current=(at == "publicPage"), press=go("publicPage"), testId="sub-public")
       SubLink(label="Backups and sign-in", current=(at == "system"), press=go("system"), testId="sub-backups")
-
-// A sheet whose content has not arrived: it says so, or that it could not, and can always be closed.
-component SheetWait
-  props
-    route: number
-    title: string
-    waiting: bool
-    // What to say when it is not coming.
-    message: string
-    close: action
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=close aria-label="Close" testId="sheet-close"
-          image "symbol:close"
-        text title role="heading"
-      column flex=1 justify-content="center" align-items="center" padding=24 gap=12
-        if waiting
-          progress aria-label="Loading"
-        else
-          text message color="-exact-secondary-label" text-align="center" max-width="26.25rem"
-
-// A label over its value, as a grouped row.
-component Field
-  props
-    label: string
-    value: string
-    testId: string
-  view
-    row
-      column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-        text label font="-exact-footnote" color="-exact-secondary-label"
-        text value hyphens="manual" testId=testId
-
-// One job: what it is, how well the bank fits it and why, the resume for it, each requirement with its support.
-component JobSections
-  props
-    job: Job
-    // The length the picker shows: the one being asked about while a confirm is open, else the resume's.
-    pages: string
-    lengthError: string
-    doorsError: string
-    writeError: string
-    writeBusy: bool
-    writeAgain: action
-    doorsBusy: bool
-    copied: string
-    draftDoors: action
-    copyDoor: action
-    busy: bool
-    error: string
-    saveError: string
-    askGap: action
-    reread: action
-    askRemove: action
-    pickOutcome: action
-    saveNote: action
-    saveContact: action
-    editResume: action
-    setLength: action
-  state note = job.outcomeNote
-  state who = job.contact
-  action editWho(v: string)
-    who = v
-  action editNote(v: string)
-    note = v
-  view
-    section
-      row padding-top=10 padding-bottom=10
-        text job.title flex=1 min-width=0 font="-exact-title3" hyphens="manual" testId="job-title"
-      if job.company != ""
-        Field(label="Company", value=job.company, testId="job-company")
-      if job.place != ""
-        Field(label="Location", value=job.place, testId="job-place")
-      if job.url != ""
-        link href=job.url target="_blank" testId="job-posting"
-          text "Open the Posting" flex=1
-          image "symbol:forward-chevron"
-      if job.status != "done"
-        Field(label="Reading", value=(job.status == "queued" ? "Waiting to be read." : job.status == "running" ? "Claude is reading it against your bank. This takes a few minutes." : `Reading failed. ${job.note}`), testId="job-status")
-    if job.status == "done" or job.verdict != ""
-      section
-        row gap=12 align-items="center" padding-top=8 padding-bottom=8
-          text `${job.fit}%` font="-exact-large-title" font-variant-numeric="tabular-nums" flex="0 0 auto" white-space="nowrap" testId="job-fit"
-          column flex=1 min-width=0 gap=2
-            text "Fit"
-            text `${job.covered} of ${job.asked} requirements supported by your bank` font="-exact-subheadline" color="-exact-secondary-label" testId="job-covered"
-        if job.resumeStatus == "queued" or job.resumeStatus == "running"
-          row gap=12 align-items="center"
-            progress aria-label="Writing the resume"
-            text (job.resume == "" ? "Claude is writing your resume for this job and having it reviewed. This takes several minutes." : "Claude is writing this resume again and having it reviewed. The one below is the last version.") color="-exact-secondary-label" flex=1 min-width=0 testId="job-resume-writing"
-        if job.resumeStatus == "failed"
-          row
-            text `The resume couldn’t be written. ${job.resumeNote} Write it again to retry.` color="-exact-system-red" flex=1 min-width=0 testId="job-resume-failed"
-        if job.resumeStale and job.resumeStatus != "queued" and job.resumeStatus != "running"
-          row
-            text (job.edited ? "Your bank changed after you edited this resume. Write it again to bring it up to date." : "Your bank changed after this resume was written. It’s written again by itself a few minutes after your last change.") color="-exact-secondary-label" flex=1 min-width=0 testId="job-resume-stale"
-        if job.atsScore >= 0
-          row
-            row flex=1 min-width=0 gap=12 align-items="center"
-              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                text `Parser score ${job.atsScore} of 100` font-variant-numeric="tabular-nums" testId="job-parser"
-                text (job.atsScore >= job.atsRequired ? `At or above the ${job.atsRequired} required. Ready to send.` : `Below the ${job.atsRequired} required. Write the resume again, or see what holds it down under “How a tracking system reads the PDF”.`) font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-              Badge(label=(job.atsScore >= job.atsRequired ? "Ready" : "Not ready"), tint=(job.atsScore >= job.atsRequired ? some("-exact-system-green") : some("-exact-system-orange")))
-        if job.resume != ""
-          link href=path("resume", job.id) testId="job-resume"
-            text "Resume for This Job" flex=1
-            image "symbol:forward-chevron"
-        if job.pdf != ""
-          link href=job.pdf testId="job-pdf"
-            image "symbol:download" aria-hidden=true
-            text "Download the PDF to Send" flex=1
-        row
-          text "Length"
-          select value=pages change=setLength disabled=(busy or job.status == "queued" or job.status == "running" or job.resumeStatus == "queued" or job.resumeStatus == "running") aria-label="Resume length" testId="job-pages"
-            option "Two pages" value="2"
-            option "One page" value="1"
-        if lengthError != ""
-          row
-            text `The length wasn’t changed. ${lengthError}` color="-exact-system-red" flex=1 min-width=0 testId="job-length-error"
-        button press=editResume disabled=(job.resume == "" or busy or job.status == "queued" or job.status == "running" or job.resumeStatus == "queued" or job.resumeStatus == "running") testId="job-edit-resume" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-          image "symbol:pencil" aria-hidden=true
-          text "Edit Resume"
-        button press=writeAgain disabled=(writeBusy or busy or job.status != "done" or job.resumeStatus == "queued" or job.resumeStatus == "running") testId="job-write-again" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-          image "symbol:refresh" aria-hidden=true
-          text "Write Resume Again"
-        if writeError != ""
-          row
-            text `The resume wasn’t queued. ${writeError}` color="-exact-system-red" flex=1 min-width=0 testId="job-write-error"
-        footer
-          text (job.weighed ? "Claude’s reading of the posting against your bank. Production work and recent work count for more; set each role’s kind of work under Experience. A change to your bank writes every unsent resume again by itself, except one you edited. Writing it again takes several minutes and replaces your edits." : "Read before evidence was weighed, so personal and production work count alike. Read it again for a weighted fit.") testId="job-weighed"
-    section
-      header
-        text "What happened"
-      row
-        text "Outcome"
-        select value=job.outcome change=pickOutcome(note) aria-label="Outcome" testId="job-outcome"
-          option "Not applied" value=""
-          option "Applied" value="applied"
-          option "Interviewed" value="interviewed"
-          option "Rejected" value="rejected"
-          option "No response" value="no-response"
-          option "Offer" value="offer"
-      row
-        input value=note input=editNote change=saveNote(job.outcome) placeholder="Note, such as how far it got" aria-label="Outcome note" testId="job-outcome-note" flex=1 min-width=0
-      row
-        input value=who input=editWho change=saveContact placeholder="Who you know there, and how" aria-label="Who you know there" testId="job-contact" flex=1 min-width=0
-      if saveError != ""
-        row
-          text `That change wasn’t saved. ${saveError}` color="-exact-system-red" flex=1 min-width=0 testId="job-save-error"
-      footer
-        text "Your record of what became of it, and anyone who could vouch for you. New jobs are scored with the outcomes in view."
-    if job.status == "done" or job.verdict != ""
-      section
-        header
-          text "Reach out"
-        for d in job.doors key=d.id
-          row
-            column flex=1 min-width=0 gap=6 padding-top=8 padding-bottom=8
-              text d.to font="-exact-headline" testId=`door-to-${d.id}`
-              text `${d.why} ${d.find}` font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-              text d.message hyphens="manual" white-space="pre-wrap" overflow-wrap="break-word" testId=`door-message-${d.id}`
-              button press=copyDoor(d.id, d.message) buttonStyle="bordered" align-self="flex-start" testId=`door-copy-${d.id}`
-                text (copied == `${job.id}:${d.id}` ? "Copied" : "Copy Message")
-        if job.doorsStatus == "queued" or job.doorsStatus == "running"
-          row gap=12 align-items="center"
-            progress aria-label="Writing"
-            text "Claude is drafting messages. This takes a minute or two." color="-exact-secondary-label" flex=1 min-width=0 testId="doors-writing"
-        if job.doorsStatus == "failed" or doorsError != ""
-          row
-            text (doorsError != "" ? doorsError : `Drafting failed. ${job.doorsNote}`) color="-exact-system-red" flex=1 min-width=0 testId="doors-error"
-        button press=draftDoors disabled=(doorsBusy or job.doorsStatus == "queued" or job.doorsStatus == "running") testId="doors-draft" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-          image "symbol:compose" aria-hidden=true
-          text (job.doors.length > 0 ? "Draft Again" : "Draft Messages")
-        footer
-          text (job.doors.length > 0 ? "Drafts to personalise before you send. Fill in anything in [brackets]. Drafting again replaces these." : "Short messages to reach a person at the company, each by a different way in. If you noted who you know there, the first is written to them.")
-    if job.status == "done" or job.verdict != ""
-      section
-        header
-          text "Claude’s read"
-        row padding-top=10 padding-bottom=10
-          text job.verdict flex=1 min-width=0 hyphens="manual" testId="job-verdict"
-      section
-        header
-          text "Requirements"
-        for n in job.requirements key=n.id
-          row
-            row flex=1 min-width=0 gap=12 align-items="center"
-              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                text n.text hyphens="manual"
-                text (n.must ? n.evidence : `Preferred. ${n.evidence}`) font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-                if n.basis != ""
-                  text `Rests on ${n.basis}. Counts ${n.counted}%.` font="-exact-footnote" color="-exact-secondary-label" font-variant-numeric="tabular-nums"
-              Badge(label=coverageLabel(n.coverage), tint=(n.coverage == "strong" ? some("-exact-system-green") : n.coverage == "partial" ? some("-exact-system-orange") : none))
-      if job.reviewScore != ""
-        section
-          header
-            text "Resume review"
-          row
-            row flex=1 min-width=0 gap=12 align-items="center"
-              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                text (job.reviewPassed ? "Passed" : "Short of 8") testId="review-result"
-                text (job.reviewRounds == 0 ? "Scored as first written." : job.reviewRounds == 1 ? "Rewritten once to get here." : `Rewritten ${job.reviewRounds} times to get here.`) font="-exact-subheadline" color="-exact-secondary-label"
-              Badge(label=`${job.reviewScore} of 10`, tint=(job.reviewPassed ? some("-exact-system-green") : some("-exact-system-orange")))
-          for r in job.seats key=r.id
-            row
-              row flex=1 min-width=0 gap=12 align-items="center"
-                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                  text (r.model == "" ? r.seat : `${r.seat} · ${r.model}`)
-                  text `Scores by round: ${r.score}` font="-exact-footnote" color="-exact-secondary-label" font-variant-numeric="tabular-nums" testId=`seat-scores-${r.id}`
-                  text r.note font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-          footer
-            text "Three readers, each a different model, score it every round. It is rewritten from your bank until they average 8 of 10, up to three times."
-      if job.reviewChanges.length > 0
-        section
-          header
-            text "What the review changed"
-          for c, i in job.reviewChanges key=c
-            row
-              text c flex=1 min-width=0 padding-top=4 padding-bottom=4 hyphens="manual" testId=`review-change-${i}`
-      if job.ats.length > 0
-        section
-          header
-            text "How a tracking system reads the PDF"
-          if job.atsScore >= 0
-            row gap=12 align-items="center" padding-top=8 padding-bottom=8
-              text `${job.atsScore}` font="-exact-title1" font-variant-numeric="tabular-nums" flex="0 0 auto" white-space="nowrap" testId="ats-score"
-              column flex=1 min-width=0 gap=2
-                text `Parser score, of 100. ${job.atsRequired} is required.`
-                text job.atsParts font="-exact-subheadline" color="-exact-secondary-label" font-variant-numeric="tabular-nums" hyphens="manual" testId="ats-parts"
-          for a in job.ats key=a.id
-            row
-              row flex=1 min-width=0 gap=12 align-items="center"
-                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                  text a.label
-                  text a.note font="-exact-subheadline" color="-exact-secondary-label" font-variant-numeric="tabular-nums" hyphens="manual"
-                Badge(label=(a.ok ? "Good" : "Fix"), tint=(a.ok ? some("-exact-system-green") : some("-exact-system-orange")))
-          footer
-            text "The PDF’s text is read back the way a parser reads it. One column, plain text and standard section names are what parsers handle; this checks the file has them. The score is counted by fixed rules, with no model, and a resume needs 85 to be ready. Its terms part counts the posting’s terms your bank supports; a term your bank can’t support lowers Fit, not this score. A bullet without a number scores lower, and that is allowed: a number is only shown when your bank has one worth showing."
-      if job.checks.length > 0
-        section
-          header
-            text "Your fit test"
-          for c in job.checks key=c.id
-            row
-              row flex=1 min-width=0 gap=12 align-items="center"
-                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                  text c.question hyphens="manual"
-                  if c.note != ""
-                    text c.note font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-                Badge(label=(c.answer == "yes" ? "Yes" : c.answer == "partly" ? "Partly" : c.answer == "no" ? "No" : "Unknown"), tint=(c.answer == "yes" ? some("-exact-system-green") : c.answer == "partly" ? some("-exact-system-orange") : c.answer == "no" ? some("-exact-system-red") : none))
-          footer
-            text "The questions from your direction notes, answered from the posting. They don’t change the fit number."
-      if job.termsIn.length + job.termsBank.length + job.termsMissing.length > 0
-        section
-          header
-            text "Keyword match"
-          Field(label=`In the resume, ${job.termsIn.length} of ${job.termsIn.length + job.termsBank.length + job.termsMissing.length}`, value=(job.termsIn.length == 0 ? "None" : job.termsIn.join(", ")), testId="job-terms-in")
-          if job.termsBank.length > 0
-            Field(label="In your bank, missing from the resume", value=job.termsBank.join(", "), testId="job-terms-bank")
-          if job.termsMissing.length > 0
-            Field(label="Not in your bank", value=job.termsMissing.join(", "), testId="job-terms-missing")
-          footer
-            text "The posting’s own terms, which recruiters search for and tracking systems match. Terms your bank doesn’t support are never added."
-      if job.knockouts.length > 0
-        section
-          header
-            text "Screening questions to expect"
-          for k in job.knockouts key=k.id
-            row
-              row flex=1 min-width=0 gap=12 align-items="center"
-                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                  text k.question hyphens="manual"
-                  if k.note != ""
-                    text k.note font="-exact-subheadline" color="-exact-secondary-label" hyphens="manual"
-                Badge(label=(k.answer == "yes" ? "Yes" : k.answer == "no" ? "No" : "Unknown"), tint=(k.answer == "yes" ? some("-exact-system-green") : k.answer == "no" ? some("-exact-system-red") : none))
-      if job.strengths.length > 0
-        section
-          header
-            text "What carries it"
-          for t in job.strengths key=t
-            row padding-top=6 padding-bottom=6
-              text t flex=1 min-width=0 hyphens="manual"
-      if job.risks.length > 0
-        section
-          header
-            text "What may screen you out"
-          for t in job.risks key=t
-            row padding-top=6 padding-bottom=6
-              text t flex=1 min-width=0 hyphens="manual"
-      if job.gaps.length > 0
-        section
-          header
-            text "Worth adding"
-          for t in job.gaps key=t
-            button press=askGap(t) accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-              text t flex=1 min-width=0 padding-top=6 padding-bottom=6 hyphens="manual"
-              image "symbol:forward-chevron" aria-hidden=true
-          footer
-            text "Pick one to answer it in Talk, then read the job again."
-    section
-      if error != ""
-        row
-          text error color="-exact-system-red" flex=1 min-width=0 testId="job-action-error"
-      button press=reread disabled=(busy or job.status == "queued" or job.status == "running") testId="job-read" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-        image "symbol:refresh" aria-hidden=true
-        text "Read Again"
-      button press=askRemove destructive=true testId="job-delete"
-        text "Delete Job"
-      footer
-        text (job.status == "queued" or job.status == "running" ? "It can be read again once this reading finishes." : "Reading again scores the job against your bank as it is now and writes its resume again.") testId="job-read-hint"
-
-// What to look at on a job's resume: the six-second skim's conclusion, then each flag with its items under it,
-// the serious ones first (app.ts sorts them) and in the heavy weight. No badge and no box (DESIGN.md).
-component JobFlags
-  props
-    flags: JobFlag[]
-    skim: string
-  view
-    Page(testId="job-flags")
-      Section(testId="job-flags-list")
-        SectionHead(text="What to look at", testId="job-flags-head")
-        if skim != ""
-          Line(text=skim, testId="job-skim")
-        for f in flags key=f.id
-          column gap=lookTight()
-            if f.severity == "high"
-              StrongLine(text=f.text, testId=`job-flag-${f.id}`)
-            else
-              Line(text=f.text, testId=`job-flag-${f.id}`)
-            if f.items.length > 0
-              Indented(testId=`job-flag-${f.id}-items`)
-                for item, n in f.items key=`${n}`
-                  Line(text=item, testId=`job-flag-${f.id}-item-${n}`)
-
-// The resume for one job, edited as Markdown before it is sent. Saving prints the PDF again.
-component EditResume
-  props
-    route: number
-    body: string
-    height: number
-    error: string
-    busy: bool
-    save: action
-    cancel: action
-  state draft = body
-  action edit(v: string)
-    draft = v
-  action leave
-    if draft != body
-      showModal("discard-edits")
-    else
-      cancel()
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" navigationScroll="resume-form" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=leave aria-label="Cancel" testId="resume-cancel"
-          image "symbol:close"
-        text "Edit Resume" role="heading"
-        button press=save(draft) disabled=(busy or draft.trim() == "") buttonStyle="bordered-prominent" aria-label="Save" testId="resume-save"
-          image "symbol:checkmark"
-      list id="resume-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=height
-        section
-          row padding-top=8 padding-bottom=8
-            textarea value=draft input=edit aria-label="Resume" placeholder="The resume, in Markdown"
-              rows=26 testId="resume-text" flex=1 min-width=0
-          if error != ""
-            row
-              text error color="-exact-system-red" flex=1 min-width=0 testId="resume-error"
-          footer
-            text (busy ? "Saving and printing the PDF…" : "Markdown: # your name, ## a section, ### a role, - a bullet. Saving prints the PDF again.") testId="resume-hint"
-

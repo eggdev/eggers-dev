@@ -84,7 +84,7 @@ export function syncSkills(now: number): void {
   })();
   const since = reviewedAt();
   raise('skill', since === 0 ? [] : allSkills().filter((s) => s.mark === '' && s.kind !== 'other' && s.added_at > since).map((s) => ({ key: `skill:${s.key}`, about: `skill:${s.key}`, data: { skill: s.key },
-    text: `Your bank now names ${s.name} as a skill. Could you defend it in an interview? It stays off your resumes until you say.`, choices: ['Yes, I am confident in it', 'No, leave it off my resumes'] })), now);
+    text: `Your record now names ${s.name} as a skill. Could you defend it in an interview? It stays off your resumes until you say.`, choices: ['Yes, I am confident in it', 'No, leave it off my resumes'] })), now);
 }
 onAnswer('skill', (q: Raised, choice: number) => { db.query('UPDATE skills SET mark = ? WHERE key = ?').run(choice === 0 ? 'confident' : 'not-confident', String(q.data.skill ?? '')); return ''; });
 

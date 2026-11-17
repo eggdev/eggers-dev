@@ -45,7 +45,7 @@ export function codeFlags(markdown: string, pages: number, now = Date.now()): Fl
   for (const heading of emptyEntries(resume)) out.push({ kind: 'zero-bullets', severity: 'warn', text: `“${heading}” has no bullets under it. Give it a bullet, or name it on the Earlier experience line instead.` });
   const k = kept(resume, inventory(metricFacts()), roles);
   if (k.dropped.length > 0) out.push({ kind: 'metrics-dropped', severity: 'warn', items: k.dropped.map((m) => m.text),
-    text: `This resume shows ${k.held.length} of the ${k.master.length} measured results your bank holds for the jobs it gives bullets to. Left out: ${list(k.dropped.map((m) => m.text))}.` });
+    text: `This resume shows ${k.held.length} of the ${k.master.length} measured results your record holds for the jobs it gives bullets to. Left out: ${list(k.dropped.map((m) => m.text))}.` });
   if (k.summaryOnly.length > 0) out.push({ kind: 'summary-metric', severity: 'warn', items: k.summaryOnly.map((m) => m.text),
     text: `The summary uses a result that is not in the bullets of the job it came from: ${list(k.summaryOnly.map((m) => m.text))}. Put it in that job’s bullets too.` });
   // Rule 8: a job that ended 8 or more years ago gets one bullet at most. (Whether a job is outside the posting's field is the writer's call.)

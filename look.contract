@@ -51,6 +51,10 @@ fn lookLeading(): string = `${look().leading}`
 fn lookTitleLeading(): string = `${look().leading - 0.1}`
 fn lookMeasure(): string = `${look().measure}rem`
 fn lookMargin(): string = `${look().margin}rem`
+// The width of a page with a notes column: the main column, the notes column, and a gutter between them and at
+// each side (the gutter's px written in rem at the browser's usual 16px). The main line spans this width too, as
+// the lab draws it: its hairline and System end where the notes column ends.
+fn lookWideMeasure(): string = `${look().measure + look().margin + 3 * lookGutter() / 16}rem`
 fn lookRule(): string = `${look().ruleWeight}px`
 // The space between a section's head and its rule, and between the lines of one item: half a row's.
 fn lookTight(): number = look().rowGap / 2
@@ -63,10 +67,15 @@ fn lookRefWidth(): string = `${look().textSize * 5 / 16}rem`
 // Under this width (px) the margin notes move under the main column, and two columns become one.
 fn lookNarrow(): number = 640
 
-// The status words (DESIGN.md section 5). A word outside this list is a defect, so the type refuses one.
+// The status words (DESIGN.md section 5). A word outside this list is a defect, so the type refuses one. Every old
+// state maps here and nowhere else. A job's state is one key (jobs.contract's `jobPhase` picks it): queued and found
+// (a posting found on the watchlist) are New; running is Reading; done (read, its resume not ready to send) is Read;
+// writing (its resume being written) is Writing; ready (its resume passes the PDF's check) is Ready; applied and
+// interviewed are Sent; no-response and quiet (no reply 14 days after it was sent) are Quiet; rejected, offer and
+// closed are Closed; failed (the reading) and write-failed (the resume) are Failed.
 // A job: New, Reading, Read, Writing, Ready, Sent, Quiet, Closed, Failed. A fact or role: Confirmed, Unsure.
 // A question: Open, Answered, Snoozed. Slow work: Waiting, Running, Done, Failed. The public page: Draft, Live, Offline.
-fn statusWord(kind: string, old: string): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = kind == "job" ? (old == "queued" ? "New" : old == "running" ? "Reading" : old == "done" ? "Read" : old == "writing" ? "Writing" : old == "ready" ? "Ready" : old == "applied" or old == "interviewed" ? "Sent" : old == "no-response" ? "Quiet" : old == "rejected" or old == "offer" or old == "closed" ? "Closed" : old == "failed" ? "Failed" : "New") : kind == "fact" or kind == "role" ? (old == "unsure" ? "Unsure" : "Confirmed") : kind == "question" ? (old == "answered" ? "Answered" : old == "snoozed" ? "Snoozed" : "Open") : kind == "work" ? (old == "running" ? "Running" : old == "done" ? "Done" : old == "failed" ? "Failed" : "Waiting") : kind == "public" ? (old == "live" ? "Live" : old == "offline" ? "Offline" : "Draft") : "Open"
+fn statusWord(kind: string, old: string): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = kind == "job" ? (old == "queued" or old == "found" ? "New" : old == "running" ? "Reading" : old == "done" ? "Read" : old == "writing" ? "Writing" : old == "ready" ? "Ready" : old == "applied" or old == "interviewed" ? "Sent" : old == "no-response" or old == "quiet" ? "Quiet" : old == "rejected" or old == "offer" or old == "closed" ? "Closed" : old == "failed" or old == "write-failed" ? "Failed" : "New") : kind == "fact" or kind == "role" ? (old == "unsure" ? "Unsure" : "Confirmed") : kind == "question" ? (old == "answered" ? "Answered" : old == "snoozed" ? "Snoozed" : "Open") : kind == "work" ? (old == "running" ? "Running" : old == "done" ? "Done" : old == "failed" ? "Failed" : "Waiting") : kind == "public" ? (old == "live" ? "Live" : old == "offline" ? "Offline" : "Draft") : "Open"
 
 // A page: one column, flush left, at most `measure` wide, with a side gutter. Its children are its sections.
 component Page
@@ -78,8 +87,28 @@ component Page
       gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId=testId
       children
 
-// A section of a page: its rows, a row's space apart.
+// A section of a page: its rows, a row's space apart, no wider than the main column (on a `WidePage` too).
 component Section
+  props
+    testId: string
+  slot
+  view
+    column gap=look().rowGap max-width=lookMeasure() testId=testId
+      children
+
+// A page with a notes column (`WithNote` rows, a document with notes beside it): as wide as the main column, a
+// gutter and the notes column. Its ordinary sections keep to the main column's width.
+component WidePage
+  props
+    testId: string
+  slot
+  view
+    column max-width=lookWideMeasure() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap
+      gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId=testId
+      children
+
+// A section whose rows carry margin notes: it spans the notes column too, so its head's rule does.
+component WideSection
   props
     testId: string
   slot
@@ -87,13 +116,13 @@ component Section
     column gap=look().rowGap testId=testId
       children
 
-// The page's title: the larger of the two sizes, in the light weight.
+// The page's title: the larger of the two sizes, in the heavy weight (as the lab sets it).
 component Title
   props
     text: string
     testId: string
   view
-    text text role="heading" aria-level=1 font-size=lookTitle() font-weight=400 line-height=lookTitleLeading() color="look.ink" hyphens="auto" overflow-wrap="break-word" testId=testId
+    text text role="heading" aria-level=1 font-size=lookTitle() font-weight=look().strong line-height=lookTitleLeading() color="look.ink" hyphens="auto" overflow-wrap="break-word" testId=testId
 
 // A section's head: text size, the heavy weight, a hairline under it.
 component SectionHead
@@ -133,6 +162,15 @@ component QuietLine
   view
     text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
 
+// Running text kept as written: its line breaks stay (a posting, a message). `strong` sets it in the heavy weight.
+component Prose
+  props
+    text: string
+    strong: bool
+    testId: string
+  view
+    text text font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" white-space="pre-wrap" overflow-wrap="break-word" testId=testId
+
 // A failure, in red: what was refused and why, in the words it was refused in.
 component FailLine
   props
@@ -150,14 +188,14 @@ component Indented
     column padding-left=lookGutter() gap=lookTight() testId=testId
       children
 
-// A status: one word from the fixed list, in grey unless it needs the owner.
+// A status: one word from the fixed list, in grey unless it needs the owner; Failed in red (DESIGN.md rule 3).
 component Status
   props
     word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     needsYou: bool
     testId: string
   view
-    text word font-size=lookText() font-weight=400 line-height=lookLeading() white-space="nowrap" color=(needsYou ? "look.ink" : "look.grey") testId=testId
+    text word font-size=lookText() font-weight=400 line-height=lookLeading() white-space="nowrap" color=(word == "Failed" ? "-exact-system-red" : needsYou ? "look.ink" : "look.grey") testId=testId
 
 // A reference number (F-0142, J-023): tabular figures, in grey; nothing when the look hides references.
 component Ref
@@ -272,6 +310,16 @@ component Record
           QuietLine(text=provenance, testId=`${testId}-from`)
         children
 
+// A list of records (jobs, found postings, companies): each record is several lines, so records stand twice a
+// row's space apart, and the lines of one record half a row's.
+component RecordList
+  props
+    testId: string
+  slot
+  view
+    column gap=(look().rowGap * 2) testId=testId
+      children
+
 // A record's name: a link to its page, or plain text; heavy for a record that heads others.
 component RecordName
   props
@@ -302,7 +350,8 @@ component RecordHead
   slot
   view
     column gap=lookTight() testId=`${testId}-record`
-      Ref(code=code, testId=`${testId}-ref`)
+      if code != ""
+        Ref(code=code, testId=`${testId}-ref`)
       Title(text=name, testId=testId)
       RecordMeta(span=joinDot([dates, extent]), word=word, showWord=showWord, place=place, needsYou=false, testId=testId)
       if provenance != ""
@@ -359,7 +408,19 @@ component ChoiceWord
     testId: string
   view
     button role="radio" aria-checked=chosen press=press text-align="start" testId=testId
-      text label font-size=lookText() font-weight=(chosen ? look().strong : 400) line-height=lookLeading() color="look.ink"
+      HeavyWidth(label=label)
+        text label font-size=lookText() font-weight=(chosen ? look().strong : 400) line-height=lookLeading() color="look.ink" testId=`${testId}-label`
+
+// A word that is set heavy when it is the current one keeps the heavy word's width always, so the words beside it
+// do not move: an unseen heavy copy under it, of no height, holds the width. Its slot is the word as shown.
+component HeavyWidth
+  props
+    label: string
+  slot
+  view
+    column align-items="start"
+      children
+      text label aria-hidden=true font-size=lookText() font-weight=look().strong line-height=lookLeading() height=0 overflow="hidden" visibility="hidden"
 
 // A line with a box to tick, drawn by the platform, and a grey line under it ("" for none).
 component CheckLine
@@ -386,7 +447,7 @@ component OutLink
     testId: string
   view
     link href=href target="_blank" align-self="flex-start" overflow-wrap="break-word" testId=testId
-      text label font-size=lookText() font-weight=400 line-height=lookLeading()
+      text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink"
 
 // Slow work in one line (DESIGN.md rule 8): its status word (Waiting with its place, "2 ahead"), then what is
 // happening and how long it usually takes.
@@ -413,13 +474,16 @@ component MainLine
     testId: string
   slot
   view
-    row flex-shrink=0 background-color="look.paper" border-bottom-width=lookRule() border-bottom-style="solid" border-bottom-color="look.line" testId=testId
-      // The tabs are the tablist's own children: the host finds each tab's panel through them.
-      // The host's tab bar draws a line above itself; this bar has its one hairline below.
-      row role="tablist" appearance="none" aria-label="Places" flex=1 max-width=lookMeasure() flex-wrap="wrap" column-gap=lookGutter() align-items="baseline"
-        border-top-width=0 background-color="look.paper"
-        padding-left=lookGutter() padding-right=lookGutter() padding-top=lookTight() padding-bottom=lookTight()
-        children
+    row flex-shrink=0 background-color="look.paper" testId=testId
+      // As the lab draws it: the line spans the page with its notes column, from where the text starts to where
+      // the notes column ends, and its hairline ends there too, with System at that end.
+      row flex=1 max-width=lookWideMeasure() padding-left=lookGutter() padding-right=lookGutter()
+        // The tabs are the tablist's own children: the host finds each tab's panel through them.
+        // The host's tab bar draws a line above itself; this bar has its one hairline below.
+        row role="tablist" appearance="none" aria-label="Places" flex=1 flex-wrap="wrap" column-gap=lookGutter() align-items="baseline"
+          border-top-width=0 border-bottom-width=lookRule() border-bottom-style="solid" border-bottom-color="look.line" background-color="look.paper"
+          padding-top=lookTight() padding-bottom=lookTight()
+          children
 
 // One place on the main line: the current one in the heavy weight; `quiet` sets it in grey (System) unless current.
 // Its label's testId is "nav-current" while it is the current place, so a test can read which one is marked.
@@ -435,8 +499,9 @@ component NavTab
   view
     button role="tab" appearance="none" aria-selected=current aria-controls=controls press=press
       margin-left=(far ? "auto" : 0) padding-top=lookTight() padding-bottom=lookTight() padding-left=0 padding-right=0 text-align="start" testId=testId
-      text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading()
-        color=(quiet and not current ? "look.grey" : "look.ink") testId=(current ? "nav-current" : `${testId}-label`)
+      HeavyWidth(label=label)
+        text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading()
+          color=(quiet and not current ? "look.grey" : "look.ink") testId=(current ? "nav-current" : `${testId}-label`)
 
 // The band that holds the second line, under the main line, lined up with the page's column.
 component SubBar
@@ -467,8 +532,9 @@ component SubLink
     testId: string
   view
     button press=press aria-current=(current ? "page" : "false") text-align="start" testId=testId
-      text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading() color="look.ink"
-        testId=(current ? "sub-current" : `${testId}-label`)
+      HeavyWidth(label=label)
+        text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading() color="look.ink"
+          testId=(current ? "sub-current" : `${testId}-label`)
 
 // A numbered line (1, 2, 3 …): the number in a narrow column of its own, in tabular figures, then the line.
 component Numbered
@@ -491,6 +557,16 @@ component Bulleted
       text "–" aria-hidden=true width=lookNumberWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
       column flex=1 min-width=0 gap=lookTight()
         children
+
+// A label beside a control the platform draws, on one line (a job's outcome in a list): the label in grey.
+component InlineField
+  props
+    label: string
+  slot
+  view
+    row align-items="baseline" flex-wrap="wrap" column-gap=lookTight() row-gap=lookTight()
+      text label aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      children
 
 // A one-line text field, drawn by the platform, with its label for a screen reader and a hint while empty.
 component ValueField
@@ -548,15 +624,16 @@ component DangerAction
     button press=press disabled=disabled text-align="start" accent-color="-exact-system-red" testId=testId
       text label font-size=lookText() font-weight=400 line-height=lookLeading() color="-exact-system-red"
 
-// A link to another screen, as a plain action.
+// A link to another screen (or a file to save), as a plain action: in ink, like the actions beside it, since the
+// look keeps no accent colour (DESIGN.md section 3).
 component GoTo
   props
     label: string
     href: string
     testId: string
   view
-    link href=href testId=testId
-      text label font-size=lookText() font-weight=400 line-height=lookLeading()
+    link href=href align-self="flex-start" testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink"
 
 // A row with a margin note: the main column, and beside it, `margin` wide, its notes. Under 640px the notes
 // move under the main column, indented. The caller puts the note in a `Note` after the main content, and passes
@@ -579,6 +656,18 @@ component Main
   slot
   view
     column flex=1 min-width=0 max-width=lookMeasure() gap=lookTight()
+      children
+
+// A column of notes in the margin (a resume's flags): `margin` wide beside the main column on a wide window; on a
+// narrow one it is drawn where the caller puts it, indented.
+component Aside
+  props
+    wide: bool
+    label: string
+    testId: string
+  slot
+  view
+    column role="complementary" aria-label=label width=(wide ? lookMargin() : "auto") flex-shrink=0 padding-left=(wide ? 0 : lookGutter()) gap=look().rowGap testId=testId
       children
 
 component Note

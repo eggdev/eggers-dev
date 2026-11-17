@@ -1,0 +1,124 @@
+// Talk: the owner tells the studio about their work in their own words, and the studio asks follow-up questions.
+// The conversation is plain paragraphs in one column, told apart by a one-word label in grey and by weight (the
+// owner's words in the heavy weight): no bubbles and no fills. The entry field is at the bottom. A reply being
+// written is one slow-work line. The data and the actions are the root's (app.contract).
+use Page, Section, Title, Line, QuietLine, FailLine, Prose, Numbered, Bulleted, Action, MainAction, DangerAction, WorkLine, Actions, statusWord, look, lookMeasure, lookGutter, lookTight from "./look.contract"
+
+// One message of the conversation. status is done | queued | running | failed (a reply being written); added lists
+// the facts a reply put in the record.
+shape TalkMessage
+  id: string
+  mine: bool
+  body: string
+  status: string
+  note: string
+  added: string[]
+
+// An open question the owner can pick: what would strengthen the record, and where it came from.
+shape TalkQuestion
+  id: string
+  text: string
+  from: string
+
+shape Talk
+  loaded: bool
+  // A reply is being written.
+  busy: bool
+  messages: TalkMessage[]
+  questions: TalkQuestion[]
+
+fn questionsLabel(n: number): string = n == 0 ? "Questions" : n >= 30 ? "Questions, 30 or more open" : `Questions, ${n} open`
+
+// The conversation, and the entry field under it.
+component TalkScreen
+  props
+    talk: Talk
+    failed: bool
+    loadError: string
+    draft: string
+    sending: bool
+    clearing: bool
+    error: string
+    edit: action
+    send: action
+    questions: action
+    askClear: action
+    retry: action
+  view
+    column flex=1 min-height=0
+      if not talk.loaded or talk.messages.length == 0
+        scroll id="talk-scroll" flex=1 min-height=0
+          Page(testId="talk")
+            Section(testId="talk-top")
+              Title(text="Talk", testId="talk-title")
+            if not talk.loaded
+              Section(testId="talk-wait")
+                if failed
+                  FailLine(text=loadError, testId="talk-load-error")
+                  Action(label="Try again", press=retry, disabled=false, keys="", testId="talk-retry")
+                else
+                  QuietLine(text="Loading the conversation…", testId="talk-loading")
+            else
+              Section(testId="talk-empty")
+                Line(text="Answer an open question, or tell the studio about your work. What you say is added to your record.", testId="talk-empty-text")
+                Action(label=questionsLabel(talk.questions.length), press=questions, disabled=false, keys="", testId="talk-questions")
+      else
+        // The transcript opens at its newest message and follows each new one.
+        list id="transcript" appearance="none" virtualized=true scroll-start="end" scrollFollowEnd=true flex=1 min-height=0 width="100%"
+          for m, i in talk.messages key=m.id
+            column max-width=lookMeasure() padding-left=lookGutter() padding-right=lookGutter() padding-top=(i == 0 ? lookGutter() : 0) padding-bottom=look().rowGap * 2 gap=lookTight() color="look.ink"
+              if i == 0
+                column padding-bottom=look().rowGap gap=look().rowGap
+                  Title(text="Talk", testId="talk-title")
+                  Actions(testId="talk-actions")
+                    Action(label=questionsLabel(talk.questions.length), press=questions, disabled=false, keys="", testId="open-questions")
+                    DangerAction(label="Start over", press=askClear, disabled=clearing, testId="talk-clear")
+              QuietLine(text=(m.mine ? "You" : "Studio"), testId=`talk-${m.id}-who`)
+              if m.mine
+                Prose(text=m.body, strong=true, testId=`talk-${m.id}`)
+              else if m.status == "queued" or m.status == "running"
+                WorkLine(word=statusWord("work", m.status), place="", text="Writing a reply. It appears here when it is done.", testId=`talk-${m.id}`)
+              else if m.status == "failed"
+                FailLine(text=`No reply was written. ${m.note}`, testId=`talk-${m.id}`)
+              else
+                Prose(text=m.body, strong=false, testId=`talk-${m.id}`)
+              if m.added.length > 0
+                QuietLine(text=(m.added.length == 1 ? "Added to your record:" : `Added to your record, ${m.added.length} facts:`), testId=`talk-${m.id}-added`)
+                for a, n in m.added key=a
+                  Bulleted(testId=`talk-${m.id}-added-row-${n}`)
+                    Line(text=a, testId=`talk-${m.id}-added-${n}`)
+      if talk.loaded
+        column flex-shrink=0 max-width=lookMeasure() padding-left=lookGutter() padding-right=lookGutter() padding-top=look().rowGap padding-bottom=lookGutter() gap=lookTight()
+          if error != ""
+            FailLine(text=error, testId="talk-error")
+          textarea id="composer" value=draft input=edit rows=2 field-sizing="content" max-height=160
+            placeholder=(talk.busy ? "A reply is being written" : "What you did, or what’s on your mind") aria-label="Message" testId="talk-composer"
+          Actions(testId="talk-send-row")
+            MainAction(label="Send", press=send, disabled=(draft.trim() == "" or talk.busy or sending), keys="", testId="talk-send")
+            if talk.busy
+              QuietLine(text="You can send once the reply is written.", testId="talk-busy")
+
+// The open questions, as a numbered list. A tap asks it in Talk.
+component QuestionsScreen
+  props
+    talk: Talk
+    error: string
+    asking: bool
+    back: action
+    ask: action
+  view
+    Page(testId="questions")
+      Section(testId="questions-top")
+        Action(label="Back to Talk", press=back, disabled=false, keys="", testId="questions-close")
+      Section(testId="questions-head")
+        Title(text="Questions", testId="questions-title")
+        QuietLine(text="Pick one and it is asked in Talk. Your answer goes into your record.", testId="questions-hint")
+      Section(testId="questions-list")
+        if talk.questions.length == 0
+          QuietLine(text="Nothing open right now. Questions come from your profile and from the jobs you read.", testId="questions-none")
+        for q, i in talk.questions key=q.id
+          Numbered(n=i + 1)
+            Action(label=q.text, press=ask(q.text), disabled=asking, keys="", testId=`question-${q.id}`)
+            QuietLine(text=q.from, testId=`question-${q.id}-from`)
+        if error != ""
+          FailLine(text=error, testId="questions-error")

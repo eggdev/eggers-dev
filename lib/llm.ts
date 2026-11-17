@@ -56,12 +56,12 @@ export async function ask<T>(call: Ask): Promise<T> {
   clearTimeout(timer);
   if (proc.signalCode) throw new Error(`Reading took longer than ${Math.round(timeoutMs / 60000)} minutes and was stopped.`);
   let reply: { is_error?: boolean; result?: string; structured_output?: unknown };
-  try { reply = JSON.parse(out); } catch { throw new Error(`Claude Code exited with code ${code}: ${(err || out).trim().slice(0, 300)}`); }
+  try { reply = JSON.parse(out); } catch { throw new Error(`The studio stopped with code ${code}: ${(err || out).trim().slice(0, 300)}`); }
   // EGG_TIMING=1 prints how long the model took and how much it wrote, to see where a slow step spends its time.
   if (process.env.EGG_TIMING) console.log(`  ${model}: ${Math.round(((reply as { duration_api_ms?: number }).duration_api_ms ?? 0) / 1000)} s, ${(reply as { num_turns?: number }).num_turns} turns, ${(reply as { usage?: { output_tokens?: number; input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage?.output_tokens} tokens out, ${((reply as { usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage?.input_tokens ?? 0) + ((reply as { usage?: { cache_creation_input_tokens?: number } }).usage?.cache_creation_input_tokens ?? 0) + ((reply as { usage?: { cache_read_input_tokens?: number } }).usage?.cache_read_input_tokens ?? 0)} in`);
-  if (reply.is_error) throw new Error(`Claude Code reported an error: ${String(reply.result ?? '').slice(0, 300)}`);
+  if (reply.is_error) throw new Error(`The studio reported an error: ${String(reply.result ?? '').slice(0, 300)}`);
   if (reply.structured_output !== undefined) return reply.structured_output as T;
-  try { return JSON.parse(reply.result ?? '') as T; } catch { throw new Error('Claude Code answered without the structured result.'); }
+  try { return JSON.parse(reply.result ?? '') as T; } catch { throw new Error('The studio answered without the structured result.'); }
 }
 
 // ---- Codex ----------------------------------------------------------------------------------
@@ -154,7 +154,7 @@ async function sandboxProblem(bin: string): Promise<string | null> {
     return r.killed ? 'The check timed out.' : `The check exited with code ${r.code}: ${(r.err || r.out).trim().slice(-300)}`;
   } catch (e) { return (e as Error).message; }
 }
-const sandboxError = (detail: string) => new Error(`The Codex sandbox could not start on this machine, so nothing was run. Codex reads files only inside its read-only sandbox; on Linux that needs bubblewrap (bwrap) and unprivileged user namespaces. ${detail}`);
+const sandboxError = (detail: string) => new Error(`The read-only sandbox could not start on this machine, so nothing was run. Files are read only inside that sandbox; on Linux it needs bubblewrap (bwrap) and unprivileged user namespaces. ${detail}`);
 
 // What a run with --json reports: the tokens used, and how many commands the model ran.
 export function codexUsage(jsonl: string): { tokensIn?: number; tokensOut?: number; commands: number } {
@@ -175,7 +175,7 @@ export function parseCodexAnswer<T>(text: string): T {
 
 async function askCodex<T>({ prompt, schema, cwd, tools, timeoutMs, model, effort }: { prompt: string; schema: object; cwd: string; tools: string[]; timeoutMs: number; model: string; effort?: string }): Promise<T> {
   const bin = codexBin();
-  if (!bin) throw new Error('Codex is not installed on this machine. Install it, or set CODEX_BIN to its path.');
+  if (!bin) throw new Error('The program the studio writes with is not installed on this machine. Install it, or set CODEX_BIN to its path.');
   // Only a call with tools runs commands, so only it needs the sandbox.
   if (tools.length > 0) { const problem = await sandboxProblem(bin); if (problem) throw sandboxError(problem); }
   const dir = mkdtempSync(join(tmpdir(), 'egg-codex-'));
@@ -191,7 +191,7 @@ async function askCodex<T>({ prompt, schema, cwd, tools, timeoutMs, model, effor
     const timer = setTimeout(() => proc.kill(), timeoutMs);
     const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
     clearTimeout(timer);
-    if (proc.signalCode) throw new Error(`Codex took longer than ${Math.round(timeoutMs / 60000)} minutes and was stopped.`);
+    if (proc.signalCode) throw new Error(`Reading took longer than ${Math.round(timeoutMs / 60000)} minutes and was stopped.`);
     // EGG_TIMING=1: wall time (Codex reports no model time), commands run, and tokens.
     if (timing) {
       const u = codexUsage(out);
@@ -200,9 +200,9 @@ async function askCodex<T>({ prompt, schema, cwd, tools, timeoutMs, model, effor
     if (code !== 0 || !existsSync(outFile)) {
       const tail = (err || out).trim().slice(-300);
       if (/bwrap|bubblewrap|user namespace|landlock|seccomp|sandbox (?:could not|cannot|failed|is unavailable)/i.test(err)) throw sandboxError(tail);
-      throw new Error(`Codex exited with code ${code}: ${tail}`);
+      throw new Error(`The studio stopped with code ${code}: ${tail}`);
     }
-    try { return parseCodexAnswer<T>(readFileSync(outFile, 'utf8')); } catch { throw new Error('Codex answered without the structured result.'); }
+    try { return parseCodexAnswer<T>(readFileSync(outFile, 'utf8')); } catch { throw new Error('The studio answered without the structured result.'); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

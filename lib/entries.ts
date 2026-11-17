@@ -88,38 +88,38 @@ function examine(resume: Resume, groups: Group[]): { entries: Seen[]; earlier: {
   const entries = [...resume.experience, ...resume.projects, ...resume.elsewhere].sort((a, b) => a.at.heading - b.at.heading).map((entry): Seen => {
     const all = [...entry.ranges, ...entry.previously.flatMap((p) => p.ranges)];
     const { group, by } = groupOf(entry.title, entry.company, all, groups);
-    if (!group) return { entry, findings: [{ kind: 'unknown', entry: entry.heading, was: entry.heading, is: '', fixable: false, text: `The resume has an entry “${entry.heading}”. Your bank has no job or project by that name, or with that title and those dates.` }] };
+    if (!group) return { entry, findings: [{ kind: 'unknown', entry: entry.heading, was: entry.heading, is: '', fixable: false, text: `The resume has an entry “${entry.heading}”. Your record has no job or project by that name, or with that title and those dates.` }] };
     if (taken.has(group.key)) return { entry, group, findings: [{ kind: 'split', entry: entry.heading, was: entry.heading, is: canonical(group).heading, fixable: false, text: `${group.company} appears as two entries. One employer is one entry, with its date ranges and titles together.` }] };
     taken.add(group.key);
     const findings: FactFinding[] = [], titles = new Set(group.rows.map((r) => norm(r.title))), canon = canonical(group);
-    if (by === 'title') findings.push({ kind: 'employer', entry: entry.heading, was: entry.company, is: group.company, fixable: true, text: `The resume names the employer “${entry.company}”. Your bank says “${group.company}” for that title and those dates.` });
+    if (by === 'title') findings.push({ kind: 'employer', entry: entry.heading, was: entry.company, is: group.company, fixable: true, text: `The resume names the employer “${entry.company}”. Your record says “${group.company}” for that title and those dates.` });
     for (const t of [entry.title, ...entry.previously.map((p) => p.title)]) {
-      if (!titles.has(norm(t))) findings.push({ kind: 'title', entry: entry.heading, was: t || '(no title)', is: group.rows[0].title || '(no title)', fixable: true, text: `The resume gives the title “${t || 'none'}” at ${group.company}. Your bank says “${[...new Set(group.rows.map((r) => r.title).filter(Boolean))].join('” and “') || 'no title'}”. A background check verifies titles.` });
+      if (!titles.has(norm(t))) findings.push({ kind: 'title', entry: entry.heading, was: t || '(no title)', is: group.rows[0].title || '(no title)', fixable: true, text: `The resume gives the title “${t || 'none'}” at ${group.company}. Your record says “${[...new Set(group.rows.map((r) => r.title).filter(Boolean))].join('” and “') || 'no title'}”. A background check verifies titles.` });
     }
     const dated = group.rows.filter((r) => r.start !== '');
     const wrong = all.filter((x) => !dated.some((r) => sameRange(x, r))), left = dated.filter((r) => !all.some((x) => sameRange(x, r)));
     if (dated.length > 0 && (wrong.length > 0 || left.length > 0)) {
-      findings.push({ kind: 'dates', entry: entry.heading, was: all.map((x) => x.text).join('; ') || '(no dates)', is: dated.map(rowRange).join('; '), fixable: true, text: `The resume gives ${all.length ? `the dates ${all.map((x) => x.text).join('; ')}` : 'no dates'} for ${canon.heading}. Your bank says ${dated.map(rowRange).join('; ')}.` });
+      findings.push({ kind: 'dates', entry: entry.heading, was: all.map((x) => x.text).join('; ') || '(no dates)', is: dated.map(rowRange).join('; '), fixable: true, text: `The resume gives ${all.length ? `the dates ${all.map((x) => x.text).join('; ')}` : 'no dates'} for ${canon.heading}. Your record says ${dated.map(rowRange).join('; ')}.` });
     }
     return { entry, group, findings };
   });
   const earlier = resume.earlier.map((item, index) => {
     const { group } = groupOf(item.title, item.company, item.ranges, groups);
-    if (!group) return { index, findings: [{ kind: 'unknown' as const, entry: item.text, was: item.text, is: '', fixable: false, text: `The Earlier experience line lists “${item.text}”. Your bank has no job with that employer.` }] };
+    if (!group) return { index, findings: [{ kind: 'unknown' as const, entry: item.text, was: item.text, is: '', fixable: false, text: `The Earlier experience line lists “${item.text}”. Your record has no job with that employer.` }] };
     const findings: FactFinding[] = [], canon = canonical(group), dated = group.rows.filter((r) => r.start !== '');
-    if (!group.rows.some((r) => norm(r.title) === norm(item.title))) findings.push({ kind: 'title', entry: item.text, was: item.title || '(no title)', is: group.rows[0].title, fixable: true, text: `The Earlier experience line gives the title “${item.title || 'none'}” at ${group.company}. Your bank says “${group.rows[0].title}”.` });
+    if (!group.rows.some((r) => norm(r.title) === norm(item.title))) findings.push({ kind: 'title', entry: item.text, was: item.title || '(no title)', is: group.rows[0].title, fixable: true, text: `The Earlier experience line gives the title “${item.title || 'none'}” at ${group.company}. Your record says “${group.rows[0].title}”.` });
     const span: Range = { start: dated.map((r) => r.start).sort()[0] ?? '', end: dated.some((r) => r.end === '') ? '' : dated.map((r) => r.end).sort().pop() ?? '', text: '' };
     const fits = (x: Range) => dated.some((r) => sameRange(x, r)) || (sameDate(x.start.slice(0, 4), span.start.slice(0, 4)) && sameDate(x.end.slice(0, 4), span.end.slice(0, 4)));
-    if (dated.length > 0 && item.ranges.some((x) => !fits(x))) findings.push({ kind: 'dates', entry: item.text, was: item.ranges.map((x) => x.text).join('; '), is: canon.earlier, fixable: true, text: `The Earlier experience line gives ${item.ranges.map((x) => x.text).join('; ')} for ${canon.heading}. Your bank says ${dated.map(rowRange).join('; ')}.` });
+    if (dated.length > 0 && item.ranges.some((x) => !fits(x))) findings.push({ kind: 'dates', entry: item.text, was: item.ranges.map((x) => x.text).join('; '), is: canon.earlier, fixable: true, text: `The Earlier experience line gives ${item.ranges.map((x) => x.text).join('; ')} for ${canon.heading}. Your record says ${dated.map(rowRange).join('; ')}.` });
     return { index, group, findings };
   });
   // A line with a date range that is not an entry's own dates line, a bullet under an entry, or the person's note.
   const notes = new Set(groups.map((g) => norm(canonical(g).note)).filter(Boolean));
   const loose = resume.dated.filter((d) => !notes.has(norm(d.text))).map((d): FactFinding => ({ kind: 'unknown', entry: d.text, was: d.text, is: '', fixable: false, loose: true,
-    text: `The resume has a line with dates that is not under one of your bank’s jobs: “${d.text}”. If it is a job, your bank does not have it.` }));
+    text: `The resume has a line with dates that is not under one of the jobs in your record: “${d.text}”. If it is a job, your record does not have it.` }));
   // No job at all, when the bank has jobs.
   if (resume.experience.length === 0 && groups.some((g) => g.rows.some((r) => r.title.trim() !== '' && r.standing !== 'personal'))) {
-    loose.push({ kind: 'unknown', entry: '', was: '', is: '', fixable: false, text: 'The resume lists no job under Experience, and your bank has jobs.' });
+    loose.push({ kind: 'unknown', entry: '', was: '', is: '', fixable: false, text: 'The resume lists no job under Experience, and your record has jobs.' });
   }
   return { entries, earlier, loose };
 }

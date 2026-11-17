@@ -169,7 +169,7 @@ test('what was written is stored with its map, skim and flags', async () => {
   for (const k of ['metrics-dropped', 'facts-repaired', 'skills-unconfirmed', 'skim-question']) expect(kinds).toContain(k);
   expect(kinds).not.toContain('facts');
   const dropped = a.flags!.find((f) => f.kind === 'metrics-dropped')!;
-  expect(dropped.text).toBe('This resume shows 1 of the 3 measured results your bank holds for the jobs it gives bullets to. Left out: from 6 hours to 40 minutes; p95 latency 900 ms to 210 ms.');
+  expect(dropped.text).toBe('This resume shows 1 of the 3 measured results your record holds for the jobs it gives bullets to. Left out: from 6 hours to 40 minutes; p95 latency 900 ms to 210 ms.');
   expect(dropped.items).toEqual(['from 6 hours to 40 minutes', 'p95 latency 900 ms to 210 ms']);
   expect(a.flags!.find((f) => f.kind === 'top-requirement')!.text).toContain('does not see an answer to “Go services in production”');
   // Asked for again while it was being written: this one is dropped.
@@ -189,10 +189,10 @@ test('a hand edit is flagged and never rewritten', async () => {
   expect(resumeOf(id)).toBe(edited);
   const flags = analysisOf(id).flags!;
   expect(flags.filter((f) => f.kind === 'facts').map((f) => [f.severity, f.text])).toEqual([
-    ['high', 'The resume gives the title “VP of Engineering” at Harborlight Systems. Your bank says “Director of Engineering”. A background check verifies titles.'],
-    ['high', 'The resume gives the dates Jan 2014 – Feb 2021 for Senior Engineer, Quillfeather Labs. Your bank says Jan 2016 – Feb 2021.'],
+    ['high', 'The resume gives the title “VP of Engineering” at Harborlight Systems. Your record says “Director of Engineering”. A background check verifies titles.'],
+    ['high', 'The resume gives the dates Jan 2014 – Feb 2021 for Senior Engineer, Quillfeather Labs. Your record says Jan 2016 – Feb 2021.'],
     // An entry under another section is checked too. In the person's own edit it is a flag, and the text stays.
-    ['high', 'The resume has an entry “Lantern Notes”. Your bank has no job or project by that name, or with that title and those dates.'],
+    ['high', 'The resume has an entry “Lantern Notes”. Your record has no job or project by that name, or with that title and those dates.'],
   ]);
   expect(flags.find((f) => f.kind === 'skills-other')!.items).toEqual(['stakeholder management']);
   expect(flags.find((f) => f.kind === 'headings')!.text).toContain('“Projects”');

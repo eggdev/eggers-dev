@@ -23,7 +23,7 @@ test "a source is added from the empty record, waits to be read, refuses a repea
   expect text "add-hint" == "Paste some text to add it."
   type "add-title" "Resume 2024"
   type "add-text" "Staff Engineer at Acme, 2021 to now. Built the billing export service."
-  expect text "add-hint" == "Claude reads what you add and puts what it finds in your record."
+  expect text "add-hint" == "What you add is read, and what is found in it goes into your record."
   tap "add-save"
   clock data
   clock settle
@@ -265,24 +265,45 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   clock data
   clock settle
   expect state jobs.items.0 .status == "queued"
-  request POST "/jobs/1/result" {"title": "Staff Engineer, Billing", "company": "Globex", "place": "Remote", "verdict": "A strong fit on leadership and Go.", "requirements": [{"text": "Experience leading engineers", "need": "must", "coverage": "strong", "evidence": "Led five engineers on the billing export at Acme.", "roles": ["role:1"]}, {"text": "Go in production", "need": "must", "coverage": "partial", "evidence": "Go is shown on one project.", "roles": ["role:1"]}, {"text": "Experience with Kafka", "need": "nice", "coverage": "none", "evidence": "Nothing in the bank shows Kafka."}], "strengths": ["Led the billing export team."], "risks": ["No Kafka."], "changes": ["Moved the billing export to the top, since the posting centres on billing."], "gaps": ["Have you run Kafka or another queue in production?"], "terms": ["Go", "Kafka"], "knockouts": [{"question": "Are you authorised to work in the US?", "answer": "unknown", "note": "The bank doesn’t say."}], "resume": "# Ada Example\n\n## Summary\n\nStaff engineer who builds billing systems in Go."}
-  clock +5000
-  clock data
-  expect text "fit-1" == "64%"
+  expect text "job-1-status" == "New"
+  // A job being read says so in one slow-work line, with no spinner.
   tap "job-1"
   clock settle
   clock data
-  expect text "job-title" == "Staff Engineer, Billing"
-  expect text "job-fit" == "64%"
-  expect text "job-covered" == "2 of 3 requirements supported by your bank"
+  expect text "job-status-status" == "Waiting"
+  expect text "job-status" == "Waiting to be read against your record. Reading usually takes a few minutes."
+  expect text "job-title-status" == "New"
+  expect tree missing "job-loading"
+  expect tree missing "job-balance"
+  tap "job-back"
+  clock settle
+  request POST "/jobs/1/result" {"title": "Staff Engineer, Billing", "company": "Globex", "place": "Remote", "verdict": "A strong fit on leadership and Go.", "requirements": [{"text": "Experience leading engineers", "need": "must", "coverage": "strong", "evidence": "Led five engineers on the billing export at Acme.", "roles": ["role:1"]}, {"text": "Go in production", "need": "must", "coverage": "partial", "evidence": "Go is shown on one project.", "roles": ["role:1"]}, {"text": "Experience with Kafka", "need": "nice", "coverage": "none", "evidence": "Nothing in the bank shows Kafka."}], "strengths": ["Led the billing export team."], "risks": ["No Kafka."], "changes": ["Moved the billing export to the top, since the posting centres on billing."], "gaps": ["Have you run Kafka or another queue in production?"], "terms": ["Go", "Kafka"], "knockouts": [{"question": "Are you authorised to work in the US?", "answer": "unknown", "note": "The bank doesn’t say."}], "resume": "# Ada Example\n\n## Summary\n\nStaff engineer who builds billing systems in Go."}
+  clock +5000
+  clock data
+  expect text "job-1-ref" == "J-001"
+  expect text "job-1-span" == "Added today · Fit 64"
+  expect text "job-1-status" == "Ready"
+  tap "job-1"
+  clock settle
+  clock data
+  expect text "job-title" == "Staff Engineer, Billing at Globex"
+  expect text "job-title-ref" == "J-001"
+  expect text "job-title-span" == "Added today · Fit 64"
+  expect text "job-title-status" == "Ready"
+  expect text "job-balance" == "2 of 3 requirements answered · 1 open"
+  expect text "job-need-0" == "Experience leading engineers"
+  expect text "job-need-0-class" == "Required · answered"
+  expect text "job-need-0-evidence" == "Led five engineers on the billing export at Acme."
+  expect text "job-need-2-class" == "Preferred · open"
+  expect tree missing "job-status"
   expect text "job-verdict" == "A strong fit on leadership and Go."
   // What to look at on the resume is worked out when the questions are next checked (here, by Home's list).
   request GET "/queue"
   clock +5000
   clock data
   expect text "job-flags-head" == "What to look at"
-  expect text "job-flag-0" == "The resume lists no job under Experience, and your bank has jobs."
-  expect text "job-weighed" == "Claude’s reading of the posting against your bank. Production work and recent work count for more; set each role’s kind of work under Experience. A change to your bank writes every unsent resume again by itself, except one you edited. Writing it again takes several minutes and replaces your edits."
+  expect text "job-flag-0" == "The resume lists no job under Experience, and your record has jobs."
+  expect text "job-weighed" == "Read against your record. Production work and recent work count for more; set each role’s kind of work under Experience."
   expect text "job-terms-in" == "Go"
   expect text "job-terms-missing" == "Kafka"
   type "job-outcome" "interviewed"
@@ -308,11 +329,14 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   tap "replace-edits-confirm"
   clock data
   expect state job.resumeStatus == "queued"
-  expect text "job-resume-writing" == "Claude is writing this resume again and having it reviewed. The one below is the last version."
+  expect text "job-resume-writing" == "Writing this resume again and having it reviewed. Usually a few minutes. The one you can read now is the last version."
+  expect text "job-resume-writing-status" == "Waiting"
+  expect text "job-title-status" == "Sent"
   expect disabled "job-write-again"
   tap "job-resume"
   clock settle
-  expect text "resume-for" == "Written by Claude for Staff Engineer, Billing at Globex, from your bank."
+  expect text "resume-for" == "J-001. Written for Staff Engineer, Billing at Globex, from your record."
+  expect text "resume-flag-0" == "The resume lists no job under Experience, and your record has jobs."
   expect tree has "resume-body"
   expect text "change-0" == "Moved the billing export to the top, since the posting centres on billing."
 
@@ -320,14 +344,19 @@ test "the watchlist takes a company by its job-board link, refuses a link it can
   clock data
   tap "nav-jobs"
   clock data
-  expect text "stage-saved" == "Saved 0"
-  expect text "stage-active" == "Active 1"
+  expect text "stage-saved-label" == "Saved 0"
+  expect text "stage-active-label" == "Active 1"
+  tap "stage-saved"
+  expect tree missing "job-1"
+  expect text "jobs-none" == "Nothing saved. Add a posting, or read one from Found."
   tap "stage-active"
-  expect text "job-line-1" == "Globex, Remote"
-  expect text "stage-note" == "Applied and interviewing. After fourteen days with nothing heard, a job moves to Done as No response."
+  expect tree has "job-1"
+  expect text "job-line-1" == "Remote · You know someone there"
+  expect text "job-1-status" == "Sent"
+  expect text "stage-note" == "Applied and interviewing. After 14 days with nothing heard, a job is Quiet and moves to Done."
   type "status-1" "rejected"
   clock data
-  expect text "stage-done" == "Done 1"
+  expect text "stage-done-label" == "Done 1"
   expect text "jobs-none" == "Nothing in progress. A job moves here when you mark it Applied."
   type "job-search" "zzz"
   expect text "jobs-none" == "No job here matches “zzz”."
@@ -403,6 +432,11 @@ test "talk starts empty, sends what is written and shows a reply being written, 
   expect state talk.busy == true
   expect text "talk-composer" == ""
   expect disabled "talk-send"
+  expect text "talk-1-who" == "You"
+  expect text "talk-1" == "I led the checkout rewrite at Acme."
+  expect text "talk-2-who" == "Studio"
+  expect text "talk-2-status" == "Waiting"
+  expect text "talk-2" == "Writing a reply. It appears here when it is done."
   tap "talk-clear"
   clock settle
   tap "clear-talk-confirm"
@@ -580,7 +614,7 @@ test "home shows a question about two current jobs; an answer waits 8 seconds an
   // Home reads its list when it opens, and does not poll: open it again.
   reload
   clock data
-  expect text "home-focus-text" == "Your bank says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
+  expect text "home-focus-text" == "Your record says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
   expect tree has "home-item-two-current:1:2"
   expect text "home-choice-0" == "Staff Engineer at Acme has ended: give its end date"
   tap "home-choice-0"
@@ -592,7 +626,7 @@ test "home shows a question about two current jobs; an answer waits 8 seconds an
   expect tree missing "home-item-two-current:1:2"
   tap "home-undo"
   expect tree missing "home-held"
-  expect text "home-focus-text" == "Your bank says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
+  expect text "home-focus-text" == "Your record says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
   expect text "home-value" == "2023-13"
   clock +9000
   clock data

@@ -35,7 +35,7 @@ export function timeline(roles: RoleRow[], now: number): Finding[] {
     if (a.end === '' && b.end === '') {
       if (explained(a) || explained(b)) continue;
       out.push({ kind: 'two-current', key: `two-current:${a.id}:${b.id}`, roles: [a.id, b.id], text: `${name(a)} and ${name(b)} both say Present, and nothing on the resume explains how they relate.`,
-        question: { text: `Your bank says you are at both ${name(a)} and ${name(b)} now. A reader will ask if you hold two jobs. Which is right?`,
+        question: { text: `Your record says you are at both ${name(a)} and ${name(b)} now. A reader will ask if you hold two jobs. Which is right?`,
           choices: [`${name(a)} has ended: give its end date`, `${name(b)} has ended: give its end date`, 'Both are current: write one line that says how they relate'],
           actions: [{ role: a.id, field: 'end' }, { role: b.id, field: 'end' }, { role: b.id, field: 'note' }] } });
       continue;
@@ -54,7 +54,7 @@ export function timeline(roles: RoleRow[], now: number): Finding[] {
   const groups = employers(roles).map((g) => ({ ...g, rows: g.rows.filter(isJob) })).filter((g) => g.rows.length > 0);
   // The same employer in several rows: the resume shows it as one entry. Nothing to ask.
   for (const g of groups.filter((x) => x.rows.length > 1)) {
-    out.push({ kind: 'repeat-employer', key: `repeat:${g.rows.map((r) => r.id).sort((a, b) => a - b).join(':')}`, roles: g.rows.map((r) => r.id), text: `${g.company} is in your bank ${g.rows.length} times. The resume shows it as one entry with each title and date range.` });
+    out.push({ kind: 'repeat-employer', key: `repeat:${g.rows.map((r) => r.id).sort((a, b) => a - b).join(':')}`, roles: g.rows.map((r) => r.id), text: `${g.company} is in your record ${g.rows.length} times. The resume shows it as one entry with each title and date range.` });
   }
   // Three or more stints under twelve months, one after another, with nothing that says why.
   const order = [...groups].sort((a, b) => a.rows.map((r) => r.start).sort()[0].localeCompare(b.rows.map((r) => r.start).sort()[0]));

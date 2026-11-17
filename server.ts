@@ -14,7 +14,7 @@ import { INBOX } from './lib/ingest.ts';
 import { fitOf, publish, refreshSkills, reflagOpen, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { answer, openRaised, raisedByKey } from './lib/raised.ts';
-import { queue, snooze } from './lib/queue.ts';
+import { QUIET_DAYS, queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { type AtsCheck } from './lib/pdf.ts';
@@ -40,6 +40,14 @@ const STUB = process.argv.includes('--stub-github');
 const follow = () => { try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); } };
 
 const DAY = 86_400_000;
+// What the job's record line needs beside its row: when it was sent, whether it has gone quiet (the same rule as
+// Home's list, lib/queue.ts), where the posting came from, and the state of its resume and of the PDF's check.
+const jobFacts = (j: JobRow) => {
+  const ats = ((): { score?: number; required?: number } | null => { try { return j.ats ? JSON.parse(j.ats) : null; } catch { return null; } })();
+  return { sent: j.applied_at > 0 ? ago(j.applied_at) : '', quiet: j.outcome === 'applied' && j.applied_at > 0 && j.applied_at <= Date.now() - QUIET_DAYS * DAY,
+    from: hostOf(j.url), resumeStatus: (j as JobRow & { resume_status?: string }).resume_status ?? '', hasResume: j.resume !== '',
+    atsScore: typeof ats?.score === 'number' ? ats.score : -1, atsRequired: typeof ats?.required === 'number' ? ats.required : 85 };
+};
 // How long ago, in the fewest words: "today", "3 days ago", "2 months ago"; '' when unknown.
 const ago = (t: number) => {
   if (!t) return '';
@@ -233,7 +241,7 @@ Bun.serve({ hostname, port, routes: {
     OPTIONS: preflight,
     POST: () => {
       const facts = (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;
-      if (facts === 0) return send({ error: 'The bank is empty. Add a source first.' }, 409);
+      if (facts === 0) return send({ error: 'Your record is empty. Add a source first.' }, 409);
       db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
       return send({ ok: true });
     },
@@ -274,7 +282,7 @@ Bun.serve({ hostname, port, routes: {
       const outcome = outcomeNow(j);
       return { id: String(j.id), title: j.title || (hostOf(j.url) ? `Posting from ${hostOf(j.url)}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note,
         fit: j.fit, outcome, stage: outcome === '' ? 'saved' : outcome === 'applied' || outcome === 'interviewed' ? 'active' : 'done',
-        salary: j.salary || salaryIn(j.posting), posted: ago(j.posted_at), added: ago(j.created_at), contact: j.contact };
+        salary: j.salary || salaryIn(j.posting), posted: ago(j.posted_at), added: ago(j.created_at), contact: j.contact, ...jobFacts(j) };
     })),
     POST: async (req) => {
       const b = await req.json().catch(() => ({})), url = str(b.url), posting = str(b.posting);
@@ -299,7 +307,7 @@ Bun.serve({ hostname, port, routes: {
       const o = j;
       const ats: AtsCheck | null = j.ats ? JSON.parse(j.ats) : null;
       const host = hostOf(j.url);
-      return send(curly({ id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
+      return send(curly({ ...jobFacts(j), posted: ago(j.posted_at), added: ago(j.created_at), posting: j.posting, id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
         atsOk: ats?.ok ?? false, atsScore: ats?.score ?? -1, atsRequired: ats?.required ?? 85, atsParts: (ats?.parts ?? []).map((x) => `${x.label} ${x.score} (counts ${x.weight}%)`).join(' · '), ats: (ats?.lines ?? []).map((l, i) => ({ id: String(i), label: l.label, ok: l.ok, note: l.note })),
         verdict: a.verdict, strengths: a.strengths, risks: a.risks, changes: a.changes, gaps: a.gaps, covered, asked: a.requirements.length,
         // weighed is false for a job read before evidence was weighed: its fit counts coverage alone.
@@ -418,7 +426,7 @@ Bun.serve({ hostname, port, routes: {
       const l = db.query('SELECT * FROM leads WHERE id = ?').get(Number(req.params.id)) as LeadRow | null;
       if (!l) return send({ error: 'That posting is gone.' }, 404);
       const c = db.query('SELECT name FROM companies WHERE id = ?').get(l.company_id) as { name: string } | null;
-      return send({ id: String(l.id), title: l.title, company: c?.name ?? '', place: l.place, url: l.url, score: l.score, reason: l.reason, posting: l.posting, status: l.status });
+      return send({ id: String(l.id), title: l.title, company: c?.name ?? '', place: l.place, url: l.url, score: l.score, reason: l.reason, posting: l.posting, status: l.status, posted: ago(l.posted_at) });
     },
   },
   // Takes a lead up: it becomes a job and is read fully against the bank.
@@ -515,7 +523,7 @@ Bun.serve({ hostname, port, routes: {
     PATCH: async (req) => {
       const b = await req.json().catch(() => ({})), id = Number(req.params.id);
       const role = db.query('SELECT start FROM roles WHERE id = ?').get(id) as { start: string } | null;
-      if (!role) return send({ error: 'That role is no longer in the bank.' }, 404);
+      if (!role) return send({ error: 'That role is no longer in your record.' }, 404);
       const kind = b.standing !== undefined || b.reach !== undefined || b.partOf !== undefined, dates = b.end !== undefined || b.note !== undefined || b.label !== undefined;
       if ((kind || !dates) && (!['', 'employer', 'own', 'contract', 'personal'].includes(b.standing) || !['', 'live', 'retired', 'never'].includes(b.reach))) return send({ error: 'Choose one of the listed kinds.' }, 400);
       const parent = str(b.partOf) === '' ? null : Number(b.partOf);
@@ -616,11 +624,11 @@ Bun.serve({ hostname, port, routes: {
     // The person's own wording for a fact: a later re-read of its source leaves it alone.
     PATCH: async (req) => {
       const b = await req.json().catch(() => ({})), id = Number(req.params.id);
-      if (!db.query('SELECT id FROM facts WHERE id = ?').get(id)) return send({ error: 'That fact is no longer in the bank.' }, 404);
+      if (!db.query('SELECT id FROM facts WHERE id = ?').get(id)) return send({ error: 'That fact is no longer in your record.' }, 404);
       if (b.text !== undefined && !str(b.text)) return send({ error: 'Enter the fact.' }, 400);
       // Where a fact is filed and what kind it is can be corrected too: a reading sometimes files one under the wrong role.
       const role = typeof b.roleId !== 'string' || b.roleId === '' || b.roleId === '0' ? null : Number(b.roleId);
-      if (role !== null && !db.query('SELECT id FROM roles WHERE id = ?').get(role)) return send({ error: 'That role is no longer in the bank.' }, 409);
+      if (role !== null && !db.query('SELECT id FROM roles WHERE id = ?').get(role)) return send({ error: 'That role is no longer in your record.' }, 409);
       if (typeof b.roleId === 'string') db.query('UPDATE facts SET role_id = ? WHERE id = ?').run(role, id);
       if (typeof b.kind === 'string' && (KINDS as readonly string[]).includes(b.kind)) db.query('UPDATE facts SET kind = ? WHERE id = ?').run(b.kind, id);
       // The wording is saved last, after anything that can refuse, so a refusal means nothing was changed.

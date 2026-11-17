@@ -282,7 +282,7 @@ function withBest(requirements: Requirement[]): Requirement[] {
 // took 37 s and wrote 6K tokens; Haiku took 90 s and wrote 21K, at any effort. EGG_READ_MODEL changes it. `resume` is the
 // resume the job already has, if any, so its keyword count stays right until a new one is written.
 export async function assess(posting: string, resume = ''): Promise<{ title: string; company: string; place: string; analysis: Analysis; fit: number; terms: string[] }> {
-  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('The bank is empty. Add a source first.');
+  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('Your record is empty. Add a source first.');
   const r = await ask<Read>({ cwd: INBOX, schema: READ_SCHEMA, timeoutMs: 10 * 60_000, model: process.env.EGG_READ_MODEL ?? 'sonnet', effort: 'low',
     prompt: reading(posting, 2, undefined, false, true).replace("You are measuring one job posting against one person's knowledge bank, and writing the resume they should send for it.", "You are measuring one job posting against one person's knowledge bank, so they can see where they stand. The resume is written afterwards, separately.") });
   const requirements = withBest(weigh(r.requirements, allRoles(), Date.now()));
@@ -356,11 +356,11 @@ export async function compose(posting: string, pages: number, terms: string[], r
   // The newest version first. One with an entry the bank does not have is passed over for the one before it.
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil, draft], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) throw new FactsError(versions[0].unresolved);
-  const passedOver = versions.indexOf(kept) > 0 ? ['A later version of this resume named a job your bank does not have, so the version before it was kept.'] : [];
+  const passedOver = versions.indexOf(kept) > 0 ? ['A later version of this resume named a job your record does not have, so the version before it was kept.'] : [];
   return { resume: kept.resume, changes: [...r.changes, ...(skimmed && versions.indexOf(kept) === 0 ? skimmed.changes : [])], review: reviewed.review, terms: termsOf(terms, kept.resume, words, skills),
     map: { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) }, skim: skimmed?.skim,
     questions: (r.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3),
-    repairs: [...passedOver, ...[...putBack].map((text) => `The writer changed a fact, and it was put back from your bank. ${text}`)] };
+    repairs: [...passedOver, ...[...putBack].map((text) => `The writer changed a fact, and it was put back from your record. ${text}`)] };
 }
 
 // Keeps what compose wrote on its job, as the worker does: the resume, and in the job's analysis the review, the
@@ -412,7 +412,7 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
   analysis.review = got.review;
   analysis.skim = versions.indexOf(kept) === 0 ? skimmed?.skim : undefined;
   analysis.map = { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) };
-  analysis.written = { sig: sigOf(kept.resume), repairs: kept.repaired.map((f) => `The writer changed a fact, and it was put back from your bank. ${f.text}`) };
+  analysis.written = { sig: sigOf(kept.resume), repairs: kept.repaired.map((f) => `The writer changed a fact, and it was put back from your record. ${f.text}`) };
   db.query('UPDATE jobs SET resume = ?, analysis = ?, updated_at = ? WHERE id = ?').run(kept.resume, JSON.stringify(analysis), Date.now(), job.id);
   saveResume(job, kept.resume);
   await publish(job.id, print);

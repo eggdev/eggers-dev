@@ -1,0 +1,812 @@
+// Jobs: the job search as records (DESIGN.md rule 4). The list (with its Saved, Active, Done and Found groups as a
+// line of word choices), one job, its resume, the resume's editor, adding a job, a posting found on the watchlist,
+// and the watchlist. Each is one page, drawn only with the shared pieces of look.contract. The data and the actions
+// are the root's (app.contract); a screen with a form keeps its drafts itself.
+//
+// A job has one score, its fit ("Fit 72"), and one status word (`jobPhase` picks its state, look.contract's
+// `statusWord` names it). Every other number the reading or the checks produce is said in a sentence, under "How the
+// resume was checked", never as a second headline number.
+use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Aside, statusWord, joinDot, look from "./look.contract"
+
+// A job in the list: its fit is 0 to 100 once read, -1 before.
+shape JobRow
+  id: string
+  title: string
+  company: string
+  place: string
+  status: string
+  note: string
+  fit: number
+  // What became of it: "" | applied | interviewed | rejected | no-response | offer.
+  outcome: string
+  // Where it sits in the search: saved | active | done.
+  stage: string
+  // The pay the posting states, when it went up and when it was added, in words; "" when unknown.
+  salary: string
+  posted: string
+  added: string
+  contact: string
+  // When it was sent ("" before), and whether it has had no reply 14 days after (Home's rule).
+  sent: string
+  quiet: bool
+  // The site the posting came from ("" when it was pasted in).
+  from: string
+  // The resume: "" | queued | running | done | failed; whether there is one; the PDF check's score and the score
+  // it needs (-1 before a check).
+  resumeStatus: string
+  hasResume: bool
+  atsScore: number
+  atsRequired: number
+
+shape JobList
+  loaded: bool
+  items: JobRow[]
+
+// A posting found on a watchlisted company's job board, with a quick first score.
+shape Lead
+  id: string
+  title: string
+  company: string
+  place: string
+  score: number
+  reason: string
+  salary: string
+  posted: string
+  // Posted within the last seven days.
+  fresh: bool
+
+shape LeadList
+  loaded: bool
+  // idle | queued | running | failed: the state of the watchlist check
+  status: string
+  note: string
+  companies: number
+  unscored: number
+  // Lower-scored postings from before this week that the list leaves out.
+  unlisted: number
+  // Postings left out because their stated pay tops out under the floor in the person's notes.
+  underPay: number
+  checked: string
+  items: Lead[]
+
+shape LeadDetail
+  loaded: bool
+  id: string
+  title: string
+  company: string
+  place: string
+  url: string
+  score: number
+  reason: string
+  posting: string
+  posted: string
+
+shape Company
+  id: string
+  name: string
+  board: string
+  open: number
+  note: string
+
+shape CompanyList
+  loaded: bool
+  items: Company[]
+
+// One thing a posting asks for, and what in the record supports it.
+shape Need
+  id: string
+  text: string
+  must: bool
+  // must (Required) | nice (Preferred) | implied (Implied).
+  need: string
+  // strong | partial | none
+  coverage: string
+  evidence: string
+  // The single strongest evidence, in words ("" for an older reading).
+  bestText: string
+  // The work it rests on ("Acme, employer, in production, recent") and how much it counted, 0 to 100; -1 before weighing existed.
+  basis: string
+  counted: number
+
+// One finding from reading a resume's PDF back as a tracking system's parser would.
+shape AtsLine
+  id: string
+  label: string
+  ok: bool
+  note: string
+
+// One question of the person's own fit test, answered for a posting: yes | partly | no | unknown.
+shape Check
+  id: string
+  question: string
+  answer: string
+  note: string
+
+// One drafted message to open a door at a company: who it is for, how to find them, why this way in, and the words.
+shape Door
+  id: string
+  to: string
+  find: string
+  why: string
+  message: string
+
+// One reader on the council that reviews a resume, with each round's score ("6 → 7 → 8").
+shape Seat
+  id: string
+  seat: string
+  model: string
+  score: string
+  note: string
+
+// A yes-or-no question the application form is likely to ask.
+shape Knockout
+  id: string
+  question: string
+  // yes | no | unknown
+  answer: string
+  note: string
+
+// One thing to look at on a resume. severity: high (it disagrees with the record) | warn (a rule is broken) | info.
+shape JobFlag
+  id: string
+  kind: string
+  severity: string
+  text: string
+  items: string[]
+
+// One line of a resume as the page sets it: name (its owner's name), contact (the line under it), section, role,
+// para or item.
+shape ResumeLine
+  // Its place in the resume ("0", "1" …): a line is never moved, only the whole resume written again.
+  id: string
+  kind: string
+  text: string
+
+// A job read against the record: the fit, why, and the resume written for it.
+shape Job
+  loaded: bool
+  id: string
+  url: string
+  title: string
+  company: string
+  place: string
+  status: string
+  note: string
+  fit: number
+  outcome: string
+  outcomeNote: string
+  contact: string
+  posted: string
+  added: string
+  sent: string
+  quiet: bool
+  from: string
+  posting: string
+  pdf: string
+  pages: number
+  atsOk: bool
+  atsScore: number
+  atsRequired: number
+  atsParts: string
+  ats: AtsLine[]
+  covered: number
+  asked: number
+  verdict: string
+  strengths: string[]
+  risks: string[]
+  changes: string[]
+  gaps: string[]
+  resume: string
+  resumeLines: ResumeLine[]
+  requirements: Need[]
+  weighed: bool
+  termsIn: string[]
+  termsBank: string[]
+  termsMissing: string[]
+  knockouts: Knockout[]
+  checks: Check[]
+  resumeStatus: string
+  resumeNote: string
+  resumeStale: bool
+  doors: Door[]
+  doorsStatus: string
+  doorsNote: string
+  edited: bool
+  reviewScore: string
+  reviewPassed: bool
+  reviewRounds: number
+  seats: Seat[]
+  reviewChanges: string[]
+  flags: JobFlag[]
+  skimConclusion: string
+
+// A job's reference number (DESIGN.md section 4), from its database id: J-023.
+fn jobRef(id: string): string = id.length >= 3 ? `J-${id}` : id.length == 2 ? `J-0${id}` : `J-00${id}`
+// A job's name: its title, then its company.
+fn jobName(title: string, company: string): string = company == "" ? title : `${title} at ${company}`
+// The one state a job is in, as the key look.contract's `statusWord` maps to a word. What became of an application
+// comes first; then the reading of the posting; then its resume.
+fn jobPhase(status: string, resumeStatus: string, hasResume: bool, atsScore: number, atsRequired: number, outcome: string, quiet: bool): string = outcome == "rejected" or outcome == "offer" ? outcome : outcome == "no-response" or quiet ? "quiet" : outcome == "applied" or outcome == "interviewed" ? outcome : status == "queued" or status == "running" or status == "failed" ? status : resumeStatus == "queued" or resumeStatus == "running" ? "writing" : resumeStatus == "failed" ? "write-failed" : hasResume and (atsScore < 0 or atsScore >= atsRequired) ? "ready" : "done"
+fn rowWord(j: JobRow): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = statusWord("job", jobPhase(j.status, j.resumeStatus, j.hasResume, j.atsScore, j.atsRequired, j.outcome, j.quiet))
+fn jobWord(j: Job): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = statusWord("job", jobPhase(j.status, j.resumeStatus, j.resume != "", j.atsScore, j.atsRequired, j.outcome, j.quiet))
+// A job's dates: when it was posted (or added, when that is unknown), and when it was sent.
+fn jobDates(posted: string, added: string, sent: string): string = `${posted != "" ? `Posted ${posted}` : added != "" ? `Added ${added}` : ""}${sent == "" ? "" : posted == "" and added == "" ? `Sent ${sent}` : `, sent ${sent}`}`
+// A job's one score: its fit, once the posting is read.
+fn fitText(status: string, fit: number): string = status == "done" and fit >= 0 ? `Fit ${fit}` : ""
+// Where the posting came from.
+fn jobFrom(from: string): string = from != "" ? `From ${from}` : "Pasted in by you"
+fn jobLine(place: string, salary: string, contact: string): string = joinDot([place, salary, (contact != "" ? "You know someone there" : "")])
+fn needWord(n: Need): string = n.need == "implied" ? "Implied" : n.need == "nice" or not n.must ? "Preferred" : "Required"
+fn coverWord(c: string): string = c == "strong" ? "answered" : c == "partial" ? "partly answered" : "open"
+fn openCount(j: Job): number = j.asked - j.covered
+// The running balance (DESIGN.md section 4): "7 of 9 requirements answered · 2 open".
+fn balanceLine(j: Job): string = `${j.covered} of ${j.asked} ${j.asked == 1 ? "requirement" : "requirements"} answered · ${openCount(j)} open`
+fn answerWord(a: string): string = a == "yes" ? "Yes" : a == "partly" ? "Partly" : a == "no" ? "No" : "Unknown"
+// "9, 8 and 9".
+fn andList(xs: string[]): string = xs.length <= 1 ? xs.join("") : `${xs.slice(0, xs.length - 1).join(", ")} and ${match xs.at(-1) { case some(x) => x, case none => "" }}`
+fn lastScore(s: Seat): string = match s.score.split(" → ").at(-1) { case some(x) => x, case none => s.score }
+fn roundsText(n: number): string = n == 0 ? "as first written" : n == 1 ? "after one rewrite" : `after ${n} rewrites`
+// The council's review, in one sentence: "3 readers scored this resume 9, 8 and 9, after one rewrite. That passes the 8 of 10 it needs."
+fn reviewLine(j: Job): string = `${j.seats.length == 0 ? `Readers scored this resume ${j.reviewScore} of 10 on average` : `${j.seats.length} ${j.seats.length == 1 ? "reader" : "readers"} scored this resume ${andList(j.seats.map(s => lastScore(s)))} of 10`}, ${roundsText(j.reviewRounds)}. ${j.reviewPassed ? "That passes the 8 of 10 it needs." : "That is short of the 8 of 10 it needs."}`
+// The PDF's check, in one sentence: "The file reads cleanly in 12 of 12 checks."
+fn atsLine(j: Job): string = `The file reads cleanly in ${j.ats.filter(a => a.ok).length} of ${j.ats.length} ${j.ats.length == 1 ? "check" : "checks"}.${j.atsScore >= 0 ? ` By fixed rules it scores ${j.atsScore} of 100, and ${j.atsRequired} is needed before it is ready to send.` : ""}`
+fn readingNow(j: Job): bool = j.status == "queued" or j.status == "running"
+fn writingNow(j: Job): bool = j.resumeStatus == "queued" or j.resumeStatus == "running"
+
+// The Jobs list. `stage` is the group shown: saved, active, done, or found (postings found on the watchlist).
+component JobsScreen
+  props
+    jobs: JobList
+    leads: LeadList
+    failed: bool
+    error: string
+    stage: string
+    query: string
+    freshOnly: bool
+    shown: JobRow[]
+    shownLeads: Lead[]
+    saved: number
+    active: number
+    done: number
+    checking: bool
+    leadsNote: string
+    rowError: string
+    rowJob: string
+    wide: bool
+    setStage: action
+    search: action
+    setFresh: action
+    pickOutcome: action
+    add: action
+    watchlist: action
+    retry: action
+  derive q = query.trim()
+  derive empty = jobs.items.length == 0 and leads.items.length == 0 and leads.companies == 0
+  view
+    Page(testId="jobs")
+      Section(testId="jobs-top")
+        Title(text="Jobs", testId="jobs-title")
+        Actions(testId="jobs-actions")
+          if not (jobs.loaded and empty)
+            MainAction(label="Add a job", press=add, disabled=false, keys="", testId="add-job")
+          Action(label="Watchlist", press=watchlist, disabled=false, keys="", testId="open-companies")
+      if not jobs.loaded
+        Section(testId="jobs-wait")
+          if failed
+            FailLine(text=error, testId="jobs-error")
+            Action(label="Try again", press=retry, disabled=false, keys="", testId="jobs-retry")
+          else
+            QuietLine(text="Loading your jobs…", testId="jobs-loading")
+      else if empty
+        Section(testId="jobs-empty")
+          Line(text="No jobs yet. Add a posting to see how well you fit it, and get a resume written for it from your record.", testId="jobs-empty-text")
+          MainAction(label="Add a job", press=add, disabled=false, keys="", testId="jobs-add")
+      else
+        Section(testId="jobs-find")
+          Choices(label="Group")
+            ChoiceWord(label=`Saved ${saved}`, chosen=(stage == "saved"), press=setStage("saved"), testId="stage-saved")
+            ChoiceWord(label=`Active ${active}`, chosen=(stage == "active"), press=setStage("active"), testId="stage-active")
+            ChoiceWord(label=`Done ${done}`, chosen=(stage == "done"), press=setStage("done"), testId="stage-done")
+            ChoiceWord(label=`Found ${leads.items.length}`, chosen=(stage == "found"), press=setStage("found"), testId="stage-found")
+          SearchField(value=query, label="Search jobs", hint="Search title or company", change=search, testId="job-search")
+        if stage != "found"
+          Section(testId="jobs-list")
+            RecordList(testId="jobs-rows")
+              for j in shown key=j.id
+                Record(code=jobRef(j.id), name=jobName(j.title, j.company), href=`/job/${j.id}`, strong=false, dates=jobDates(j.posted, j.added, j.sent), extent=fitText(j.status, j.fit), word=rowWord(j), showWord=true, place="", provenance=jobFrom(j.from), wide=wide, testId=`job-${j.id}`)
+                  if jobLine(j.place, j.salary, j.contact) != ""
+                    QuietLine(text=jobLine(j.place, j.salary, j.contact), testId=`job-line-${j.id}`)
+                  InlineField(label="What happened")
+                    select value=j.outcome change=pickOutcome(j.id) aria-label=`What happened with ${j.title}` testId=`status-${j.id}`
+                      option "Not applied" value=""
+                      option "Applied" value="applied"
+                      option "Interviewed" value="interviewed"
+                      option "Rejected" value="rejected"
+                      option "No response" value="no-response"
+                      option "Offer" value="offer"
+                  if rowError != "" and rowJob == j.id
+                    FailLine(text=`That wasn’t saved. ${rowError}`, testId="row-error")
+            if shown.length == 0
+              QuietLine(text=(q != "" ? `No job here matches “${q}”.` : stage == "saved" ? "Nothing saved. Add a posting, or read one from Found." : stage == "active" ? "Nothing in progress. A job moves here when you mark it Applied." : "Nothing finished yet."), testId="jobs-none")
+            QuietLine(text=(stage == "saved" ? "Jobs still being read come first, then the best fit. Mark a job Applied and it moves to Active." : stage == "active" ? "Applied and interviewing. After 14 days with nothing heard, a job is Quiet and moves to Done." : "Rejected, quiet, or an offer."), testId="stage-note")
+        else
+          Section(testId="leads-list")
+            CheckLine(label="Posted this week only", detail="", checked=freshOnly, disabled=false, change=setFresh, testId="found-fresh")
+            RecordList(testId="leads-rows")
+              for l in shownLeads key=l.id
+                Record(code="", name=jobName(l.title, l.company), href=`/lead/${l.id}`, strong=false, dates=(l.posted != "" ? `Posted ${l.posted}` : ""), extent=`Quick fit ${l.score}`, word=statusWord("job", "found"), showWord=true, place="", provenance="", wide=wide, testId=`lead-${l.id}`)
+                  if joinDot([l.place, l.salary]) != ""
+                    QuietLine(text=joinDot([l.place, l.salary]), testId=`lead-line-${l.id}`)
+            if shownLeads.length == 0
+              QuietLine(text=(checking ? "Looking at the boards now." : q != "" ? `No found posting matches “${q}”.` : freshOnly ? "Nothing found was posted this week." : "Nothing found yet."), testId="leads-none")
+            QuietLine(text=`${leadsNote}${leads.unlisted > 0 ? ` Listed: the best 80 and everything posted this week. ${leads.unlisted} older, lower-scored postings are left out.` : ""}${leads.underPay > 0 ? ` ${leads.underPay} more are left out because their pay tops out under the floor in your direction notes.` : ""}`, testId="leads-note")
+
+// What to look at on a job's resume: the six-second skim's conclusion, then each flag with its items under it, the
+// serious ones first (app.ts sorts them) and in the heavy weight.
+component JobFlags
+  props
+    flags: JobFlag[]
+    skim: string
+  view
+    Section(testId="job-flags")
+      SectionHead(text="What to look at", testId="job-flags-head")
+      if skim != ""
+        Line(text=skim, testId="job-skim")
+      for f in flags key=f.id
+        column gap=look().rowGap / 2
+          if f.severity == "high"
+            StrongLine(text=f.text, testId=`job-flag-${f.id}`)
+          else
+            Line(text=f.text, testId=`job-flag-${f.id}`)
+          if f.items.length > 0
+            Indented(testId=`job-flag-${f.id}-items`)
+              for item, n in f.items key=`${n}`
+                QuietLine(text=item, testId=`job-flag-${f.id}-item-${n}`)
+
+// One job: its record, what to look at, the posting requirement by requirement, the resume, what happened, the
+// questions it raised, and the posting itself. Each is a section with a head and no box.
+component JobScreen
+  props
+    job: Job
+    wide: bool
+    // The length the picker shows: the one being asked about while a confirm is open, else the resume's.
+    pages: string
+    lengthError: string
+    doorsError: string
+    writeError: string
+    writeBusy: bool
+    doorsBusy: bool
+    copied: string
+    busy: bool
+    error: string
+    saveError: string
+    back: action
+    writeAgain: action
+    draftDoors: action
+    copyDoor: action
+    askGap: action
+    reread: action
+    askRemove: action
+    pickOutcome: action
+    saveNote: action
+    saveContact: action
+    editResume: action
+    setLength: action
+  state note = job.outcomeNote
+  state who = job.contact
+  derive read = job.status == "done" or job.verdict != ""
+  derive resumeBusy = readingNow(job) or writingNow(job)
+  action editWho(v: string)
+    who = v
+  action editNote(v: string)
+    note = v
+  view
+    WidePage(testId="job")
+      Section(testId="job-top")
+        Action(label="Back to jobs", press=back, disabled=false, keys="", testId="job-back")
+      Section(testId="job-head")
+        RecordHead(code=jobRef(job.id), name=jobName(job.title, job.company), dates=jobDates(job.posted, job.added, job.sent), extent=fitText(job.status, job.fit), word=jobWord(job), showWord=true, place="", provenance=jobFrom(job.from), testId="job-title")
+          if jobLine(job.place, "", "") != ""
+            QuietLine(text=job.place, testId="job-place")
+          if job.status == "queued"
+            WorkLine(word=statusWord("work", "queued"), place="", text="Waiting to be read against your record. Reading usually takes a few minutes.", testId="job-status")
+          else if job.status == "running"
+            WorkLine(word=statusWord("work", "running"), place="", text="Reading the posting against your record. Usually a few minutes.", testId="job-status")
+          else if job.status == "failed"
+            FailLine(text=`Reading failed. ${job.note}`, testId="job-status")
+      if job.flags.length > 0 or job.skimConclusion != ""
+        JobFlags(flags=job.flags, skim=job.skimConclusion)
+      if read and job.requirements.length > 0
+        WideSection(testId="job-map")
+          SectionHead(text="Requirements", testId="job-map-head")
+          if job.verdict != ""
+            Section(testId="job-verdict-row")
+              Prose(text=job.verdict, strong=false, testId="job-verdict")
+          for n in job.requirements key=n.id
+            WithNote(wide=wide, testId=`job-need-${n.id}-row`)
+              Main()
+                Line(text=n.text, testId=`job-need-${n.id}`)
+                QuietLine(text=`${needWord(n)} · ${coverWord(n.coverage)}`, testId=`job-need-${n.id}-class`)
+                if n.basis != ""
+                  QuietLine(text=`Rests on ${n.basis}${n.counted >= 0 ? `, counted at ${n.counted}%` : ""}.`, testId=`job-need-${n.id}-basis`)
+              Note(wide=wide, text=(n.bestText != "" ? n.bestText : n.evidence), testId=`job-need-${n.id}-evidence`)
+          Section(testId="job-balance-row")
+            StrongLine(text=balanceLine(job), testId="job-balance")
+            QuietLine(text=(job.weighed ? "Read against your record. Production work and recent work count for more; set each role’s kind of work under Experience." : "Read before evidence was weighed, so personal and production work count alike. Read it again for a weighted fit."), testId="job-weighed")
+      else if read
+        Section(testId="job-map")
+          SectionHead(text="Requirements", testId="job-map-head")
+          if job.verdict != ""
+            Prose(text=job.verdict, strong=false, testId="job-verdict")
+          QuietLine(text="No requirements were found in the posting.", testId="job-map-none")
+      if job.strengths.length > 0
+        Section(testId="job-strengths")
+          SectionHead(text="What carries it", testId="job-strengths-head")
+          for t, i in job.strengths key=t
+            Bulleted(testId=`job-strength-${i}`)
+              Line(text=t, testId=`job-strength-${i}-text`)
+      if job.risks.length > 0
+        Section(testId="job-risks")
+          SectionHead(text="What may screen you out", testId="job-risks-head")
+          for t, i in job.risks key=t
+            Bulleted(testId=`job-risk-${i}`)
+              Line(text=t, testId=`job-risk-${i}-text`)
+      if job.checks.length > 0
+        Section(testId="job-checks")
+          SectionHead(text="Your fit test", testId="job-checks-head")
+          for c, i in job.checks key=c.id
+            Numbered(n=i + 1)
+              Line(text=c.question, testId=`job-check-${c.id}`)
+              QuietLine(text=(c.note != "" ? `${answerWord(c.answer)}. ${c.note}` : `${answerWord(c.answer)}.`), testId=`job-check-${c.id}-answer`)
+          QuietLine(text="The questions from your direction notes, answered from the posting. They don’t change the fit.", testId="job-checks-hint")
+      if job.knockouts.length > 0
+        Section(testId="job-knockouts")
+          SectionHead(text="Screening questions to expect", testId="job-knockouts-head")
+          for k, i in job.knockouts key=k.id
+            Numbered(n=i + 1)
+              Line(text=k.question, testId=`job-knockout-${k.id}`)
+              QuietLine(text=(k.note != "" ? `${answerWord(k.answer)}. ${k.note}` : `${answerWord(k.answer)}.`), testId=`job-knockout-${k.id}-answer`)
+      if read
+        Section(testId="job-resume-section")
+          SectionHead(text="Resume", testId="job-resume-head")
+          if writingNow(job)
+            WorkLine(word=statusWord("work", job.resumeStatus), place="", text=(job.resume == "" ? "Writing your resume for this job and having it reviewed. Usually a few minutes." : "Writing this resume again and having it reviewed. Usually a few minutes. The one you can read now is the last version."), testId="job-resume-writing")
+          else if job.resumeStatus == "failed"
+            FailLine(text=`The resume couldn’t be written. ${job.resumeNote} Write it again to retry.`, testId="job-resume-failed")
+          else if job.resumeStale
+            QuietLine(text=(job.edited ? "Your record changed after you edited this resume. Write it again to bring it up to date." : "Your record changed after this resume was written. It is written again by itself a few minutes after your last change."), testId="job-resume-stale")
+          else if job.resume == ""
+            QuietLine(text="No resume yet.", testId="job-resume-none")
+          Actions(testId="job-resume-actions")
+            if job.resume != ""
+              GoTo(label="Read the resume", href=`/job/${job.id}/resume`, testId="job-resume")
+            Action(label="Edit the resume", press=editResume, disabled=(job.resume == "" or busy or resumeBusy), keys="", testId="job-edit-resume")
+            Action(label="Write it again", press=writeAgain, disabled=(writeBusy or busy or job.status != "done" or resumeBusy), keys="", testId="job-write-again")
+            if job.pdf != ""
+              GoTo(label="Get the PDF", href=job.pdf, testId="job-pdf")
+          InlineField(label="Length")
+            select value=pages change=setLength disabled=(busy or resumeBusy) aria-label="Resume length" testId="job-pages"
+              option "Two pages" value="2"
+              option "One page" value="1"
+          if lengthError != ""
+            FailLine(text=`The length wasn’t changed. ${lengthError}`, testId="job-length-error")
+          if writeError != ""
+            FailLine(text=`The resume wasn’t written again. ${writeError}`, testId="job-write-error")
+          QuietLine(text="A change to your record writes every unsent resume again by itself, except one you edited. Writing it again takes a few minutes and replaces your edits. A new length writes it again at that length.", testId="job-resume-hint")
+      if job.reviewScore != "" or job.ats.length > 0 or job.termsIn.length + job.termsBank.length + job.termsMissing.length > 0
+        Section(testId="job-checked")
+          SectionHead(text="How the resume was checked", testId="job-checked-head")
+          if job.reviewScore != ""
+            Line(text=reviewLine(job), testId="review-result")
+            for r in job.seats key=r.id
+              Indented(testId=`seat-${r.id}`)
+                Line(text=r.seat, testId=`seat-name-${r.id}`)
+                QuietLine(text=`Scored ${r.score.split(" → ").join(", then ")} of 10. ${r.note}`, testId=`seat-scores-${r.id}`)
+            QuietLine(text="Three readers score it every round. It is rewritten from your record until they average 8 of 10, up to three times.", testId="review-hint")
+          if job.reviewChanges.length > 0
+            StrongLine(text="What the review changed", testId="review-changes-head")
+            for c, i in job.reviewChanges key=c
+              Bulleted(testId=`review-change-row-${i}`)
+                Line(text=c, testId=`review-change-${i}`)
+          if job.ats.length > 0
+            Line(text=atsLine(job), testId="job-parser")
+            for a in job.ats key=a.id
+              Indented(testId=`ats-${a.id}`)
+                if a.ok
+                  QuietLine(text=`${a.label}. ${a.note}`, testId=`ats-line-${a.id}`)
+                else
+                  Line(text=`Needs a fix: ${a.label}. ${a.note}`, testId=`ats-line-${a.id}`)
+            if job.atsParts != ""
+              QuietLine(text=`The score’s parts: ${job.atsParts}.`, testId="ats-parts")
+            QuietLine(text="The PDF’s text is read back the way a tracking system’s parser reads it: one column, plain text and standard section names are what parsers handle. The score is counted by fixed rules. Its terms part counts the posting’s terms your record supports; a term your record can’t support lowers the fit, not this score. A bullet without a number scores lower, and that is allowed: a number is shown only when your record has one worth showing.", testId="ats-hint")
+          if job.termsIn.length + job.termsBank.length + job.termsMissing.length > 0
+            Labelled(label=`The posting’s terms in the resume, ${job.termsIn.length} of ${job.termsIn.length + job.termsBank.length + job.termsMissing.length}`, value=(job.termsIn.length == 0 ? "None" : job.termsIn.join(", ")), testId="job-terms-in")
+            if job.termsBank.length > 0
+              Labelled(label="In your record, missing from the resume", value=job.termsBank.join(", "), testId="job-terms-bank")
+            if job.termsMissing.length > 0
+              Labelled(label="Not in your record", value=job.termsMissing.join(", "), testId="job-terms-missing")
+            QuietLine(text="The posting’s own terms, which recruiters search for and tracking systems match. A term your record doesn’t support is never added.", testId="terms-hint")
+      Section(testId="job-happened")
+        SectionHead(text="What happened", testId="job-happened-head")
+        FieldLabel(label="Outcome")
+          select value=job.outcome change=pickOutcome(note) aria-label="Outcome" align-self="flex-start" max-width="100%" testId="job-outcome"
+            option "Not applied" value=""
+            option "Applied" value="applied"
+            option "Interviewed" value="interviewed"
+            option "Rejected" value="rejected"
+            option "No response" value="no-response"
+            option "Offer" value="offer"
+        FieldLabel(label="Note")
+          input value=note input=editNote change=saveNote(job.outcome) placeholder="Such as how far it got" aria-label="Outcome note" testId="job-outcome-note"
+        FieldLabel(label="Who you know there")
+          input value=who input=editWho change=saveContact placeholder="Who, and how you know them" aria-label="Who you know there" testId="job-contact"
+        if saveError != ""
+          FailLine(text=`That change wasn’t saved. ${saveError}`, testId="job-save-error")
+        QuietLine(text=(job.sent != "" ? `Sent ${job.sent}. Your record of what became of it, and anyone who could vouch for you. New jobs are scored with the outcomes in view.` : "Your record of what became of it, and anyone who could vouch for you. New jobs are scored with the outcomes in view."), testId="job-happened-hint")
+      if read
+        Section(testId="job-doors")
+          SectionHead(text="Reach out", testId="job-doors-head")
+          for d in job.doors key=d.id
+            column gap=look().rowGap / 2
+              StrongLine(text=d.to, testId=`door-to-${d.id}`)
+              QuietLine(text=`${d.why} ${d.find}`, testId=`door-why-${d.id}`)
+              Prose(text=d.message, strong=false, testId=`door-message-${d.id}`)
+              Action(label=(copied == `${job.id}:${d.id}` ? "Copied" : "Copy the message"), press=copyDoor(d.id, d.message), disabled=false, keys="", testId=`door-copy-${d.id}`)
+          if job.doorsStatus == "queued" or job.doorsStatus == "running"
+            WorkLine(word=statusWord("work", job.doorsStatus), place="", text="Drafting messages. Usually a minute or two.", testId="doors-writing")
+          if job.doorsStatus == "failed" or doorsError != ""
+            FailLine(text=(doorsError != "" ? doorsError : `Drafting failed. ${job.doorsNote}`), testId="doors-error")
+          Action(label=(job.doors.length > 0 ? "Draft again" : "Draft messages"), press=draftDoors, disabled=(doorsBusy or job.doorsStatus == "queued" or job.doorsStatus == "running"), keys="", testId="doors-draft")
+          QuietLine(text=(job.doors.length > 0 ? "Drafts to personalise before you send. Fill in anything in [brackets]. Drafting again replaces these." : "Short messages to reach a person at the company, each by a different way in. If you noted who you know there, the first is written to them."), testId="doors-hint")
+      if job.gaps.length > 0
+        Section(testId="job-gaps")
+          SectionHead(text="Questions this job raised", testId="job-gaps-head")
+          for g, i in job.gaps key=g
+            Numbered(n=i + 1)
+              Action(label=g, press=askGap(g), disabled=false, keys="", testId=`job-gap-${i}`)
+          QuietLine(text="Pick one to answer it in Talk, then read the job again.", testId="job-gaps-hint")
+      if job.posting.trim() != "" or job.url != ""
+        Section(testId="job-posting-section")
+          SectionHead(text="Posting", testId="job-posting-head")
+          if job.url != ""
+            OutLink(label="Open the posting", href=job.url, testId="job-posting")
+          if job.posting.trim() != ""
+            Prose(text=job.posting.trim(), strong=false, testId="job-posting-text")
+      Section(testId="job-actions")
+        if error != ""
+          FailLine(text=error, testId="job-action-error")
+        Action(label="Read again", press=reread, disabled=(busy or readingNow(job)), keys="", testId="job-read")
+        DangerAction(label="Delete job", press=askRemove, disabled=false, testId="job-delete")
+        QuietLine(text=(readingNow(job) ? "It can be read again once this reading finishes." : "Reading again scores the job against your record as it is now and writes its resume again."), testId="job-read-hint")
+
+// A resume as its page sets it, in the two sizes: the name as the title, each section under a rule, each role in
+// the heavy weight, the bullets as a list.
+component ResumeDoc
+  props
+    lines: ResumeLine[]
+  view
+    column gap=look().rowGap min-width=0 testId="resume-body"
+      for l in lines key=l.id
+        if l.kind == "name"
+          Title(text=l.text, testId=`resume-line-${l.id}`)
+        else if l.kind == "section"
+          column padding-top=look().rowGap
+            SectionHead(text=l.text, testId=`resume-line-${l.id}`)
+        else if l.kind == "role"
+          column padding-top=look().rowGap / 2
+            StrongLine(text=l.text, testId=`resume-line-${l.id}`)
+        else if l.kind == "item"
+          Bulleted(testId=`resume-item-${l.id}`)
+            Line(text=l.text, testId=`resume-line-${l.id}`)
+        else if l.kind == "contact"
+          QuietLine(text=l.text, testId=`resume-line-${l.id}`)
+        else
+          Line(text=l.text, testId=`resume-line-${l.id}`)
+
+// The flags of a resume, in its margin on a wide window and above it on a narrow one.
+component ResumeFlags
+  props
+    flags: JobFlag[]
+    skim: string
+    wide: bool
+  view
+    Aside(wide=wide, label="What to look at", testId="resume-flags")
+      QuietLine(text="What to look at", testId="resume-flags-head")
+      if skim != ""
+        Line(text=skim, testId="resume-skim")
+      for f in flags key=f.id
+        column gap=look().rowGap / 2
+          if f.severity == "high"
+            StrongLine(text=f.text, testId=`resume-flag-${f.id}`)
+          else
+            Line(text=f.text, testId=`resume-flag-${f.id}`)
+          for item, n in f.items key=`${n}`
+            QuietLine(text=item, testId=`resume-flag-${f.id}-item-${n}`)
+
+// The resume written for a job, as a document, with its flags beside it.
+component ResumeScreen
+  props
+    job: Job
+    wide: bool
+    back: action
+    edit: action
+  derive flagged = job.flags.length > 0 or job.skimConclusion != ""
+  derive resumeBusy = readingNow(job) or writingNow(job)
+  view
+    WidePage(testId="resume")
+      Section(testId="resume-top")
+        Action(label="Back to the job", press=back, disabled=false, keys="", testId="resume-back")
+      Section(testId="resume-head")
+        QuietLine(text=`${jobRef(job.id)}. Written for ${jobName(job.title, job.company)}, from your record.`, testId="resume-for")
+        if writingNow(job)
+          WorkLine(word=statusWord("work", job.resumeStatus), place="", text="Writing this resume again. Usually a few minutes. This is the last version.", testId="resume-writing")
+        Actions(testId="resume-actions")
+          Action(label="Edit", press=edit, disabled=resumeBusy, keys="", testId="resume-edit")
+          if job.pdf != ""
+            GoTo(label="Get the PDF", href=job.pdf, testId="resume-pdf")
+      if wide and flagged
+        row align-items="start" gap=(look().rowGap + look().rowGap / 3)
+          Main()
+            ResumeDoc(lines=job.resumeLines)
+          ResumeFlags(flags=job.flags, skim=job.skimConclusion, wide=wide)
+      else
+        column gap=look().sectionGap
+          if flagged
+            ResumeFlags(flags=job.flags, skim=job.skimConclusion, wide=wide)
+          Section(testId="resume-doc")
+            ResumeDoc(lines=job.resumeLines)
+      if job.changes.length > 0
+        Section(testId="resume-changes")
+          SectionHead(text="What changed from your resume", testId="resume-changes-head")
+          for c, i in job.changes key=c
+            Bulleted(testId=`change-row-${i}`)
+              Line(text=c, testId=`change-${i}`)
+
+// The resume for one job, edited as Markdown before it is sent. Saving prints the PDF again. Leaving with a change
+// asks first.
+component EditResumeScreen
+  props
+    body: string
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state draft = body
+  action edit(v: string)
+    draft = v
+  action leave
+    if draft != body
+      showModal("discard-edits")
+    else
+      cancel()
+  view
+    Page(testId="resume-editor")
+      Section(testId="resume-editor-top")
+        Title(text="Edit the resume", testId="resume-editor-title")
+        QuietLine(text="Markdown: # your name, ## a section, ### a role, - a bullet. Saving prints the PDF again.", testId="resume-hint")
+      Section(testId="resume-editor-form")
+        textarea value=draft input=edit aria-label="Resume" placeholder="The resume, in Markdown" rows=26 testId="resume-text"
+        if error != ""
+          FailLine(text=error, testId="resume-error")
+        if busy
+          QuietLine(text="Saving and printing the PDF.", testId="resume-saving")
+        Actions(testId="resume-editor-actions")
+          MainAction(label="Save", press=save(draft), disabled=(busy or draft.trim() == ""), keys="", testId="resume-save")
+          Action(label="Cancel", press=leave, disabled=false, keys="", testId="resume-cancel")
+
+// Add a job: a link to the posting, or its text pasted. Leaving with something typed asks first (the root's action).
+component AddJobScreen
+  props
+    url: string
+    posting: string
+    refusal: string
+    sending: bool
+    hint: string
+    editUrl: action
+    editText: action
+    add: action
+    cancel: action
+  view
+    Page(testId="add-job-page")
+      Section(testId="add-job-top")
+        Title(text="Add a job", testId="add-job-title")
+      Section(testId="add-job-link")
+        FieldLabel(label="Link to the posting")
+          input value=url input=editUrl submit=add placeholder="https://" aria-label="Link to the posting" type="url"
+            autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="done" aria-invalid=(refusal != "" and url.trim() != "") testId="job-url"
+        if refusal != "" and url.trim() != "" and not sending
+          FailLine(text=refusal, testId="job-error")
+        QuietLine(text="Some job sites block reading by link. If it fails, paste the text below.", testId="job-url-hint")
+      Section(testId="add-job-text")
+        FieldLabel(label="Or paste the posting")
+          textarea value=posting input=editText placeholder="The whole posting, including requirements" aria-label="Posting text" rows=10 testId="job-text"
+        if refusal != "" and url.trim() == "" and not sending
+          FailLine(text=refusal, testId="job-error")
+      Section(testId="add-job-actions")
+        QuietLine(text=(hint != "" ? hint : "It is read against your record. Reading usually takes a few minutes."), testId="job-hint")
+        Actions(testId="add-job-actions-row")
+          MainAction(label="Add", press=add, disabled=(hint != ""), keys="", testId="job-save")
+          Action(label="Cancel", press=cancel, disabled=false, keys="", testId="job-cancel")
+
+// A posting found on the watchlist: its quick first score and why, and the choice to read it fully or put it away.
+component LeadScreen
+  props
+    lead: LeadDetail
+    error: string
+    taking: bool
+    back: action
+    take: action
+    askDismiss: action
+  view
+    Page(testId="lead")
+      Section(testId="lead-top")
+        Action(label="Back to jobs", press=back, disabled=false, keys="", testId="lead-back")
+      Section(testId="lead-head")
+        RecordHead(code="", name=jobName(lead.title, lead.company), dates=(lead.posted != "" ? `Posted ${lead.posted}` : ""), extent=`Quick fit ${lead.score}`, word=statusWord("job", "found"), showWord=true, place="", provenance="Found on your watchlist", testId="lead-title")
+          if lead.place != ""
+            QuietLine(text=lead.place, testId="lead-place")
+        Line(text=lead.reason, testId="lead-reason")
+        QuietLine(text="A first sort, from your profile and the posting’s opening. Reading it fully moves it to Saved, checks every requirement against your record and writes its resume.", testId="lead-hint")
+        if error != ""
+          FailLine(text=error, testId="lead-error")
+        Actions(testId="lead-actions")
+          MainAction(label="Read it fully", press=take, disabled=taking, keys="", testId="lead-read")
+          DangerAction(label="Not for me", press=askDismiss, disabled=false, testId="lead-dismiss")
+      Section(testId="lead-posting-section")
+        SectionHead(text="Posting", testId="lead-posting-head")
+        if lead.url != ""
+          OutLink(label="Open the posting", href=lead.url, testId="lead-url")
+        Prose(text=lead.posting, strong=false, testId="lead-posting")
+
+// The watchlist: companies whose job boards are checked once a day for postings.
+component CompaniesScreen
+  props
+    companies: CompanyList
+    loadError: string
+    link: string
+    act: string
+    addError: string
+    checkError: string
+    removeError: string
+    adding: bool
+    checking: bool
+    checkBusy: bool
+    wide: bool
+    back: action
+    editLink: action
+    add: action
+    check: action
+    askRemove: action
+  view
+    Page(testId="companies")
+      Section(testId="companies-top")
+        Action(label="Back to jobs", press=back, disabled=false, keys="", testId="companies-done")
+      Section(testId="companies-head")
+        Title(text="Watchlist", testId="companies-title")
+        QuietLine(text=(checking ? "Checking now. Found jobs appear on the Jobs list, under Found." : "Boards on Greenhouse, Lever and Ashby can be read. They are checked once a day."), testId="companies-hint")
+        Action(label="Check now", press=check, disabled=(checking or checkBusy or companies.items.length == 0), keys="", testId="companies-check")
+        if act == "check" and checkError != ""
+          FailLine(text=checkError, testId="check-error")
+      Section(testId="companies-add")
+        FieldLabel(label="Link to a company’s job board")
+          input value=link input=editLink submit=add placeholder="https://jobs.ashbyhq.com/company" aria-label="Link to a company’s job board" type="url"
+            autocapitalize="none" autocomplete="off" enterkeyhint="done" aria-invalid=(act == "add" and addError != "") testId="company-link"
+        if act == "add" and addError != ""
+          FailLine(text=addError, testId="company-error")
+        MainAction(label="Add", press=add, disabled=(link.trim() == "" or adding), keys="", testId="company-add")
+      Section(testId="companies-list")
+        if not companies.loaded
+          if loadError != ""
+            FailLine(text=`Your watchlist couldn’t be loaded. ${loadError}`, testId="companies-state")
+          else
+            QuietLine(text="Loading your watchlist…", testId="companies-state")
+        else if companies.items.length == 0
+          QuietLine(text="No companies yet.", testId="companies-none")
+        if act == "remove" and removeError != ""
+          FailLine(text=`That company wasn’t removed. ${removeError}`, testId="company-remove-error")
+        RecordList(testId="companies-rows")
+          for c in companies.items key=c.id
+            Record(code="", name=c.name, href="", strong=false, dates="", extent=`${c.open} ${c.open == 1 ? "job" : "jobs"} found`, word=statusWord("job", ""), showWord=false, place="", provenance=c.board, wide=wide, testId=`company-${c.id}`)
+              if c.note != ""
+                FailLine(text=c.note, testId=`company-note-${c.id}`)
+              DangerAction(label="Remove", press=askRemove(c.id, c.name), disabled=false, testId=`company-remove-${c.id}`)

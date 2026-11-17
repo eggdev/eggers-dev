@@ -88,18 +88,18 @@ export function diffPositions(found: Position[], roles: RoleRow[], separate: { r
     const where = `${r.title} at ${r.company}`;
     // The key holds LinkedIn's value, so a later export with another value for the same field is asked again.
     const add = (field: 'title' | 'company' | 'start' | 'end', bank: string, linkedin: string, what: string) => out.push({ key: `linkedin:${field}:${r.id}:${norm(linkedin)}`, field, role: r.id, bank, linkedin, position: p,
-      text: `Your bank says ${what} “${field === 'start' || field === 'end' ? say(bank) : bank}”. LinkedIn says “${field === 'start' || field === 'end' ? say(linkedin) : linkedin}”. A background check compares them. Which one is right?`,
+      text: `Your record says ${what} “${field === 'start' || field === 'end' ? say(bank) : bank}”. LinkedIn says “${field === 'start' || field === 'end' ? say(linkedin) : linkedin}”. A background check compares them. Which one is right?`,
       // A position paired by its employer alone may be a different, real title (a promotion): the person can say so.
-      choices: [`The bank is right: ${field === 'start' || field === 'end' ? say(bank) : bank}`, `LinkedIn is right: ${field === 'start' || field === 'end' ? say(linkedin) : linkedin}`, ...(field === 'title' ? [SEPARATE] : [])] });
+      choices: [`Your record is right: ${field === 'start' || field === 'end' ? say(bank) : bank}`, `LinkedIn is right: ${field === 'start' || field === 'end' ? say(linkedin) : linkedin}`, ...(field === 'title' ? [SEPARATE] : [])] });
     if (norm(p.title) !== norm(r.title)) add('title', r.title, p.title, `your title at ${r.company} was`);
     if (!company(p, r)) add('company', r.company, p.company, `the employer for ${r.title} was`);
     if (r.start !== '' && p.start !== '' && !sameDate(p.start, r.start)) add('start', r.start, p.start, `${where} started in`);
     if (r.start !== '' && !sameDate(p.end, r.end)) add('end', r.end, p.end, `${where} ended in`);
   }
   for (const p of left) out.push({ key: `linkedin:missing:${normCompany(p.company)}|${norm(p.title)}|${p.start}`, field: 'missing', bank: '', linkedin: `${p.title}, ${p.company}`, position: p,
-    text: `LinkedIn lists ${p.title} at ${p.company}${p.start ? ` (${say(p.start)} to ${say(p.end)})` : ''}. Your bank has no such job. Which one is right?`, choices: ['LinkedIn is right: add this job to my bank', 'The bank is right: it is not a job of mine'] });
+    text: `LinkedIn lists ${p.title} at ${p.company}${p.start ? ` (${say(p.start)} to ${say(p.end)})` : ''}. Your record has no such job. Which one is right?`, choices: ['LinkedIn is right: add this job to my record', 'Your record is right: it is not a job of mine'] });
   for (const r of free) out.push({ key: `linkedin:absent:${r.id}`, field: 'absent', role: r.id, bank: `${r.title}, ${r.company}`, linkedin: '',
-    text: `Your bank has ${r.title} at ${r.company}${r.start ? ` (${say(r.start)} to ${say(r.end)})` : ''}. LinkedIn does not list it. Which one is right?`, choices: ['The bank is right: LinkedIn leaves it out', 'I will add it to LinkedIn'] });
+    text: `Your record has ${r.title} at ${r.company}${r.start ? ` (${say(r.start)} to ${say(r.end)})` : ''}. LinkedIn does not list it. Which one is right?`, choices: ['Your record is right: LinkedIn leaves it out', 'I will add it to LinkedIn'] });
   return out;
 }
 
