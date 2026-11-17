@@ -1,7 +1,19 @@
 // Run by `test` or `verify` against server.ts on one database, empty at the start and shared by
-// every test in order: the first leaves a source and no facts, the second two facts. No worker runs, so a
-// source stays waiting; proposed facts are seeded through the API as the worker would write them.
+// every test in order: the first finds nothing that needs the person, the second leaves a source and no facts,
+// the third two facts. No worker runs, so a source stays waiting; proposed facts are seeded through the API as
+// the worker would write them. The app opens at Home.
+test "home says in one line that nothing needs you on an empty database"
+  clock data
+  expect state nav.tab == "home"
+  expect text "home-title" == "Home"
+  expect text "home-empty" == "Nothing needs you."
+  expect tree missing "home-count"
+  expect tree missing "home-keys"
+
 test "a source is added from the empty bank, waits to be read, refuses a repeat repository in words, and is deleted after asking"
+  clock data
+  tap "tab-bank"
+  clock settle
   clock data
   tap "bank-add"
   clock settle
@@ -61,6 +73,9 @@ test "a source is added from the empty bank, waits to be read, refuses a repeat 
   expect state author == "ada"
 
 test "facts are in the bank with no review step; one is edited with its story, and one is deleted only after asking"
+  clock data
+  tap "tab-bank"
+  clock settle
   clock data
   expect tree has "bank-add"
   request POST "/roles" {"company": "Acme", "title": "Staff Engineer", "start": "2021-03", "end": ""}
@@ -242,6 +257,12 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   expect text "job-fit" == "64%"
   expect text "job-covered" == "2 of 3 requirements supported by your bank"
   expect text "job-verdict" == "A strong fit on leadership and Go."
+  // What to look at on the resume is worked out when the questions are next checked (here, by Home's list).
+  request GET "/queue"
+  clock +5000
+  clock data
+  expect text "job-flags-head" == "What to look at"
+  expect text "job-flag-0" == "The resume lists no job under Experience, and your bank has jobs."
   expect text "job-weighed" == "Claude’s reading of the posting against your bank. Production work and recent work count for more; set each role’s kind of work under Experience. A change to your bank writes every unsent resume again by itself, except one you edited. Writing it again takes several minutes and replaces your edits."
   expect text "job-terms-in" == "Go"
   expect text "job-terms-missing" == "Kafka"
@@ -466,3 +487,46 @@ test "the system page opens from the profile header, says it works only in the d
   back
   clock settle
   expect tree has "open-system"
+
+test "home shows a question about two current jobs; an answer waits 8 seconds and can be undone, a bad month is refused in words, and a snooze hides an item"
+  request POST "/roles" {"company": "Northwind", "title": "Engineering Manager", "start": "2022-01", "end": ""}
+  // Home reads its list when it opens, and does not poll: open it again.
+  reload
+  clock data
+  expect text "home-focus-text" == "Your bank says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
+  expect tree has "home-item-two-current:1:2"
+  expect text "home-choice-0" == "Staff Engineer at Acme has ended: give its end date"
+  tap "home-choice-0"
+  expect tree has "home-value"
+  expect disabled "home-save"
+  type "home-value" "2023-13"
+  tap "home-save"
+  expect text "home-held" == "Answered: Staff Engineer at Acme has ended: give its end date (2023-13)."
+  expect tree missing "home-item-two-current:1:2"
+  tap "home-undo"
+  expect tree missing "home-held"
+  expect text "home-focus-text" == "Your bank says you are at both Staff Engineer at Acme and Engineering Manager at Northwind now. A reader will ask if you hold two jobs. Which is right?"
+  expect text "home-value" == "2023-13"
+  clock +9000
+  clock data
+  expect tree has "home-item-two-current:1:2"
+  tap "home-save"
+  clock +8000
+  clock data
+  expect text "home-error" == "Give the end date as a year and a month, like 2023-06."
+  expect text "home-value" == "2023-13"
+  expect tree has "home-item-two-current:1:2"
+  tap "home-choice-2"
+  type "home-value" "The Northwind role is evenings only, beside the Acme job."
+  tap "home-save"
+  expect text "home-held" == "Answered: Both are current: write one line that says how they relate (The Northwind role is evenings only, beside the Acme job.)."
+  clock +8000
+  clock data
+  expect tree missing "home-held"
+  expect tree missing "home-item-two-current:1:2"
+  expect tree missing "home-error"
+  type "app" key "s"
+  expect text "home-held" == "Snoozed until tomorrow."
+  clock +8000
+  clock data
+  expect state homeList.snoozed == 1

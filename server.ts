@@ -14,6 +14,7 @@ import { INBOX } from './lib/ingest.ts';
 import { fitOf, publish, refreshSkills, reflagOpen, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { answer, openRaised, raisedByKey } from './lib/raised.ts';
+import { queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { type AtsCheck } from './lib/pdf.ts';
@@ -576,6 +577,22 @@ Bun.serve({ hostname, port, routes: {
       follow();
       void (async () => { for (const id of changed) await publish(id, !STUB).catch(() => {}); })();
       return send({ ok: true });
+    },
+  },
+  // Home's list: everything that needs the person, in order (lib/queue.ts), and how many items are snoozed.
+  '/queue': {
+    OPTIONS: preflight,
+    GET: () => { follow(); return send(queue(Date.now())); },
+  },
+  // Hides one item of the list until a time: {key, until?} (ms since 1970; default a day from now).
+  '/queue/snooze': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      if (!str(b.key)) return send({ error: 'Choose an item to snooze.' }, 400);
+      if (b.until !== undefined && typeof b.until !== 'number') return send({ error: 'Choose a time later than now.' }, 400);
+      const refused = snooze(str(b.key), b.until, Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
     },
   },
   '/facts': {

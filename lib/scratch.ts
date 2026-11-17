@@ -12,11 +12,11 @@ if (process.env.NODE_ENV !== 'test' || !realpathSync(DATA_DIR).startsWith(realpa
 }
 
 const { db } = await import('./db.ts');
-await import('./person.ts'); await import('./talk.ts'); await import('./direction.ts'); await import('./raised.ts'); await import('./skills.ts'); await import('./linkedin.ts');
+await import('./person.ts'); await import('./talk.ts'); await import('./direction.ts'); await import('./raised.ts'); await import('./skills.ts'); await import('./linkedin.ts'); await import('./queue.ts');
 
 // Empties every table a test writes to.
 export function reset(): void {
-  for (const t of ['facts', 'roles', 'sources', 'jobs', 'answered', 'deleted_facts', 'raised_questions', 'skills', 'linkedin_positions', 'talk']) db.run(`DELETE FROM ${t}`);
+  for (const t of ['facts', 'roles', 'sources', 'jobs', 'answered', 'deleted_facts', 'raised_questions', 'skills', 'linkedin_positions', 'talk', 'queue_snoozes']) db.run(`DELETE FROM ${t}`);
   db.run('UPDATE skills_review SET reviewed_at = 0 WHERE id = 1');
   db.run("UPDATE profile SET gaps = '', body = '' WHERE id = 1");
   db.run("UPDATE direction SET body = '' WHERE id = 1");

@@ -1,4 +1,5 @@
-// Eggdev: the career knowledge bank. Three tabs, each its own stack.
+// Eggdev: the career knowledge bank. Six tabs, each its own stack.
+// Home: the things that need the person, one in focus (home.contract), drawn in the new look (look.contract).
 // Experience: the facts found in the sources, grouped by role. A row pushes its fact: the
 //   headline, the story behind it, what supports it; Edit is a sheet. What the person supplies
 //   is taken as true, so nothing waits for review.
@@ -7,6 +8,8 @@
 // Sources: what has been added to read (pasted text, a file, a git repository) and how each
 //   reading went. server.ts keeps it all; worker.ts reads and writes with Claude Code. All polled.
 use Badge, EmptyState, SummaryCard from "exact:content"
+use Viewport, Page, Section, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, lookNarrow, lookTight from "./look.contract"
+use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
 
 // The look follows ../eggers-dev: neutral greys and Geist, with one colour, a burnt orange, kept for the
 // main action of a screen or sheet (app.tamber's AccentColor). Row buttons stay the text colour.
@@ -14,10 +17,11 @@ use Badge, EmptyState, SummaryCard from "exact:content"
 font "Geist" = "assets/fonts/Geist.ttf"
 
 routes nav
-  tab bank "/"
-    role "/role/:id"
-    fact "/fact/:id"
-    edit "/fact/:id/edit"
+  tab home "/"
+  tab bank "/record"
+    role "/record/role/:id"
+    fact "/record/fact/:id"
+    edit "/record/fact/:id/edit"
   tab profile "/profile"
     direction "/profile/direction"
     details "/profile/details"
@@ -332,6 +336,18 @@ shape Job
   reviewRounds: number
   seats: Seat[]
   reviewChanges: string[]
+  // What to look at on this resume, in plain words (lib/checks.ts): the serious ones first.
+  flags: JobFlag[]
+  // What a six-second skim of the resume concluded, "" when none was made.
+  skimConclusion: string
+
+// One thing to look at on a resume. severity: high (it disagrees with the bank) | warn (a rule is broken) | info.
+shape JobFlag
+  id: string
+  kind: string
+  severity: string
+  text: string
+  items: string[]
 
 // GitHub as the server's own sign-in sees it.
 shape Hub
@@ -342,11 +358,6 @@ shape Hub
   // The accounts the repositories belong to: the person's own first.
   owners: string[]
   repos: HubRepo[]
-
-// The window, from the platform: only its size is read here.
-shape Viewport
-  width: number
-  height: number
 
 // The public collection: the one text the public page's chat answers from. Only the person decides what is in it.
 shape PublicNote
@@ -469,6 +480,7 @@ fn modelDetail(s: SystemStatus): string = s.signedIn == "failed" ? s.signedInDet
 fn machineLine(s: SystemStatus): string = s.machine == "running" ? "Running" : s.machine == "starting" ? "Starting" : s.machine == "stopping" ? "Stopping" : s.machine == "stopped" ? "Stopped. It starts when the studio is next used." : s.machine == "failed" ? "Failed to start" : "Not known"
 
 component App
+  members "./home.contract"
   state kind = "text"
   state draftTitle = ""
   state draftText = ""
@@ -721,9 +733,12 @@ component App
     refresh leads
     refresh talk
   // Moving to another tab or record puts away the errors of what was tried before.
+  // Leaving Home sends what is held there.
   action pick(name: string)
     rowTried = false
     talkAct = ""
+    if name != "home"
+      sendHeld()
     nav = select(nav, name)
   action back
     nav = back(nav)
@@ -731,7 +746,9 @@ component App
   // detail; a wide window replaces the one beside the list.
   action follow(url: string)
     rowTried = false
-    nav = (top(nav).name == "fact" and url.startsWith("/fact/") and not url.endsWith("/edit")) or (top(nav).name == "source" and url.startsWith("/source/")) or (top(nav).name == "job" and url.startsWith("/job/") and not url.endsWith("/resume") and not url.endsWith("/edit")) or (top(nav).name == "lead" and url.startsWith("/lead/")) ? replace(nav, url) : go(nav, url)
+    if url != "/"
+      sendHeld()
+    nav = (top(nav).name == "fact" and url.startsWith("/record/fact/") and not url.endsWith("/edit")) or (top(nav).name == "source" and url.startsWith("/source/")) or (top(nav).name == "job" and url.startsWith("/job/") and not url.endsWith("/resume") and not url.endsWith("/edit")) or (top(nav).name == "lead" and url.startsWith("/lead/")) ? replace(nav, url) : go(nav, url)
   action searchBank(v: string)
     bankQuery = v
   action setStage(v: string)
@@ -1116,6 +1133,10 @@ component App
         for t in nav.tabs key=t.name
           column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0
             for e in t.stack key=e.id
+              if e.name == "home"
+                column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="home-scroll" flex=1 min-height=0
+                    HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome)
               if e.name == "bank"
                 column navigationKey=`${e.id}` navigationScroll="bank-list" position="absolute" inset=0
                   header display="flex" align-items="center" padding="8px 16px"
@@ -1612,6 +1633,12 @@ component App
                       else
                         progress aria-label="Loading" testId="job-loading"
                   else
+                    // What to look at on the resume, in the new look, above everything else on the job. A grouped list
+                    // draws every section as a box, so this sits above the list in a scroll of its own, at most half the
+                    // window high, and the list keeps the rest.
+                    if job.flags.length > 0 or job.skimConclusion != ""
+                      scroll id="job-flags-scroll" flex-shrink=0 max-height="50%" background-color="look.paper"
+                        JobFlags(flags=job.flags, skim=job.skimConclusion)
                     list id="job-detail" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
                       JobSections(job=job, doorsError=doorsError, doorsBusy=pending(doorsAsked), copied=copied, draftDoors=draftDoors, copyDoor=copyDoor, lengthError=jobLengthError, writeError=writeError, writeBusy=pending(resumeAsked), writeAgain=writeAgain, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, askGap=askQuestion, saveContact=saveContact, editResume=openEditResume, setLength=setLength, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote)
               if e.name == "lead"
@@ -1930,38 +1957,44 @@ component App
                     section
                       footer
                         text (addHint != "" ? addHint : "Claude Code on the server reads what you add and puts what it finds in your bank.") testId="add-hint"
-      // Five tabs stay on one line: their labels stop growing at a size that still fits a phone's width, as a platform tab bar's do.
+      // Six tabs stay on one line: their labels stop growing at a size that still fits a phone's width, as a platform tab bar's do.
       row role="tablist"
+        button role="tab" aria-controls="panel-home" aria-selected=(nav.tab == "home") press=pick("home") testId="tab-home" flex=1 min-width=0
+          image "symbol:home"
+          if wideWindow
+            text "Home" font-size="min(-exact-subheadline, 17px)"
+          else
+            text "Home" font-size="min(-exact-caption2, 11px)"
         button role="tab" aria-controls="panel-bank" aria-selected=(nav.tab == "bank") press=pick("bank") testId="tab-bank" flex=1 min-width=0
           image "symbol:person"
           if wideWindow
             text "Experience" font-size="min(-exact-subheadline, 17px)"
           else
-            text "Experience" font-size="min(-exact-caption2, 13px)"
+            text "Experience" font-size="min(-exact-caption2, 11px)"
         button role="tab" aria-controls="panel-profile" aria-selected=(nav.tab == "profile") press=pick("profile") testId="tab-profile" flex=1 min-width=0
           image "symbol:book"
           if wideWindow
             text "Profile" font-size="min(-exact-subheadline, 17px)"
           else
-            text "Profile" font-size="min(-exact-caption2, 13px)"
+            text "Profile" font-size="min(-exact-caption2, 11px)"
         button role="tab" aria-controls="panel-talk" aria-selected=(nav.tab == "talk") press=pick("talk") testId="tab-talk" flex=1 min-width=0
           image "symbol:messages"
           if wideWindow
             text "Talk" font-size="min(-exact-subheadline, 17px)"
           else
-            text "Talk" font-size="min(-exact-caption2, 13px)"
+            text "Talk" font-size="min(-exact-caption2, 11px)"
         button role="tab" aria-controls="panel-jobs" aria-selected=(nav.tab == "jobs") press=pick("jobs") testId="tab-jobs" flex=1 min-width=0
           image "symbol:search"
           if wideWindow
             text "Jobs" font-size="min(-exact-subheadline, 17px)"
           else
-            text "Jobs" font-size="min(-exact-caption2, 13px)"
+            text "Jobs" font-size="min(-exact-caption2, 11px)"
         button role="tab" aria-controls="panel-sources" aria-selected=(nav.tab == "sources") press=pick("sources") testId="tab-sources" flex=1 min-width=0
           image "symbol:document"
           if wideWindow
             text "Sources" font-size="min(-exact-subheadline, 17px)"
           else
-            text "Sources" font-size="min(-exact-caption2, 13px)"
+            text "Sources" font-size="min(-exact-caption2, 11px)"
       dialog id="remove-fact" role="alertdialog" aria-label="Delete this fact?"
         text "It’s removed from the bank and from future profiles and resumes, and stays out when its source is read again. This can’t be undone."
         button press=removeFact destructive=true commandfor="remove-fact" command="close" testId="remove-fact-confirm"
@@ -2497,6 +2530,29 @@ component JobSections
         text (job.status == "queued" or job.status == "running" ? "It can be read again once this reading finishes." : "Reading again scores the job against your bank as it is now and writes its resume again.") testId="job-read-hint"
 
 // What kind of work a role or project was. Two choices; saving returns to the list.
+// What to look at on a job's resume: the six-second skim's conclusion, then each flag with its items under it,
+// the serious ones first (app.ts sorts them) and in the heavy weight. No badge and no box (DESIGN.md).
+component JobFlags
+  props
+    flags: JobFlag[]
+    skim: string
+  view
+    Page(testId="job-flags")
+      Section(testId="job-flags-list")
+        SectionHead(text="What to look at", testId="job-flags-head")
+        if skim != ""
+          Line(text=skim, testId="job-skim")
+        for f in flags key=f.id
+          column gap=lookTight()
+            if f.severity == "high"
+              StrongLine(text=f.text, testId=`job-flag-${f.id}`)
+            else
+              Line(text=f.text, testId=`job-flag-${f.id}`)
+            if f.items.length > 0
+              Indented(testId=`job-flag-${f.id}-items`)
+                for item, n in f.items key=`${n}`
+                  Line(text=item, testId=`job-flag-${f.id}-item-${n}`)
+
 component EditRole
   props
     route: number

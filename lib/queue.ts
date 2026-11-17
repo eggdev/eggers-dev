@@ -1,0 +1,94 @@
+// Home's list: the things that need the person, as one ordered list (DESIGN.md rules 6 and 9).
+// Nothing here decides anything. It gathers what other parts already know needs the person:
+// 1. the questions code raised from their own data (lib/raised.ts), answered in place with POST /questions;
+// 2. the questions a model wrote that are open in Talk (lib/talk.ts), which are answered in Talk;
+// 3. applications with no reply 14 days after they were sent, which are settled on the job's page.
+// A job read but not yet opened is not here: the jobs table does not record whether the person opened one.
+//
+// A snooze hides one item until a time. It is kept by the item's key, so an item that comes back
+// with the same key stays hidden until then, and one whose time has passed is shown again.
+import { createHash } from 'node:crypto';
+import { db } from './db.ts';
+import { normCompany } from './entries.ts';
+import { openRaised, type Raised } from './raised.ts';
+import { parseResume } from './resume.ts';
+import { openQuestions } from './talk.ts';
+
+db.run('CREATE TABLE IF NOT EXISTS queue_snoozes (key TEXT PRIMARY KEY, until INTEGER NOT NULL)');
+
+const DAY = 86_400_000;
+// How long a snooze lasts when the person gives no time.
+export const SNOOZE_MS = DAY;
+// After this many days with no reply, an application has gone quiet (DESIGN.md, the rotting mark).
+export const QUIET_DAYS = 14;
+
+// kind: timeline | linkedin | skill (a raised question), talk (a question open in Talk), quiet (an application).
+// choices and inputs are a raised question's: inputs[i] is what choice i needs beside the tap ("month", "line" or "").
+// route is where the item is settled when it is not answered here ("" for a raised question).
+// from says where the item came from; blocks says what it holds up, when that is known ("" when not).
+export type Item = { key: string; kind: string; text: string; from: string; blocks: string; choices: string[]; inputs: string[]; route: string };
+export type Queue = { items: Item[]; snoozed: number };
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+// A short, stable key for a question known only by its words.
+const keyOf = (text: string) => createHash('sha256').update(text.trim().toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
+
+// The resumes not yet sent that show one of these roles: each has an entry whose company is the role's.
+export function resumesShowing(roleIds: number[]): number {
+  if (roleIds.length === 0) return 0;
+  const all = db.query('SELECT id, company FROM roles').all() as { id: number; company: string }[];
+  const wanted = new Set(all.filter((r) => roleIds.includes(r.id)).map((r) => normCompany(r.company)).filter(Boolean));
+  if (wanted.size === 0) return 0;
+  const companies = [...new Set(all.map((r) => r.company))];
+  const unsent = db.query("SELECT resume FROM jobs WHERE resume != '' AND outcome = ''").all() as { resume: string }[];
+  return unsent.filter((j) => {
+    const r = parseResume(j.resume, companies);
+    return [...r.experience, ...r.projects, ...r.elsewhere, ...r.earlier].some((e) => wanted.has(normCompany(e.company)));
+  }).length;
+}
+
+const rolesIn = (about: string) => about.split(',').map((s) => /^role:(\d+)$/.exec(s.trim())).filter((m) => m !== null).map((m) => Number(m![1]));
+const FROM: Record<string, string> = { timeline: 'From the dates of your jobs', linkedin: 'From your LinkedIn export', skill: 'From your skills list' };
+
+function raisedItem(q: Raised): Item {
+  // The same rule as GET /questions: what each choice needs beside the tap.
+  const actions = (q.data.actions as { field?: string; value?: string }[] | undefined) ?? [];
+  const inputs = q.choices.map((_, i) => (actions[i]?.value !== undefined ? '' : actions[i]?.field === 'end' ? 'month' : actions[i]?.field === 'note' ? 'line' : ''));
+  const n = q.kind === 'timeline' ? resumesShowing(rolesIn(q.about)) : 0;
+  return { key: q.key, kind: q.kind, text: q.text, from: FROM[q.kind] ?? '', blocks: n > 0 ? `Blocks ${plural(n, 'resume')}` : '',
+    // A question with no choices to tap is settled where its data is kept.
+    choices: q.choices, inputs, route: q.choices.length > 0 ? '' : '/record' };
+}
+
+type JobLite = { id: number; title: string; company: string; applied_at: number };
+
+// Every item that needs the person now, snoozed or not, in Home's order.
+export function allItems(now: number): Item[] {
+  const raised = openRaised().map(raisedItem);
+  const talk = openQuestions().map((q): Item => ({ key: `talk:${keyOf(q.text)}`, kind: 'talk', text: q.text, from: q.from, blocks: '', choices: [], inputs: [], route: '/talk/questions' }));
+  const quiet = (db.query("SELECT id, title, company, applied_at FROM jobs WHERE outcome = 'applied' AND applied_at > 0 AND applied_at <= ? ORDER BY applied_at, id").all(now - QUIET_DAYS * DAY) as JobLite[])
+    .map((j): Item => {
+      const days = Math.floor((now - j.applied_at) / DAY);
+      const what = j.title && j.company ? `${j.title} at ${j.company}` : j.title || j.company || 'An application';
+      return { key: `quiet:${j.id}`, kind: 'quiet', text: `${what}: no reply in ${days} days.`, from: 'From your applications', blocks: '', choices: [], inputs: [], route: `/job/${j.id}` };
+    });
+  return [...raised, ...talk, ...quiet];
+}
+
+// What Home shows: the items not snoozed, and how many are snoozed. Snoozes whose time has passed are dropped.
+export function queue(now: number): Queue {
+  db.query('DELETE FROM queue_snoozes WHERE until <= ?').run(now);
+  const hidden = new Set((db.query('SELECT key FROM queue_snoozes').all() as { key: string }[]).map((r) => r.key));
+  const all = allItems(now);
+  return { items: all.filter((i) => !hidden.has(i.key)), snoozed: all.filter((i) => hidden.has(i.key)).length };
+}
+
+// Hides one item until `until` (default: a day from now). Returns '' when done, else why not, in a plain sentence.
+export function snooze(key: string, until: number | undefined, now: number): string {
+  if (!allItems(now).some((i) => i.key === key)) return 'That item no longer needs you.';
+  const at = until ?? now + SNOOZE_MS;
+  if (!Number.isFinite(at) || at <= now) return 'Choose a time later than now.';
+  if (at > now + 365 * DAY) return 'Choose a time within a year.';
+  db.query('INSERT INTO queue_snoozes (key, until) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET until = excluded.until').run(key, at);
+  return '';
+}

@@ -106,6 +106,8 @@ const rows = (v: unknown): Record<string, unknown>[] => {
   return v as Record<string, unknown>[];
 };
 const id = (v: string) => encodeURIComponent(v);
+// A flag's severity, the most serious first.
+const SEVERITY = ['high', 'warn', 'info'];
 
 const sources: Sources = {
   loadBank: async (): Promise<Result<'loadBank'>> => {
@@ -146,7 +148,7 @@ const sources: Sources = {
       stage: text(j.stage) || 'saved', salary: text(j.salary), posted: text(j.posted), added: text(j.added), contact: text(j.contact) })) }),
   // The job a route shows; none is selected while the list alone is on screen.
   loadJob: async ([job]): Promise<Result<'loadJob'>> => {
-    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [] };
+    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
     if (job === '') return none;
     const j = (await get(`/jobs/${id(job)}`)) as Record<string, unknown>;
     const list = (v: unknown) => rows(v ?? []).map((x) => text(x));
@@ -159,7 +161,11 @@ const sources: Sources = {
       checks: rows(j.checks ?? []).map((c) => ({ id: text(c.id), question: text(c.question), answer: text(c.answer), note: text(c.note) })),
       knockouts: rows(j.knockouts ?? []).map((k) => ({ id: text(k.id), question: text(k.question), answer: text(k.answer), note: text(k.note) })),
       doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
-      requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, coverage: text(r.coverage), evidence: text(r.evidence), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })) };
+      requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, coverage: text(r.coverage), evidence: text(r.evidence), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
+      // The serious flags first; the server keeps each severity's own order.
+      flags: rows(j.flags ?? []).map((f) => ({ id: text(f.id), kind: text(f.kind), severity: text(f.severity), text: text(f.text), items: list(f.items) }))
+        .sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity)),
+      skimConclusion: text(obj(j.skim)?.conclusion) };
   },
   loadLeads: async (): Promise<Result<'loadLeads'>> => {
     const d = (await get('/leads')) as Record<string, unknown>;
@@ -198,6 +204,16 @@ const sources: Sources = {
       messages: rows(t.messages ?? []).map((m) => ({ id: text(m.id), mine: m.mine === true, body: text(m.body), status: text(m.status), note: text(m.note), added: rows(m.added ?? []).map((x) => text(x)) })),
       questions: rows(t.questions ?? []).map((q) => ({ id: text(q.id), text: text(q.text), from: text(q.from) })) };
   },
+  // Home: what needs the person (GET /queue). An answer or a snooze replies with the item's key, so a refusal
+  // finds its item again.
+  loadQueue: async (): Promise<Result<'loadQueue'>> => {
+    const q = (await get('/queue')) as Record<string, unknown>;
+    return { loaded: true, snoozed: typeof q.snoozed === 'number' ? q.snoozed : 0,
+      items: rows(q.items).map((i) => ({ key: text(i.key), kind: text(i.kind), text: text(i.text), from: text(i.from), blocks: text(i.blocks),
+        choices: rows(i.choices ?? []).map((c) => text(c)), inputs: rows(i.inputs ?? []).map((c) => text(c)), route: text(i.route) })) };
+  },
+  answerQuestion: async ([key, choice, value]): Promise<Result<'answerQuestion'>> => ({ ...(await write('POST', '/questions', { key, choice, value })), key }),
+  snoozeQueueItem: async ([key]): Promise<Result<'snoozeQueueItem'>> => ({ ...(await write('POST', '/queue/snooze', { key })), key }),
   sendTalk: ([body]) => write('POST', '/talk', { body }),
   askTalk: ([question]) => write('POST', '/talk', { question }),
   clearTalk: () => write('DELETE', '/talk'),

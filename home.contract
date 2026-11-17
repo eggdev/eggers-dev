@@ -1,0 +1,234 @@
+// Home: the things that need the owner, one in focus (DESIGN.md rules 6 and 9). The list comes from the
+// server (GET /queue, lib/queue.ts): questions raised from the owner's own data, answered here; questions open
+// in Talk and applications gone quiet, each settled on its own screen. It is loaded when Home opens and after
+// each answer is sent. It is not polled.
+//
+// An answer is not sent at once. For 8 seconds the item is held: one line says what was answered, with Undo,
+// and the next item takes the focus. Undo puts the item back and sends nothing. The held answer is sent when the
+// time ends, when the owner answers the next item, or when they leave Home. If it is refused, the item comes
+// back in focus with the refusal under it, in red. A snooze is held the same way.
+use Page, Section, Title, Line, StrongLine, QuietLine, FailLine, Indented, Numbered, Action, MainAction, GoTo, ValueField, lookNarrow from "./look.contract"
+
+// One thing that needs the owner. kind: timeline | linkedin | skill (a question raised from their data), talk
+// (a question open in Talk), quiet (an application with no reply in 14 days). choices are a raised question's;
+// inputs[i] is what choice i needs beside the tap: "month", "line" or "". route is where an item without
+// choices is settled.
+shape QueueItem
+  key: string
+  kind: string
+  text: string
+  from: string
+  blocks: string
+  choices: string[]
+  inputs: string[]
+  route: string
+
+shape Queue
+  loaded: bool
+  items: QueueItem[]
+  snoozed: number
+
+// The reply to an answer or a snooze: which item it was for, and the refusal in words ("" when done).
+shape Sent
+  ok: bool
+  error: string
+  key: string
+
+fn thingsLine(n: number): string = n == 1 ? "1 thing needs you" : `${n} things need you`
+// The words of the button that leads to where an item is settled.
+fn goLabel(i: QueueItem): string = i.kind == "talk" ? "Answer in Talk" : i.kind == "quiet" ? "Open the job" : "Open your record"
+// What choice n of an item needs beside the tap.
+fn inputOf(i: QueueItem, n: number): string = match i.inputs.at(n) { case some(x) => x, case none => "" }
+fn inputLabel(kind: string): string = kind == "month" ? "End date, as a year and a month" : "One line"
+fn inputHint(kind: string): string = kind == "month" ? "Year and month, like 2023-06" : "One line, at most 200 characters"
+
+members App
+  derive onHome = top(nav).name == "home"
+  resource homeList = loadQueue() when onHome as shape Queue else empty()
+  mutation answerSent as shape Sent queue refreshes homeList, bank then afterAnswer
+  mutation snoozeSent as shape Sent queue refreshes homeList then afterSnooze
+  // The item in focus, by key ("" for the first). A choice picked that needs a value, and that value.
+  state focusKey = ""
+  state homePicked = -1
+  state homeDraft = ""
+  // What is held for 8 seconds before it is sent: the item's key ("" for nothing), "answer" or "snooze", the
+  // choice and value, and the line shown in its place. heldSeq restarts the wait for each new hold.
+  state heldKey = ""
+  state heldWhat = ""
+  state heldChoice = -1
+  state heldValue = ""
+  state heldLine = ""
+  state heldSeq = 0
+  // What was last sent, so a refusal can put the item back as it was answered.
+  state sentChoice = -1
+  state sentValue = ""
+  // The items sent and not refused: kept out of the list until the server's list no longer has them.
+  state gone: string[] = []
+  // The item whose answer was refused, and the refusal.
+  state refusedKey = ""
+  state refusedError = ""
+  derive homeItems = homeList.items.filter(i => i.key != heldKey and not gone.includes(i.key))
+  derive homeFocus = match first(homeItems.filter(i => i.key == focusKey)) { case some(i) => some(i), case none => first(homeItems) }
+  derive homeFocusKey = match homeFocus { case some(i) => i.key, case none => "" }
+  derive homeFocusList = homeItems.filter(i => i.key == homeFocusKey)
+  derive homeRest = homeItems.filter(i => i.key != homeFocusKey)
+  // One-key answers work only on Home, and not while a field is open (its keys are the field's).
+  derive homeKeys = onHome and homePicked < 0
+  task holdTimer when heldKey != "" key=heldSeq
+    after(8000, sendHeld)
+
+  action focusItem(key: string)
+    focusKey = key
+    homePicked = -1
+    homeDraft = ""
+  // A choice that needs nothing more is held at once; one that needs a month or a line opens its field.
+  action chooseItem(key: string, choice: number, label: string, input: string)
+    if input == ""
+      holdAnswer(key, choice, "", label)
+    else
+      focusKey = key
+      homePicked = choice
+      homeDraft = refusedKey == key and sentChoice == choice ? sentValue : ""
+      // Another choice puts away the refusal of the one tried before.
+      refusedKey = refusedKey == key and sentChoice != choice ? "" : refusedKey
+  action typeAnswer(v: string)
+    homeDraft = v
+  action saveAnswer(key: string, label: string)
+    if homePicked >= 0
+      holdAnswer(key, homePicked, homeDraft.trim(), label)
+  action holdAnswer(key: string, choice: number, value: string, label: string)
+    sendHeld()
+    heldKey = key
+    heldWhat = "answer"
+    heldChoice = choice
+    heldValue = value
+    heldLine = `Answered: ${label}${value != "" ? ` (${value})` : ""}.`
+    heldSeq = heldSeq + 1
+    focusKey = ""
+    homePicked = -1
+    homeDraft = ""
+  action snoozeItem(key: string)
+    sendHeld()
+    heldKey = key
+    heldWhat = "snooze"
+    heldChoice = -1
+    heldValue = ""
+    heldLine = "Snoozed until tomorrow."
+    heldSeq = heldSeq + 1
+    focusKey = ""
+    homePicked = -1
+    homeDraft = ""
+  // Undo: the item comes back in focus, as it was answered, and nothing is sent.
+  action undoHeld
+    if heldKey != ""
+      focusKey = heldKey
+      homePicked = heldWhat == "answer" and heldValue != "" ? heldChoice : -1
+      homeDraft = heldWhat == "answer" ? heldValue : ""
+      heldKey = ""
+      heldLine = ""
+  // Sends what is held, if anything: when its time ends, when the next item is answered, or when Home is left.
+  action sendHeld
+    if heldKey != "" and heldWhat == "answer"
+      send answerSent = answerQuestion(heldKey, heldChoice, heldValue)
+    if heldKey != "" and heldWhat == "snooze"
+      send snoozeSent = snoozeQueueItem(heldKey)
+    if heldKey != ""
+      gone = gone.concat([heldKey])
+      sentChoice = heldChoice
+      sentValue = heldValue
+      refusedKey = refusedKey == heldKey ? "" : refusedKey
+      heldKey = ""
+      heldLine = ""
+  // A refusal puts the item back in focus, as it was answered, with the refusal under it.
+  action afterAnswer
+    match answerSent
+      case some(r)
+        if not r.ok
+          gone = gone.filter(k => k != r.key)
+          refusedKey = r.key
+          refusedError = r.error
+          focusKey = r.key
+          homePicked = sentChoice
+          homeDraft = sentValue
+      case none
+        focusKey = focusKey
+  action afterSnooze
+    match snoozeSent
+      case some(r)
+        if not r.ok
+          gone = gone.filter(k => k != r.key)
+          refusedKey = r.key
+          refusedError = r.error
+          focusKey = r.key
+      case none
+        focusKey = focusKey
+  action retryHome
+    refresh homeList
+
+// The Home screen, drawn only with the shared pieces of look.contract.
+component HomeScreen
+  props
+    list: Queue
+    failedToLoad: bool
+    items: QueueItem[]
+    // The item in focus: a list of one, or empty.
+    focus: QueueItem[]
+    rest: QueueItem[]
+    picked: number
+    draft: string
+    heldLine: string
+    refusedKey: string
+    refusedError: string
+    keys: bool
+    wide: bool
+    focusItem: action
+    choose: action
+    type: action
+    save: action
+    snooze: action
+    undo: action
+    retry: action
+  view
+    Page(testId="home")
+      Title(text="Home", testId="home-title")
+      if not list.loaded and failedToLoad
+        Section(testId="home-failed")
+          FailLine(text="This list couldn’t be loaded.", testId="home-error-load")
+          Action(label="Try again", press=retry, disabled=false, keys="", testId="home-retry")
+      if list.loaded
+        Section(testId="home-top")
+          if heldLine != ""
+            row align-items="baseline" flex-wrap="wrap" column-gap=8
+              Line(text=heldLine, testId="home-held")
+              Action(label="Undo", press=undo, disabled=false, keys=(keys ? "z" : ""), testId="home-undo")
+          if items.length == 0
+            Line(text="Nothing needs you.", testId="home-empty")
+          else
+            QuietLine(text=thingsLine(items.length), testId="home-count")
+        for f in focus key=f.key
+          Section(testId=`home-item-${f.key}`)
+            StrongLine(text=f.text, testId="home-focus-text")
+            if f.blocks != ""
+              QuietLine(text=f.blocks, testId="home-focus-blocks")
+            if f.from != ""
+              QuietLine(text=f.from, testId="home-focus-from")
+            for c, i in f.choices key=c
+              Numbered(n=i + 1)
+                Action(label=c, press=choose(f.key, i, c, inputOf(f, i)), disabled=false, keys=(keys and i < 9 ? `${i + 1}` : ""), testId=`home-choice-${i}`)
+                if picked == i
+                  Indented(testId="home-answer")
+                    ValueField(value=draft, label=inputLabel(inputOf(f, i)), hint=inputHint(inputOf(f, i)), change=type, submit=save(f.key, c), testId="home-value")
+                    if refusedKey == f.key and refusedError != ""
+                      FailLine(text=refusedError, testId="home-error")
+                    MainAction(label="Save answer", press=save(f.key, c), disabled=(draft.trim() == ""), keys="", testId="home-save")
+            if f.choices.length == 0
+              GoTo(label=goLabel(f), href=f.route, testId="home-go")
+            if refusedKey == f.key and refusedError != "" and picked < 0
+              FailLine(text=refusedError, testId="home-error")
+            Action(label="Snooze until tomorrow", press=snooze(f.key), disabled=false, keys=(keys ? "s" : ""), testId="home-snooze")
+        if rest.length > 0
+          Section(testId="home-rest")
+            for i in rest key=i.key
+              Action(label=i.text, press=focusItem(i.key), disabled=false, keys="", testId=`home-item-${i.key}`)
+        if wide and items.length > 0
+          QuietLine(text="1 2 3 to answer · S to snooze · Z to undo", testId="home-keys")

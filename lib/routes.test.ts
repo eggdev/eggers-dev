@@ -50,6 +50,22 @@ test('a raised question is listed with its choices, and Talk does not list it', 
   expect(resumes()).toEqual(START);
 });
 
+test('Home’s list puts the raised question first with what it blocks, and a snooze hides it until its time', async () => {
+  const first = await call('GET', '/queue');
+  expect(first.body.items[0]).toMatchObject({ key: KEY, kind: 'timeline', blocks: 'Blocks 1 resume', inputs: ['month', 'month', 'line'], route: '' });
+  expect(first.body.snoozed).toBe(0);
+  expect(await call('POST', '/queue/snooze', { key: 'talk:nothing' })).toMatchObject({ status: 400, body: { error: 'That item no longer needs you.' } });
+  expect(await call('POST', '/queue/snooze', { key: KEY, until: 'tomorrow' })).toMatchObject({ status: 400, body: { error: 'Choose a time later than now.' } });
+  expect(await call('POST', '/queue/snooze', { key: KEY, until: Date.now() + 2000 })).toMatchObject({ status: 200, body: { ok: true } });
+  const hidden = await call('GET', '/queue');
+  expect(hidden.body.items.map((x: { key: string }) => x.key)).not.toContain(KEY);
+  expect(hidden.body.snoozed).toBe(1);
+  await Bun.sleep(2100);
+  const back = await call('GET', '/queue');
+  expect(back.body.snoozed).toBe(0);
+  expect(back.body.items[0].key).toBe(KEY);
+});
+
 test('an answer that cannot be applied is refused, and the question stays open', async () => {
   expect(await call('POST', '/questions', { key: KEY, choice: 0, value: 'soon' })).toMatchObject({ status: 400, body: { error: 'Give the end date as a year and a month, like 2023-06.' } });
   expect(await call('POST', '/questions', { key: KEY, choice: 0, value: '2019-01' })).toMatchObject({ status: 400, body: { error: 'That end date is before the job’s start date.' } });

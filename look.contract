@@ -1,0 +1,292 @@
+// The new look (DESIGN.md): a typeset record. Two type sizes, two weights, one ink, one paper, two greys,
+// hairline rules and white space; no box, card, fill, shadow, pill or rounded container.
+//
+// This file is the one place the look's open values are kept (DESIGN.md section 3): `look()` below. Every
+// component here reads its sizes, weights and spaces from it, and a screen drawn in the new look uses only
+// these components, so a screen never sets a size, weight or colour itself. To try another value, change it
+// in `look()`: every new-look screen follows. The colours are tokens in app.tamber (`look.ink`, `look.paper`,
+// `look.grey`, `look.line`), because a colour in Exact is a token with its light and dark values.
+
+// The window, from the platform: only its size is read.
+shape Viewport
+  width: number
+  height: number
+
+// One look, as the lab writes it (DESIGN.md section 3). Sizes in px are written in rem where they are drawn,
+// so the browser's text size setting still applies.
+shape Look
+  // How a record is drawn: "catalogue" (stacked fields) or "ledger" (one row, columns).
+  record: string
+  // Where a reference number shows: "gutter", "inline" or "hidden".
+  refs: string
+  // The size of `text`, in px (15 to 18).
+  textSize: number
+  // The size of `title` divided by the size of `text` (1.5 to 2).
+  ratio: number
+  // The heavy weight; the light one is 400 (500 to 700).
+  strong: number
+  // The line height of `text` (1.35 to 1.65).
+  leading: number
+  // The width of the main column, in rem (32 to 44).
+  measure: number
+  // The width of the notes column, in rem (12 to 20).
+  margin: number
+  // The space between rows, in px (6 to 20).
+  rowGap: number
+  // The space between sections, in px (28 to 72).
+  sectionGap: number
+  // The thickness of a rule, in px (0.5 to 2).
+  ruleWeight: number
+  // The most margin notes beside one line (0 to 3).
+  notes: number
+
+// The look in use: DESIGN.md's defaults.
+fn look(): Look = Look(record="catalogue", refs="gutter", textSize=16, ratio=1.75, strong=600, leading=1.5, measure=38, margin=16, rowGap=12, sectionGap=48, ruleWeight=1, notes=2)
+
+// What the components draw with, worked out from `look()`. Nothing else sets a size, weight or space.
+fn lookText(): string = `${look().textSize / 16}rem`
+fn lookTitle(): string = `${look().textSize * look().ratio / 16}rem`
+fn lookLeading(): string = `${look().leading}`
+// A title is set a little tighter than running text (tighter clips Geist at the largest text size).
+fn lookTitleLeading(): string = `${look().leading - 0.1}`
+fn lookMeasure(): string = `${look().measure}rem`
+fn lookMargin(): string = `${look().margin}rem`
+fn lookRule(): string = `${look().ruleWeight}px`
+// The space between a section's head and its rule, and between the lines of one item: half a row's.
+fn lookTight(): number = look().rowGap / 2
+// The side gutter of a page: a row's space and a third, so a phone keeps a margin of about 16px.
+fn lookGutter(): number = look().rowGap + look().rowGap / 3
+// The width of a line's number (1 to 9): one and a half figures of text.
+fn lookNumberWidth(): string = `${look().textSize * 1.5 / 16}rem`
+// The width a reference number takes in the gutter: five figures of text.
+fn lookRefWidth(): string = `${look().textSize * 5 / 16}rem`
+// Under this width (px) the margin notes move under the main column, and two columns become one.
+fn lookNarrow(): number = 640
+
+// The status words (DESIGN.md section 5). A word outside this list is a defect, so the type refuses one.
+// A job: New, Reading, Read, Writing, Ready, Sent, Quiet, Closed, Failed. A fact or role: Confirmed, Unsure.
+// A question: Open, Answered, Snoozed. Slow work: Waiting, Running, Done, Failed. The public page: Draft, Live, Offline.
+fn statusWord(kind: string, old: string): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = kind == "job" ? (old == "queued" ? "New" : old == "running" ? "Reading" : old == "done" ? "Read" : old == "writing" ? "Writing" : old == "ready" ? "Ready" : old == "applied" or old == "interviewed" ? "Sent" : old == "no-response" ? "Quiet" : old == "rejected" or old == "offer" or old == "closed" ? "Closed" : old == "failed" ? "Failed" : "New") : kind == "fact" or kind == "role" ? (old == "unsure" ? "Unsure" : "Confirmed") : kind == "question" ? (old == "answered" ? "Answered" : old == "snoozed" ? "Snoozed" : "Open") : kind == "work" ? (old == "running" ? "Running" : old == "done" ? "Done" : old == "failed" ? "Failed" : "Waiting") : kind == "public" ? (old == "live" ? "Live" : old == "offline" ? "Offline" : "Draft") : "Open"
+
+// A page: one column, flush left, at most `measure` wide, with a side gutter. Its children are its sections.
+component Page
+  props
+    testId: string
+  slot
+  view
+    column max-width=lookMeasure() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap
+      gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId=testId
+      children
+
+// A section of a page: its rows, a row's space apart.
+component Section
+  props
+    testId: string
+  slot
+  view
+    column gap=look().rowGap testId=testId
+      children
+
+// The page's title: the larger of the two sizes, in the light weight.
+component Title
+  props
+    text: string
+    testId: string
+  view
+    text text role="heading" aria-level=1 font-size=lookTitle() font-weight=400 line-height=lookTitleLeading() color="look.ink" testId=testId
+
+// A section's head: text size, the heavy weight, a hairline under it.
+component SectionHead
+  props
+    text: string
+    testId: string
+  view
+    text text role="heading" aria-level=2 font-size=lookText() font-weight=look().strong line-height=lookLeading() color="look.ink"
+      padding-bottom=lookTight() border-bottom-width=lookRule() border-bottom-style="solid" border-bottom-color="look.line" testId=testId
+
+// A rule on its own, between rows.
+component Rule
+  view
+    hr border-top-width=lookRule() color="look.line" margin=0
+
+// A plain line of text.
+component Line
+  props
+    text: string
+    testId: string
+  view
+    text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" testId=testId
+
+// A line in the heavy weight: the one item in focus, or a finding that is serious.
+component StrongLine
+  props
+    text: string
+    testId: string
+  view
+    text text font-size=lookText() font-weight=look().strong line-height=lookLeading() color="look.ink" testId=testId
+
+// A secondary line, in grey: where something came from, what it holds up, a hint.
+component QuietLine
+  props
+    text: string
+    testId: string
+  view
+    text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
+
+// A failure, in red: what was refused and why, in the words it was refused in.
+component FailLine
+  props
+    text: string
+    testId: string
+  view
+    text text role="alert" font-size=lookText() font-weight=400 line-height=lookLeading() color="-exact-system-red" testId=testId
+
+// A line indented under the line before it: a finding's items, a note moved under its line on a narrow window.
+component Indented
+  props
+    testId: string
+  slot
+  view
+    column padding-left=lookGutter() gap=lookTight() testId=testId
+      children
+
+// A status: one word from the fixed list, in grey unless it needs the owner.
+component Status
+  props
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    needsYou: bool
+    testId: string
+  view
+    text word font-size=lookText() font-weight=400 line-height=lookLeading() white-space="nowrap" color=(needsYou ? "look.ink" : "look.grey") testId=testId
+
+// A reference number (F-0142, J-023): tabular figures, in grey; nothing when the look hides references.
+component Ref
+  props
+    code: string
+    testId: string
+  view
+    if look().refs != "hidden"
+      text code font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" white-space="nowrap" color="look.grey" testId=testId
+
+// A record's line with its reference number placed as the look says: in a gutter of its own to the left,
+// inline before the line, or not at all.
+component RefRow
+  props
+    code: string
+    testId: string
+  slot
+  view
+    if look().refs == "gutter"
+      row align-items="baseline" testId=testId
+        column width=lookRefWidth() flex-shrink=0
+          Ref(code=code, testId=`${testId}-ref`)
+        column flex=1 min-width=0 gap=lookTight()
+          children
+    else if look().refs == "inline"
+      row align-items="baseline" gap=lookTight() testId=testId
+        Ref(code=code, testId=`${testId}-ref`)
+        column flex=1 min-width=0 gap=lookTight()
+          children
+    else
+      column gap=lookTight() testId=testId
+        children
+
+// A numbered line (1, 2, 3 …): the number in a narrow column of its own, in tabular figures, then the line.
+component Numbered
+  props
+    n: number
+  slot
+  view
+    row align-items="baseline"
+      text `${n}` aria-hidden=true width=lookNumberWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey"
+      column flex=1 min-width=0 gap=lookTight()
+        children
+
+// A one-line text field, drawn by the platform, with its label for a screen reader and a hint while empty.
+component ValueField
+  props
+    value: string
+    label: string
+    hint: string
+    change: action
+    submit: action
+    testId: string
+  view
+    input value=value input=change submit=submit placeholder=hint aria-label=label autocomplete="off" max-width=lookMeasure() testId=testId
+
+// An action: the platform's plain text button. `keys` is its one-key shortcut ("" for none).
+component Action
+  props
+    label: string
+    press: action
+    disabled: bool
+    keys: string
+    testId: string
+  view
+    button press=press disabled=disabled aria-keyshortcuts=keys text-align="start" testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading()
+
+// The main action of a screen: the same button, in the heavy weight.
+component MainAction
+  props
+    label: string
+    press: action
+    disabled: bool
+    keys: string
+    testId: string
+  view
+    button press=press disabled=disabled aria-keyshortcuts=keys text-align="start" testId=testId
+      text label font-size=lookText() font-weight=look().strong line-height=lookLeading()
+
+// A destructive action: red. The screen asks before it does what it says.
+component DangerAction
+  props
+    label: string
+    press: action
+    disabled: bool
+    testId: string
+  view
+    button press=press disabled=disabled text-align="start" accent-color="-exact-system-red" testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading() color="-exact-system-red"
+
+// A link to another screen, as a plain action.
+component GoTo
+  props
+    label: string
+    href: string
+    testId: string
+  view
+    link href=href testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading()
+
+// A row with a margin note: the main column, and beside it, `margin` wide, its notes. Under 640px the notes
+// move under the main column, indented. The caller puts the note in a `Note` after the main content, and passes
+// `wide` (the root reads the window: `viewport.width >= lookNarrow()`), since only the root reads the window.
+component WithNote
+  props
+    wide: bool
+    testId: string
+  slot
+  view
+    if wide
+      row align-items="start" gap=lookGutter() testId=testId
+        children
+    else
+      column gap=lookTight() testId=testId
+        children
+
+// The parts of a `WithNote`: its main column, then its note.
+component Main
+  slot
+  view
+    column flex=1 min-width=0 max-width=lookMeasure() gap=lookTight()
+      children
+
+component Note
+  props
+    wide: bool
+    text: string
+    testId: string
+  view
+    column width=(wide ? lookMargin() : "auto") flex-shrink=0 padding-left=(wide ? 0 : lookGutter())
+      text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
