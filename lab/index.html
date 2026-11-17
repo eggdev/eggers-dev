@@ -1,0 +1,930 @@
+<title>Studio Look Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the canvas (a drawing of the studio) takes the width; a quiet control panel sits beside it, under it on a phone. */
+:root {
+  /* Lab chrome: neutral, system font, clearly not the design under test. */
+  --lab-bg: #e9e8e4;
+  --lab-fg: #1c1c1a;
+  --lab-muted: #5a5954;
+  --lab-line: #c4c2bb;
+  --lab-field: #f7f7f5;
+  --lab-focus: #2456c9;
+  --lab-red: #b3261e;
+
+  /* Canvas palette from DESIGN.md, both schemes as fixed tokens. */
+  --k-ink-light: #111111;      --k-ink-dark: #ededed;
+  --k-white-light: #ffffff;    --k-white-dark: #111111;
+  --k-warm-light: #fbf9f4;     --k-warm-dark: #141311;
+  --k-cool-light: #f7f9fb;     --k-cool-dark: #0f1215;
+  --k-grey-light: #5c5c5c;     --k-grey-dark: #a6a6a6;
+  --k-line-light: #d9d9d9;     --k-line-dark: #333333;
+  --k-orange-light: #bf5700;   --k-orange-dark: #e8813a;
+  --k-red-light: #d70015;      --k-red-dark: #ff6961;
+
+  /* Active canvas tokens: follow the page theme unless the lab pins one. */
+  --k-ink: var(--k-ink-light);
+  --k-white: var(--k-white-light);
+  --k-warm: var(--k-warm-light);
+  --k-cool: var(--k-cool-light);
+  --k-grey: var(--k-grey-light);
+  --k-line: var(--k-line-light);
+  --k-orange: var(--k-orange-light);
+  --k-red: var(--k-red-light);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lab-bg: #1a1a1b; --lab-fg: #e7e6e2; --lab-muted: #a3a29c; --lab-line: #3d3d3f; --lab-field: #232325; --lab-focus: #86a8ff; --lab-red: #ff8a80;
+    --k-ink: var(--k-ink-dark); --k-white: var(--k-white-dark); --k-warm: var(--k-warm-dark); --k-cool: var(--k-cool-dark);
+    --k-grey: var(--k-grey-dark); --k-line: var(--k-line-dark); --k-orange: var(--k-orange-dark); --k-red: var(--k-red-dark);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --lab-bg: #1a1a1b; --lab-fg: #e7e6e2; --lab-muted: #a3a29c; --lab-line: #3d3d3f; --lab-field: #232325; --lab-focus: #86a8ff; --lab-red: #ff8a80;
+  --k-ink: var(--k-ink-dark); --k-white: var(--k-white-dark); --k-warm: var(--k-warm-dark); --k-cool: var(--k-cool-dark);
+  --k-grey: var(--k-grey-dark); --k-line: var(--k-line-dark); --k-orange: var(--k-orange-dark); --k-red: var(--k-red-dark);
+  color-scheme: dark;
+}
+/* The lab's Light / Dark preview pins the canvas tokens on the stage only. */
+.stage[data-scheme="light"] {
+  --k-ink: var(--k-ink-light); --k-white: var(--k-white-light); --k-warm: var(--k-warm-light); --k-cool: var(--k-cool-light);
+  --k-grey: var(--k-grey-light); --k-line: var(--k-line-light); --k-orange: var(--k-orange-light); --k-red: var(--k-red-light);
+  color-scheme: light;
+}
+.stage[data-scheme="dark"] {
+  --k-ink: var(--k-ink-dark); --k-white: var(--k-white-dark); --k-warm: var(--k-warm-dark); --k-cool: var(--k-cool-dark);
+  --k-grey: var(--k-grey-dark); --k-line: var(--k-line-dark); --k-orange: var(--k-orange-dark); --k-red: var(--k-red-dark);
+  color-scheme: dark;
+}
+
+body { background: var(--lab-bg); color: var(--lab-fg); }
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ---------- Lab chrome ---------- */
+.lab {
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  max-width: 100%;
+}
+.lab-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 16px; row-gap: 4px; margin-bottom: 14px; }
+.lab-head h1 { font-size: 15px; font-weight: 600; margin: 0; }
+.lab-head p { margin: 0; color: var(--lab-muted); }
+.lab-grid { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 24px; align-items: start; }
+@media (max-width: 1040px) { .lab-grid { grid-template-columns: minmax(0, 1fr); } }
+.lab-main { min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; }
+.lab button, .lab input, .lab textarea, .lab select { font: inherit; color: inherit; }
+.lab button { cursor: pointer; }
+.tab { border: 1px solid transparent; background: none; padding: 4px 10px; border-radius: 4px; color: var(--lab-muted); }
+.tab[aria-pressed="true"] { color: var(--lab-fg); border-color: var(--lab-line); background: var(--lab-field); font-weight: 600; }
+.seedbox { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.seedbox label { color: var(--lab-muted); }
+#seed { width: 11ch; padding: 3px 6px; border: 1px solid var(--lab-line); border-radius: 4px; background: var(--lab-field); font-variant-numeric: tabular-nums; }
+.btn { border: 1px solid var(--lab-line); background: var(--lab-field); border-radius: 4px; padding: 4px 10px; }
+.btn.primary { background: var(--lab-fg); color: var(--lab-bg); border-color: var(--lab-fg); font-weight: 600; }
+.btn:disabled { opacity: .45; cursor: default; }
+.caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: var(--lab-muted); margin-bottom: 6px; }
+.lab :focus-visible { outline: 2px solid var(--lab-focus); outline-offset: 2px; }
+
+.stage {
+  container: stage / inline-size;
+  outline: 1px solid var(--lab-line);
+  overflow-x: auto;
+  cursor: pointer;
+  max-width: 100%;
+  background: var(--lab-bg);
+}
+.stage.phone { width: 390px; }
+.stage:focus-visible { outline: 2px solid var(--lab-focus); outline-offset: 3px; }
+
+.panel { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.panel h2 { font-size: 12px; font-weight: 600; margin: 0 0 6px; color: var(--lab-muted); }
+.row-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.status-line { color: var(--lab-muted); min-height: 1.45em; margin-top: 6px; }
+.status-line.bad { color: var(--lab-red); }
+.ctls { display: flex; flex-direction: column; gap: 10px; }
+.ctl-top { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; }
+.ctl-top label, .ctl-top .lbl { min-width: 0; }
+.ctl-key { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--lab-muted); margin-left: 4px; }
+.ctl output { font-variant-numeric: tabular-nums; color: var(--lab-fg); }
+.ctl input[type="range"] { width: 100%; margin: 2px 0 0; accent-color: var(--lab-fg); }
+.lock { width: 24px; height: 22px; display: inline-grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 4px; color: var(--lab-muted); padding: 0; }
+.lock[aria-pressed="true"] { color: var(--lab-fg); border-color: var(--lab-line); background: var(--lab-field); }
+.lock svg { width: 14px; height: 14px; }
+.lock .shut { display: none; }
+.lock[aria-pressed="true"] .shut { display: inline; }
+.lock[aria-pressed="true"] .open { display: none; }
+.seg { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg label { padding: 2px 8px; border: 1px solid var(--lab-line); border-radius: 4px; cursor: pointer; color: var(--lab-muted); }
+.seg input:checked + label { color: var(--lab-fg); background: var(--lab-field); border-color: var(--lab-fg); font-weight: 600; }
+.seg input:focus-visible + label { outline: 2px solid var(--lab-focus); outline-offset: 1px; }
+.check { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.rail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rail li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.rail .apply { text-align: left; border: 1px solid var(--lab-line); background: var(--lab-field); border-radius: 4px; padding: 4px 8px; min-width: 0; }
+.rail .apply small { display: block; color: var(--lab-muted); font-size: 12px; overflow-wrap: anywhere; }
+.rail .remove { border: none; background: none; color: var(--lab-muted); padding: 4px 6px; }
+.empty-note { color: var(--lab-muted); margin: 0; }
+.lab textarea { width: 100%; min-height: 9em; resize: vertical; border: 1px solid var(--lab-line); border-radius: 4px; background: var(--lab-field); padding: 6px; font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+#sizes { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- The canvas: the studio as DESIGN.md draws it ---------- */
+.app {
+  --ink: var(--k-ink); --grey: var(--k-grey); --line: var(--k-line); --paper: var(--k-white); --acc: var(--k-ink); --red: var(--k-red);
+  --gw: 5em; --g1: 1.5em; --g2: 2.5rem;
+  --cw: calc(var(--gw) + var(--g1) + var(--measure) + var(--g2) + var(--mw));
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: var(--ts); line-height: var(--lead); font-weight: 400;
+  color: var(--ink); background: var(--paper);
+  padding: 22px 32px var(--sec);
+  min-width: calc(var(--cw) + 64px);
+  text-align: left; font-kerning: normal; font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+.app div, .app span { margin: 0; }
+.app.paper-warm { --paper: var(--k-warm); }
+.app.paper-cool { --paper: var(--k-cool); }
+.app.greys-1 { --line: color-mix(in srgb, var(--k-grey) 35%, transparent); }
+.app.accent-orange { --acc: var(--k-orange); }
+
+.app .r { display: grid; grid-template-columns: var(--gw) var(--g1) minmax(0, var(--measure)) var(--g2) var(--mw); align-items: first baseline; max-width: var(--cw); }
+.app .g { grid-column: 1; }
+.app .m { grid-column: 3; min-width: 0; position: relative; }
+.app .n { grid-column: 5; min-width: 0; }
+.app .mn { grid-column: 3 / 6; min-width: 0; position: relative; }
+.app .stack { display: flex; flex-direction: column; gap: var(--row); }
+.app .sec { margin-top: var(--sec); display: flex; flex-direction: column; gap: var(--row); }
+.app .sec > .h { border-top: var(--rule) solid var(--line); padding-top: var(--row); }
+.app .sub { border-top: var(--rule) solid var(--line); padding-top: var(--row); margin-top: var(--row); }
+.app .nav { border-bottom: var(--rule) solid var(--line); padding-bottom: var(--row); }
+.app .navl { display: flex; flex-wrap: wrap; column-gap: 1.75em; }
+.app .navl .sys { margin-left: auto; color: var(--grey); }
+.app .head { margin-top: var(--sec); }
+.app .t { font-size: var(--title); line-height: 1.2; font-weight: var(--strong); letter-spacing: -0.018em; text-wrap: balance; }
+.app .b { font-weight: var(--strong); }
+.app .gr { color: var(--grey); }
+.app .own { color: var(--ink); }
+.app .red { color: var(--red); }
+.app .tn { font-variant-numeric: tabular-nums; }
+.app .ref { color: var(--grey); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app .g .ref { display: block; }
+.app .key { color: var(--grey); font-variant-numeric: tabular-nums; }
+.app .act { color: var(--acc); text-decoration: underline; text-decoration-thickness: max(1px, var(--rule)); text-underline-offset: 0.24em; text-decoration-color: color-mix(in srgb, currentColor 38%, transparent); }
+.app .act.b { font-weight: var(--strong); }
+.app .focus { font-weight: var(--strong); color: var(--acc); }
+.app .old { color: var(--grey); text-decoration: line-through; text-decoration-thickness: 1px; }
+.app .acts { display: flex; flex-wrap: wrap; column-gap: 1.5em; }
+.app .acts .pair { white-space: nowrap; }
+.app .notes { display: flex; flex-direction: column; gap: calc(var(--row) / 2); }
+.app .bul::before { content: "•"; position: absolute; left: -0.9em; color: var(--grey); }
+.app .indent { padding-left: 1em; }
+.app .cnts { display: flex; flex-wrap: wrap; column-gap: 2.5em; row-gap: var(--row); }
+.app .cnt .t { font-variant-numeric: tabular-nums; }
+
+/* Ledger: one row per record, aligned columns, tabular figures. */
+.app .lg { display: grid; grid-template-columns: var(--cols); column-gap: 1.25em; align-items: first baseline; font-variant-numeric: tabular-nums; }
+.app .lg-rec { --cols: minmax(0, 1fr) 9.5em 5.5em 6em minmax(0, 12em); }
+.app .lg-act { --cols: minmax(0, 1.35fr) minmax(0, 1.2fr) 6.5em 7.5em 8.5em; }
+.app .lg .c { min-width: 0; }
+.app .lg.hd { color: var(--grey); }
+.app .lg .sub-cell { padding-left: 1em; }
+.app .lg .c-full { grid-column: 1 / -1; }
+.app .nw { white-space: nowrap; }
+.app .parent { padding-bottom: calc(var(--row) / 2); }
+
+/* Under 640px the canvas is one column: sidenotes move under their row, indented. */
+@container stage (max-width: 639px) {
+  .app { min-width: 0; padding: 16px 20px var(--sec); --gw: 0px; --g1: 0px; }
+  .app.refs-gutter { --gw: 4.3em; --g1: 0.7em; }
+  .app .r { grid-template-columns: var(--gw) var(--g1) minmax(0, 1fr); max-width: none; }
+  .app .n { grid-column: 3; padding-left: 1em; margin-top: calc(var(--row) / 2); }
+  .app .mn { grid-column: 3 / 4; }
+  .app .nav .mn { grid-column: 1 / -1; }
+  .app .navl { column-gap: 1.1em; }
+  .app .has-label .n { display: none; }
+  .app .lg .c.c-full { display: block; }
+  .app .lg { display: block; }
+  .app .lg.hd { display: none; }
+  .app .lg .c { display: inline; }
+  .app .lg .c.c1 { display: block; }
+  .app .lg .c.c1 + .c::before { content: none; }
+  .app .lg .c:not(.c1):not(.c-full)::before { content: " · "; color: var(--grey); }
+  .app .lg .c:empty { display: none; }
+  .app .lg .sub-cell { padding-left: 0; }
+}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+
+<div class="lab">
+  <div class="lab-head">
+    <h1>Studio look lab</h1>
+    <p>Click the canvas for a new look. Move a control to change one thing. Save the one you want and send me the JSON.</p>
+  </div>
+  <div class="lab-grid">
+    <div class="lab-main">
+      <div class="bar">
+        <div class="tabs" id="tabs" role="group" aria-label="Screen"></div>
+        <div class="seedbox">
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" step="1" inputmode="numeric">
+          <button class="btn" id="newLook" type="button">New look</button>
+          <button class="btn" id="prevLook" type="button" disabled>Previous look</button>
+        </div>
+      </div>
+      <div class="caption">
+        <span>Canvas, click for a new look</span>
+        <span id="sizes" aria-live="polite"></span>
+      </div>
+      <div class="stage" id="stage" tabindex="0" role="button" aria-label="Canvas. Press Enter for a new look."></div>
+    </div>
+
+    <aside class="panel" aria-label="Look controls">
+      <section>
+        <div class="row-btns">
+          <button class="btn primary" id="save" type="button">Save</button>
+          <button class="btn" id="reset" type="button">Reset to defaults</button>
+        </div>
+        <div class="status-line" id="saveStatus" aria-live="polite"></div>
+      </section>
+      <section>
+        <h2>The look</h2>
+        <div class="ctls" id="ctls"></div>
+      </section>
+      <section>
+        <h2>Preview (not saved)</h2>
+        <div class="seg" role="radiogroup" aria-label="Canvas theme">
+          <input type="radio" name="scheme" id="p-scheme-match" value="match"><label for="p-scheme-match">Match</label>
+          <input type="radio" name="scheme" id="p-scheme-light" value="light"><label for="p-scheme-light">Light</label>
+          <input type="radio" name="scheme" id="p-scheme-dark" value="dark"><label for="p-scheme-dark">Dark</label>
+        </div>
+        <div class="seg" role="radiogroup" aria-label="Canvas width">
+          <input type="radio" name="width" id="p-width-wide" value="wide"><label for="p-width-wide">Wide</label>
+          <input type="radio" name="width" id="p-width-phone" value="phone"><label for="p-width-phone">Phone</label>
+        </div>
+        <label class="check" for="p-empty"><input type="checkbox" id="p-empty"> Show empty queue</label>
+      </section>
+      <section>
+        <h2>Saved looks</h2>
+        <ul class="rail" id="rail"></ul>
+        <p class="empty-note" id="railEmpty">None yet. Save puts the look here.</p>
+      </section>
+      <section>
+        <h2><label for="savedJson">Last saved JSON</label></h2>
+        <textarea id="savedJson" readonly spellcheck="false" placeholder="Save shows the JSON here."></textarea>
+      </section>
+      <section>
+        <h2><label for="loadJson">Load a look</label></h2>
+        <textarea id="loadJson" spellcheck="false" placeholder="Paste a saved look here."></textarea>
+        <div class="row-btns" style="margin-top:6px"><button class="btn" id="loadBtn" type="button">Apply</button></div>
+        <div class="status-line" id="loadStatus" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============ Pure part: data, config, seeded generator, render ============ */
+
+const KEYS = [
+  { key: "home", kind: "choice", options: ["queue", "document", "glance"], def: "queue", label: "First screen" },
+  { key: "record", kind: "choice", options: ["catalogue", "ledger"], def: "catalogue", label: "Record style" },
+  { key: "refs", kind: "choice", options: ["gutter", "inline", "hidden"], def: "gutter", label: "Reference numbers" },
+  { key: "textSize", kind: "num", min: 15, max: 18, step: 1, def: 16, unit: "px", label: "Text size" },
+  { key: "ratio", kind: "num", min: 1.5, max: 2, step: 0.05, def: 1.75, unit: "×", label: "Title ÷ text" },
+  { key: "strong", kind: "num", min: 500, max: 700, step: 100, def: 600, unit: "", label: "Heavy weight" },
+  { key: "leading", kind: "num", min: 1.35, max: 1.65, step: 0.05, def: 1.5, unit: "", label: "Line height" },
+  { key: "measure", kind: "num", min: 32, max: 44, step: 1, def: 38, unit: "rem", label: "Main column" },
+  { key: "margin", kind: "num", min: 12, max: 20, step: 1, def: 16, unit: "rem", label: "Notes column" },
+  { key: "rowGap", kind: "num", min: 6, max: 20, step: 1, def: 12, unit: "px", label: "Row gap" },
+  { key: "sectionGap", kind: "num", min: 28, max: 72, step: 4, def: 48, unit: "px", label: "Section gap" },
+  { key: "ruleWeight", kind: "num", min: 0.5, max: 2, step: 0.25, def: 1, unit: "px", label: "Rule weight" },
+  { key: "greys", kind: "choice", options: [1, 2], def: 2, label: "Greys" },
+  { key: "paper", kind: "choice", options: ["white", "warm", "cool"], def: "white", label: "Paper" },
+  { key: "accent", kind: "choice", options: ["none", "orange"], def: "none", label: "Accent" },
+  { key: "notes", kind: "num", min: 0, max: 3, step: 1, def: 2, unit: "", label: "Notes beside a bullet" },
+];
+const SCREENS = ["home", "record", "job", "resume", "activity"];
+const SCREEN_LABEL = { home: "Home", record: "Record", job: "Job", resume: "Resume", activity: "Activity" };
+
+function defaults(screen) {
+  const c = {};
+  for (const k of KEYS) c[k.key] = k.def;
+  c.seed = 0;
+  c.screen = screen && SCREENS.includes(screen) ? screen : "home";
+  return c;
+}
+
+/* mulberry32: the only source of randomness for a look. */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function decimals(step) { const s = String(step); return s.includes(".") ? s.split(".")[1].length : 0; }
+function snap(k, v) {
+  const n = Math.round((v - k.min) / k.step);
+  const out = k.min + n * k.step;
+  return Number(Math.min(k.max, Math.max(k.min, out)).toFixed(decimals(k.step)));
+}
+/* Draw a value for every key from the seed (always in KEYS order, so a key's value
+   does not depend on which keys are locked), then keep the locked ones. Seed 0 is the default look. */
+function variation(base, seed, locks) {
+  const out = Object.assign({}, base, { seed: seed });
+  const rnd = mulberry32(seed);
+  for (const k of KEYS) {
+    const u = rnd();
+    let v;
+    if (seed === 0) v = k.def;
+    else if (k.kind === "num") { const steps = Math.round((k.max - k.min) / k.step); v = snap(k, k.min + Math.floor(u * (steps + 1)) * k.step); }
+    else v = k.options[Math.floor(u * k.options.length)];
+    if (!locks || !locks[k.key]) out[k.key] = v;
+  }
+  return out;
+}
+/* Validate pasted JSON: unknown keys ignored, numbers clamped and snapped, bad choices kept as they were. */
+function sanitize(input, base) {
+  const out = Object.assign({}, base);
+  const notes = [];
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("The text is JSON, but not an object with look keys.");
+  const known = new Set(KEYS.map(k => k.key).concat(["seed", "screen"]));
+  const unknown = Object.keys(input).filter(k => !known.has(k));
+  if (unknown.length) notes.push("Ignored " + unknown.length + " unknown key" + (unknown.length > 1 ? "s" : "") + ": " + unknown.join(", ") + ".");
+  for (const k of KEYS) {
+    if (!(k.key in input)) continue;
+    const raw = input[k.key];
+    if (k.kind === "num") {
+      const n = typeof raw === "number" ? raw : Number(raw);
+      if (!Number.isFinite(n)) { notes.push(k.key + " is not a number; kept " + base[k.key] + "."); continue; }
+      const v = snap(k, n);
+      if (v !== n) notes.push(k.key + " " + n + " became " + v + ".");
+      out[k.key] = v;
+    } else {
+      const match = k.options.find(o => String(o) === String(raw));
+      if (match === undefined) { notes.push(k.key + " “" + raw + "” is not one of " + k.options.join(", ") + "; kept " + base[k.key] + "."); continue; }
+      out[k.key] = match;
+    }
+  }
+  if ("seed" in input) {
+    const s = Number(input.seed);
+    if (Number.isInteger(s)) out.seed = s; else notes.push("seed is not an integer; kept " + base.seed + ".");
+  }
+  if ("screen" in input) {
+    if (SCREENS.includes(input.screen)) out.screen = input.screen; else notes.push("screen “" + input.screen + "” is unknown; kept " + base.screen + ".");
+  }
+  return { config: out, notes: notes };
+}
+function ordered(c) {
+  const o = {};
+  for (const k of KEYS) o[k.key] = c[k.key];
+  o.seed = c.seed; o.screen = c.screen;
+  return o;
+}
+
+/* ---------- Invented data (no real person, employer or number) ---------- */
+const PERSON = { name: "Avery Lindqvist", place: "Duluth, MN", email: "avery.lindqvist@example.com" };
+
+const ROLES = [
+  { ref: "R-07", title: "Director of Engineering", org: "Harborlight Systems", dates: "Mar 2021–Present", place: "Remote",
+    status: "Confirmed", prov: "From the 2025 review notes, confirmed 3 Mar 2026.", provShort: "Review notes, 3 Mar 2026",
+    overlap: "Overlaps R-08 Lindqvist Tools. Both say Present." },
+  { ref: "R-08", title: "Founder", org: "Lindqvist Tools", dates: "Jun 2023–Present", place: "Duluth, MN, own company",
+    status: "Unsure", prov: "From your answers, 9 Nov 2026.", provShort: "Your answers, 9 Nov 2026",
+    overlap: "Overlaps R-07 Harborlight Systems. Both say Present." },
+  { ref: "R-05", title: "Senior Engineer", org: "Quillfeather Labs", dates: "Jan 2016–Feb 2021", place: "Minneapolis, MN",
+    status: "Confirmed", prov: "From the 2020 resume, confirmed 21 Feb 2026.", provShort: "2020 resume, 21 Feb 2026" },
+  { ref: "R-04", title: "Software Engineer", org: "Brackenridge Mapping", dates: "Sep 2012–Dec 2015", place: "Duluth, MN",
+    status: "Confirmed", prov: "From the 2020 resume, confirmed 21 Feb 2026.", provShort: "2020 resume, 21 Feb 2026" },
+  { ref: "R-03", title: "Support Lead", org: "Tessellate Freight", dates: "May 2010–Aug 2012", place: "Superior, WI",
+    status: "Confirmed", prov: "From your 2019 profile, confirmed 21 Feb 2026.", provShort: "2019 profile, 21 Feb 2026" },
+];
+const FACTS = [
+  { ref: "F-0142", role: "R-07", year: "2024", status: "Confirmed", text: "Built the dispatch console that schedulers use every day. 640 users across 12 depots.", prov: "From the 2025 review notes, confirmed 3 Mar 2026.", provShort: "Review notes, 3 Mar 2026" },
+  { ref: "F-0147", role: "R-07", year: "2023", status: "Confirmed", text: "Cut the nightly billing run from 6 hours to 40 minutes.", prov: "From the billing team’s retro notes, confirmed 3 Mar 2026.", provShort: "Retro notes, 3 Mar 2026" },
+  { ref: "F-0149", role: "R-07", year: "2023", status: "Confirmed", text: "Grew the platform group from 4 to 11 engineers in two years.", prov: "From the 2025 review notes, confirmed 12 Jan 2026.", provShort: "Review notes, 12 Jan 2026" },
+  { ref: "F-0151", role: "R-07", year: "2025", status: "Unsure", text: "Rolled the console out to 11 depots in 2025.", prov: "From a call with Dana Okafor, 2 Nov 2026.", provShort: "Call notes, 2 Nov 2026" },
+  { ref: "F-0153", role: "R-07", year: "2022", status: "Confirmed", text: "Moved 38 services to one release pipeline; releases went from weekly to daily.", prov: "From the 2022 platform plan, confirmed 3 Mar 2026.", provShort: "Platform plan, 3 Mar 2026" },
+  { ref: "F-0162", role: "R-07", year: "2024", status: "Confirmed", text: "Hired and coached two first-time managers.", prov: "From your answers, confirmed 14 Nov 2026.", provShort: "Your answers, 14 Nov 2026" },
+  { ref: "F-0160", role: "R-08", year: "2025", status: "Unsure", text: "Sell a scheduling add-on to 9 regional carriers.", prov: "From your answers, 9 Nov 2026.", provShort: "Your answers, 9 Nov 2026" },
+  { ref: "F-0168", role: "R-08", year: "2024", status: "Confirmed", text: "Work with clients in four time zones from Duluth.", prov: "From your answers, confirmed 14 Nov 2026.", provShort: "Your answers, 14 Nov 2026" },
+  { ref: "F-0177", role: "R-08", year: "2026", status: "Unsure", text: "Wrote the routing library that 3 of the 9 carriers pay for.", prov: "From the 2026 review notes, added 16 Nov 2026.", provShort: "Review notes, 16 Nov 2026" },
+  { ref: "F-0121", role: "R-05", year: "2019", status: "Confirmed", text: "Wrote the sync engine behind the offline field app; 2,300 crews used it.", prov: "From the 2020 resume, confirmed 21 Feb 2026.", provShort: "2020 resume, 21 Feb 2026" },
+  { ref: "F-0118", role: "R-05", year: "2018", status: "Confirmed", text: "Halved crash reports in a year by adding release health checks.", prov: "From the 2020 resume, confirmed 21 Feb 2026.", provShort: "2020 resume, 21 Feb 2026" },
+  { ref: "F-0110", role: "R-04", year: "2014", status: "Confirmed", text: "Built the county road map viewer used by 30 townships.", prov: "From the 2020 resume, confirmed 21 Feb 2026.", provShort: "2020 resume, 21 Feb 2026" },
+  { ref: "F-0102", role: "R-03", year: "2011", status: "Confirmed", text: "Answered 70 tickets a day and wrote the first help center.", prov: "From your 2019 profile, confirmed 21 Feb 2026.", provShort: "2019 profile, 21 Feb 2026" },
+];
+const JOBS = [
+  { ref: "J-024", title: "Head of Platform", org: "Marrowind Logistics", status: "New" },
+  { ref: "J-023", title: "Staff Engineering Manager, Platform", org: "Corvane Health", status: "Writing" },
+  { ref: "J-021", title: "Director of Engineering", org: "Tidewell Energy", status: "Ready" },
+  { ref: "J-020", title: "Engineering Manager, Tools", org: "Brightloom", status: "Ready" },
+  { ref: "J-019", title: "Engineering Manager", org: "Pinecrest Analytics", status: "Quiet" },
+  { ref: "J-018", title: "Senior Engineering Manager", org: "Galloway Rail", status: "Sent" },
+  { ref: "J-016", title: "Engineering Manager, Field Apps", org: "Northmoor Utilities", status: "Sent" },
+  { ref: "J-015", title: "Platform Lead", org: "Ashgrove Mutual", status: "Sent" },
+];
+const QUESTIONS = [
+  { text: "Harborlight Systems and Lindqvist Tools both say Present. Which is right?", blocks: "Blocks 3 resumes",
+    choices: ["Both are current", "Harborlight ended", "Lindqvist Tools is part-time"] },
+  { text: "11 depots or 12 at Harborlight Systems?", blocks: "Blocks 2 resumes" },
+  { text: "Did the platform group reach 11 engineers in 2023 or 2024?", blocks: "Blocks 1 resume" },
+  { text: "What did the billing run cost before the change?", blocks: "Blocks nothing yet" },
+  { text: "Is the routing library yours or the company’s?", blocks: "Blocks 1 resume" },
+];
+const QUEUE_REST = [
+  { ref: "J-024", text: "New job: Head of Platform at Marrowind Logistics", status: "New", blocks: "Blocks its posting map" },
+  { ref: "F-0151", text: "Confirm: 11 depots or 12 at Harborlight Systems?", status: "Unsure", blocks: "Blocks 2 resumes" },
+  { ref: "J-019", text: "Pinecrest Analytics. No reply in 14 days.", status: "Quiet", blocks: "Blocks the follow-up" },
+  { ref: "F-0177", text: "Confirm a new fact: the routing library 3 carriers pay for", status: "Unsure", blocks: "Blocks 1 resume" },
+];
+const DIGEST = [
+  { text: "The resume for J-021 is ready. Revision B, 2 changes.", when: "2 h ago" },
+  { text: "Read 6 new postings. One is worth a look: J-024.", when: "3 h ago" },
+  { text: "F-0168 is confirmed from your answer.", when: "Yesterday" },
+];
+const ACTIVITY = [
+  { what: "Writing the resume for J-023", stage: "Review, round 2 of 3", started: "4 min ago", usual: "usually 9 min", status: "Running" },
+  { what: "Reading 6 new postings", stage: "Finding requirements, 4 of 6", started: "2 min ago", usual: "usually 5 min", status: "Running" },
+  { what: "Mapping J-024 to the record", stage: "Not started", started: "Not yet", usual: "usually 3 min", status: "Waiting, 2 ahead" },
+  { what: "Checking the J-021 resume", stage: "Reading the posting", started: "22 min ago", usual: "usually 2 min", status: "Failed",
+    reason: "The posting page no longer loads. The job may have closed." },
+  { what: "Writing the resume for J-021", stage: "Finished, revision B", started: "2 h ago", usual: "usually 9 min", status: "Done" },
+  { what: "Reading J-022", stage: "Finished", started: "3 h ago", usual: "usually 2 min", status: "Done" },
+];
+const JOB = {
+  ref: "J-023", title: "Staff Engineering Manager, Platform", name: "Corvane Health, remote in the US",
+  dates: "Posted 3 Nov 2026 · Found 4 Nov 2026", datesShort: "3 Nov 2026", extent: "9 requirements", score: "Fit 78",
+  status: "Writing", prov: "From the Corvane Health careers page, read 4 Nov 2026.", provShort: "Careers page, 4 Nov 2026",
+  reqs: [
+    { text: "Has led an engineering group of 8 or more", kind: "Required", ev: "F-0149", evText: "Grew the platform group from 4 to 11 engineers." },
+    { text: "Owned platform or infrastructure services", kind: "Required", ev: "F-0153", evText: "Moved 38 services to one release pipeline." },
+    { text: "Shipped software that operations staff use daily", kind: "Required", ev: "F-0142", evText: "640 users across 12 depots." },
+    { text: "Hires and grows managers", kind: "Required", ev: "F-0162", evText: "Coached two first-time managers." },
+    { text: "Made batch systems faster or cheaper", kind: "Preferred", ev: "F-0147", evText: "Billing run from 6 hours to 40 minutes." },
+    { text: "Healthcare data experience", kind: "Preferred", open: "No fact yet. Add one, or leave it open." },
+    { text: "HIPAA or SOC 2 compliance work", kind: "Preferred", open: "No fact yet. Ask me about Harborlight audits?" },
+    { text: "Comfortable at a young company", kind: "Implied", ev: "F-0160", evText: "Runs Lindqvist Tools, 9 carriers." },
+    { text: "Works across time zones", kind: "Implied", ev: "F-0168", evText: "Clients in four time zones." },
+  ],
+  flags: [
+    "Two metrics from Harborlight Systems are not on this resume.",
+    "The posting asks for healthcare data. The record has none.",
+    "F-0151 and F-0142 disagree on the depot count.",
+  ],
+};
+const RESUME = {
+  ref: "V-023-C", name: "Resume for J-023, Corvane Health", dates: "16 Nov 2026", extent: "1 page · 8 bullets", status: "Writing",
+  prov: "From the record, 9 facts, first written 12 Nov 2026.", provShort: "The record, 12 Nov 2026",
+  changes: [
+    { rev: "C", date: "16 Nov 2026", text: "Shortened the Harborlight Systems bullets. Suggested a new group size line." },
+    { rev: "B", date: "14 Nov 2026", text: "Moved Lindqvist Tools above Quillfeather Labs." },
+    { rev: "A", date: "12 Nov 2026", text: "First draft from the record." },
+  ],
+  summary: "Engineering leader who builds the tools operations teams use every day.",
+  roles: [
+    { ref: "R-07", title: "Director of Engineering, Harborlight Systems", dates: "Mar 2021–Present · Remote", bullets: [
+      { ref: "F-0142", text: "Built the dispatch console that schedulers use every day. 640 users across 12 depots.", notes: [
+        { k: "ev", t: "F-0142, confirmed 3 Mar 2026" },
+        { k: "flag", t: "F-0151 says 11 depots, not 12." },
+        { k: "q", t: "Add the 2026 user count?", s: "Open" } ] },
+      { ref: "F-0147", text: "Cut the nightly billing run from 6 hours to 40 minutes.", notes: [
+        { k: "ev", t: "F-0147, confirmed 3 Mar 2026" },
+        { k: "q", t: "Say what the faster run saved?", s: "Open" } ] },
+      { ref: "F-0149", old: "Led a team of engineers working on platform services.", text: "Grew the platform group from 4 to 11 engineers in two years.", suggestion: true, notes: [
+        { k: "ev", t: "F-0149, confirmed 12 Jan 2026" },
+        { k: "flag", t: "Suggested in review round 2. Keep it or reject it." } ] },
+      { ref: "F-0153", text: "Moved 38 services to one release pipeline; releases went from weekly to daily.", notes: [
+        { k: "ev", t: "F-0153, confirmed 3 Mar 2026" } ] },
+    ] },
+    { ref: "R-08", title: "Founder, Lindqvist Tools", dates: "Jun 2023–Present · Duluth, MN", bullets: [
+      { ref: "F-0160", text: "Sell a scheduling add-on to 9 regional carriers.", notes: [
+        { k: "flag", t: "Overlaps Harborlight Systems. The question is on Home." },
+        { k: "ev", t: "F-0160, unsure since 9 Nov 2026" } ] },
+      { ref: "F-0168", text: "Work with clients in four time zones from Duluth.", notes: [
+        { k: "ev", t: "F-0168, confirmed 14 Nov 2026" } ] },
+    ] },
+    { ref: "R-05", title: "Senior Engineer, Quillfeather Labs", dates: "Jan 2016–Feb 2021 · Minneapolis, MN", bullets: [
+      { ref: "F-0121", text: "Wrote the sync engine behind the offline field app; 2,300 crews used it.", notes: [
+        { k: "ev", t: "F-0121, confirmed 21 Feb 2026" } ] },
+      { ref: "F-0118", text: "Halved crash reports in a year by adding release health checks.", notes: [
+        { k: "ev", t: "F-0118, confirmed 21 Feb 2026" },
+        { k: "q", t: "Which year was this?", s: "Open" } ] },
+    ] },
+  ],
+};
+
+/* ---------- Render helpers ---------- */
+function refSpan(ref) { return '<span class="ref">' + ref + "</span>"; }
+function statusWord(s) {
+  if (s === "Failed") return '<span class="red">' + s + "</span>";
+  const owner = ["Unsure", "Open", "New", "Quiet"].includes(s);
+  return '<span class="' + (owner ? "own" : "gr") + '">' + s + "</span>";
+}
+/* One row of the page grid: gutter (reference), main column, notes column.
+   lines: a string or an array of lines; an inline reference goes at the end of the first line. */
+function row(c, o) {
+  const ref = o.ref && c.refs === "gutter" ? refSpan(o.ref) : "";
+  let lines = Array.isArray(o.lines) ? o.lines.slice() : [o.lines || ""];
+  if (o.ref && c.refs === "inline") lines[0] = lines[0] + " " + refSpan(o.ref);
+  const main = lines.length === 1 ? lines[0] : lines.map(l => "<div>" + l + "</div>").join("");
+  const cell = o.wide ? "mn" : "m";
+  const extra = o.mainCls ? " " + o.mainCls : "";
+  return '<div class="r' + (o.cls ? " " + o.cls : "") + '"><div class="g">' + ref + '</div><div class="' + cell + extra + '">' + main + "</div>" +
+    (o.note ? '<div class="n">' + o.note + "</div>" : "") + "</div>";
+}
+function sectionHead(c, text, note) { return row(c, { lines: '<span class="b">' + text + "</span>", note: note, cls: "h" + (note ? " has-label" : "") }); }
+function sec(inner) { return '<div class="sec">' + inner + "</div>"; }
+function title(c, text, sub) {
+  return '<div class="head stack">' + row(c, { lines: '<div class="t">' + text + "</div>" }) + (sub ? row(c, { lines: '<span class="gr">' + sub + "</span>" }) : "") + "</div>";
+}
+function nav(c) {
+  const cur = { home: "Home", record: "Record", job: "Jobs", resume: "Jobs", activity: "Activity" }[c.screen];
+  const items = ["Home", "Record", "Jobs", "Activity"].map(n => '<span class="' + (n === cur ? "b" : "") + '">' + n + "</span>").join("");
+  return row(c, { lines: '<div class="navl">' + items + '<span class="sys">System</span></div>', wide: true, cls: "nav" });
+}
+
+/* A record, drawn as catalogue (stacked fields) or ledger (one row). Field order is fixed:
+   reference, name, dates, extent, status, provenance. */
+function ledgerHead(c) {
+  return row(c, { wide: true, lines: '<div class="lg lg-rec hd"><span class="c c1">Name</span><span class="c">Dates</span><span class="c">Extent</span><span class="c">Status</span><span class="c">Source</span></div>' });
+}
+function recordRow(c, r, opt) {
+  opt = opt || {};
+  if (c.record === "ledger") {
+    const nameCls = opt.sub ? "c c1 sub-cell" : "c c1";
+    const name = (opt.strong ? '<span class="b">' + r.name + "</span>" : r.name) +
+      (c.refs === "inline" ? " " + refSpan(r.ref) : "") +
+      (r.marker ? '<div class="own">' + r.marker + "</div>" : "");
+    return row(c, { ref: c.refs === "gutter" ? r.ref : "", wide: true, cls: opt.cls, lines:
+      '<div class="lg lg-rec"><span class="' + nameCls + '">' + name + '</span><span class="c">' + (r.dates || "") + '</span><span class="c">' + (r.extent || "") +
+      '</span><span class="c">' + statusWord(r.status) + '</span><span class="c gr">' + (r.provShort || "") + "</span></div>" });
+  }
+  const lines = [opt.strong ? '<span class="b">' + r.name + "</span>" : r.name];
+  const de = [r.dates, r.extent].filter(Boolean).join(" · ");
+  lines.push('<span class="tn">' + (de ? de + ' <span class="gr">·</span> ' : "") + statusWord(r.status) + "</span>");
+  if (r.marker) lines.push('<span class="own">' + r.marker + "</span>");
+  lines.push('<span class="gr">' + r.prov + "</span>");
+  return row(c, { ref: r.ref, lines: lines, cls: [opt.cls, opt.parent ? "parent" : ""].filter(Boolean).join(" ") });
+}
+function roleRecord(r) {
+  const n = FACTS.filter(f => f.role === r.ref).length;
+  return { ref: r.ref, name: r.title + ", " + r.org, dates: r.dates, extent: n + (n === 1 ? " fact" : " facts"),
+    status: r.status, prov: r.prov, provShort: r.provShort, marker: r.overlap };
+}
+function factRecord(f) {
+  return { ref: f.ref, name: f.text, dates: f.year, extent: "", status: f.status, prov: f.prov, provShort: f.provShort };
+}
+
+/* ---------- Screens ---------- */
+function focusItem(c, compact) {
+  const q = QUESTIONS[0];
+  const choices = q.choices.map((t, i) => '<span class="pair"><span class="key">' + (i + 1) + '</span> <span class="act">' + t + "</span></span>").join("");
+  const out = [
+    row(c, { lines: '<span class="focus">' + q.text + "</span>", note: '<div><span class="gr">Question ·</span> ' + statusWord("Open") + '</div><div class="gr">' + q.blocks + "</div>" }),
+    row(c, { lines: '<div class="acts">' + choices + "</div>" }),
+  ];
+  if (!compact) out.push(row(c, { lines: '<div class="acts"><span class="act">Snooze</span><span class="act">Undo</span><span class="gr"><span class="nw">1 2 3 to answer</span> · <span class="nw">S to snooze</span> · <span class="nw">Z to undo</span></span></div>' }));
+  return out.join("");
+}
+function digest(c, onlyLast) {
+  const items = onlyLast ? DIGEST.slice(0, 1) : DIGEST;
+  return sec(sectionHead(c, "Since you were here") + items.map(d => row(c, { lines: d.text, note: '<span class="gr">' + d.when + "</span>" })).join(""));
+}
+function homeQueue(c, p) {
+  if (p.empty) return title(c, "Nothing needs you.") + digest(c);
+  const n = 1 + QUEUE_REST.length;
+  const rest = QUEUE_REST.map((it, i) => row(c, { ref: it.ref, cls: i === 0 ? "sub" : "",
+    lines: it.status === "Quiet" ? it.text.replace("No reply in 14 days.", '<span class="own b">No reply in 14 days.</span>') : it.text,
+    note: statusWord(it.status) + ' <span class="gr">· ' + it.blocks + "</span>" })).join("");
+  return title(c, n + " things need you") + '<div class="sec">' + focusItem(c) + rest + "</div>" + digest(c);
+}
+function homeDocument(c, p) {
+  const n = 1 + QUEUE_REST.length;
+  const line = p.empty ? '<span class="gr">Nothing needs you.</span>'
+    : '<span class="gr">' + n + ' things need you ·</span> <span class="act">Open the queue</span>';
+  return '<div class="head">' + row(c, { lines: line, cls: "nav" }) + "</div>" + resumeDoc(c, true);
+}
+function homeGlance(c, p) {
+  const order = ["New", "Writing", "Ready", "Sent", "Quiet"];
+  const counts = order.map(s => ({ s: s, n: JOBS.filter(j => j.status === s).length })).filter(x => x.n);
+  const cnts = '<div class="cnts">' + counts.map(x => '<div class="cnt"><div class="t">' + x.n + "</div><div>" + statusWord(x.s) + "</div></div>").join("") + "</div>";
+  const needs = p.empty ? row(c, { lines: "Nothing needs you." })
+    : focusItem(c, true) + row(c, { lines: '<span class="gr">' + QUEUE_REST.length + ' more ·</span> <span class="act">Open the queue</span>' });
+  const a = ACTIVITY[0];
+  return title(c, "Your search", JOBS.length + " jobs in play") +
+    '<div class="sec">' + row(c, { lines: cnts, wide: true }) + "</div>" +
+    sec(sectionHead(c, "Needs you") + needs) +
+    sec(sectionHead(c, "In progress") + row(c, { ref: "J-023", lines: [a.what, '<span class="gr">' + a.stage + " · " + a.started + " · " + a.usual + "</span>"], note: statusWord(a.status) })) +
+    digest(c, true);
+}
+function recordScreen(c) {
+  const facts = FACTS.length, unsure = FACTS.filter(f => f.status === "Unsure").length + ROLES.filter(r => r.status === "Unsure").length;
+  let out = title(c, "Record", ROLES.length + " roles · " + facts + " facts · " + unsure + " unsure");
+  if (c.record === "ledger") out += '<div class="sec">' + ledgerHead(c) + "</div>";
+  ROLES.slice(0, 2).forEach((r, i) => {
+    const fs = FACTS.filter(f => f.role === r.ref);
+    out += '<div class="sec"' + (i === 0 && c.record === "ledger" ? ' style="margin-top:var(--row)"' : "") + ">" +
+      recordRow(c, roleRecord(r), { strong: true, parent: true, cls: "h" }) +
+      fs.map(f => recordRow(c, factRecord(f), { sub: true })).join("") + "</div>";
+  });
+  out += sec(sectionHead(c, "Earlier roles") + ROLES.slice(2).map(r => recordRow(c, roleRecord(r), { strong: true })).join(""));
+  return out;
+}
+function jobScreen(c) {
+  const J = JOB;
+  const rec = { ref: J.ref, name: J.name, dates: c.record === "ledger" ? J.datesShort : J.dates, extent: J.extent + " · " + J.score, status: J.status, prov: J.prov, provShort: J.provShort };
+  const answered = J.reqs.filter(r => r.ev).length;
+  const reqs = J.reqs.map(r => row(c, {
+    lines: [r.text, '<span class="gr">' + r.kind + "</span>"],
+    note: r.ev ? '<div>' + refSpan(r.ev) + ' <span class="gr">' + r.evText + "</span></div>" : "<div>" + statusWord("Open") + ' <span class="gr">·</span> <span class="own">' + r.open + "</span></div>" })).join("");
+  return title(c, J.title) +
+    '<div class="sec">' + (c.record === "ledger" ? ledgerHead(c) : "") + recordRow(c, rec, { strong: true }) + "</div>" +
+    sec(sectionHead(c, "Posting map", '<span class="gr">Strongest evidence</span>') +
+      row(c, { lines: '<span class="tn">' + answered + " of " + J.reqs.length + " requirements answered · " + (J.reqs.length - answered) + " open</span>" }) + reqs) +
+    sec(sectionHead(c, "Flags") + J.flags.map(f => row(c, { lines: f })).join("")) +
+    sec(row(c, { lines: '<div class="acts"><span class="act b">Write the resume</span><span class="act">Close this job</span></div>' }));
+}
+function noteHtml(n) {
+  if (n.k === "ev") return '<div class="gr tn">' + n.t + "</div>";
+  if (n.k === "flag") return '<div class="own">' + n.t + "</div>";
+  const i = n.t.lastIndexOf(" ");
+  const head = i > 0 ? n.t.slice(0, i + 1) : "", tail = i > 0 ? n.t.slice(i + 1) : n.t;
+  return '<div><span class="own">' + head + '</span><span class="nw"><span class="own">' + tail + '</span> <span class="gr">·</span> ' + statusWord(n.s) + "</span></div>";
+}
+function resumeDoc(c, master) {
+  let out = "";
+  if (master) {
+    out += '<div class="sec" style="margin-top:var(--sec)">' + row(c, { lines: '<span class="gr">Master resume · revised 14 Nov 2026 · from 13 facts</span>' }) + "</div>";
+  }
+  out += '<div class="head stack">' + row(c, { lines: '<div class="t">' + PERSON.name + "</div>" }) +
+    row(c, { lines: '<span class="gr">' + PERSON.place + " · " + PERSON.email + "</span>" }) +
+    row(c, { lines: RESUME.summary }) + "</div>";
+  const nn = c.notes;
+  let body = "";
+  RESUME.roles.forEach((r, ri) => {
+    body += row(c, { ref: r.ref, cls: ri ? "sub" : "", lines: ['<span class="b">' + r.title + "</span>", '<span class="gr tn">' + r.dates + "</span>"] });
+    for (const b of r.bullets) {
+      const text = b.suggestion ? '<span class="old">' + b.old + "</span> " + b.text : b.text;
+      const lines = [text];
+      if (b.suggestion) lines.push('<div class="acts"><span class="act b">Keep</span><span class="act">Reject</span></div>');
+      const notes = b.notes.slice(0, nn);
+      body += row(c, { ref: b.ref, mainCls: "bul", lines: lines, note: notes.length ? '<div class="notes">' + notes.map(noteHtml).join("") + "</div>" : "" });
+    }
+  });
+  out += sec(sectionHead(c, "Experience", nn ? '<span class="gr">Notes</span>' : "") + body);
+  return out;
+}
+function resumeScreen(c) {
+  const rec = { ref: RESUME.ref, name: RESUME.name, dates: RESUME.dates, extent: RESUME.extent, status: RESUME.status, prov: RESUME.prov, provShort: RESUME.provShort };
+  const changes = RESUME.changes.map(ch => row(c, { lines: '<span class="tn"><span class="b">' + ch.rev + '</span> <span class="gr">·</span> ' + ch.date + ' <span class="gr">·</span> <span class="gr">' + ch.text + "</span></span>" })).join("");
+  return '<div class="head stack">' + (c.record === "ledger" ? ledgerHead(c) : "") + recordRow(c, rec, { strong: true }) + "</div>" +
+    sec(sectionHead(c, "Revisions") + changes) + resumeDoc(c, false);
+}
+function activityScreen(c) {
+  const hd = row(c, { wide: true, lines: '<div class="lg lg-act hd"><span class="c c1">What</span><span class="c">Stage</span><span class="c">Started</span><span class="c">Usually</span><span class="c">Status</span></div>' });
+  const rows = ACTIVITY.map(a => {
+    const what = a.what;
+    const full = a.reason ? '<span class="c c-full"><span class="gr">' + a.reason + '</span> <span class="act b">Try again</span></span>' : "";
+    return row(c, { wide: true, lines: '<div class="lg lg-act"><span class="c c1">' + what + '</span><span class="c">' + a.stage + '</span><span class="c">' + a.started +
+      '</span><span class="c gr">' + a.usual + '</span><span class="c">' + (a.status === "Running" ? '<span class="own">Running</span>' : statusWord(a.status.split(",")[0]) + (a.status.includes(",") ? '<span class="gr">,' + a.status.split(",")[1] + "</span>" : "")) + "</span>" + full + "</div>" });
+  }).join("");
+  const dl = '<span class="b">Since you were here</span> <span class="gr">·</span> ' + DIGEST.map(d => d.text.split(".")[0]).join(' <span class="gr">·</span> ');
+  return title(c, "Activity") + '<div class="sec">' + row(c, { lines: dl, wide: true }) + "</div>" + sec(hd.replace('class="r"', 'class="r h"') + rows);
+}
+
+/* render(config, preview) → the canvas content. Pure: same input, same output. */
+function render(c, p) {
+  p = p || {};
+  const titlePx = Math.round(c.textSize * c.ratio * 100) / 100;
+  const cls = ["app", "paper-" + c.paper, "greys-" + c.greys, "accent-" + c.accent, "refs-" + c.refs, "rec-" + c.record, "scr-" + c.screen].join(" ");
+  /* DESIGN.md gives sizes in px; Exact writes them in rem (px ÷ 16) so the browser text size still applies. Rules stay in px. */
+  const rem = px => Math.round(px / 16 * 10000) / 10000 + "rem";
+  const style = "--ts:" + rem(c.textSize) + ";--title:" + rem(titlePx) + ";--strong:" + c.strong + ";--lead:" + c.leading + ";--measure:" + c.measure + "rem;--mw:" + c.margin +
+    "rem;--row:" + rem(c.rowGap) + ";--sec:" + rem(c.sectionGap) + ";--rule:" + c.ruleWeight + "px";
+  let body;
+  if (c.screen === "home") body = c.home === "document" ? homeDocument(c, p) : c.home === "glance" ? homeGlance(c, p) : homeQueue(c, p);
+  else if (c.screen === "record") body = recordScreen(c);
+  else if (c.screen === "job") body = jobScreen(c);
+  else if (c.screen === "resume") body = resumeScreen(c);
+  else body = activityScreen(c);
+  return '<div class="' + cls + '" style="' + style + '">' + nav(c) + body + "</div>";
+}
+
+/* Collect the font sizes of every text node (and generated text) in the canvas. */
+function canvasFontSizes(root) {
+  const set = new Set();
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode())) { if (n.nodeValue.trim()) set.add(getComputedStyle(n.parentElement).fontSize); }
+  root.querySelectorAll("*").forEach(el => {
+    for (const ps of ["::before", "::after"]) {
+      const cs = getComputedStyle(el, ps);
+      if (cs.content && cs.content !== "none" && cs.content !== "normal") set.add(cs.fontSize);
+    }
+  });
+  return Array.from(set).sort((a, b) => parseFloat(a) - parseFloat(b));
+}
+
+/* ============ Lab UI ============ */
+function boot() {
+  const $ = id => document.getElementById(id);
+  const STORE = "studio-look-lab.saved.v1";
+  const state = { config: defaults("home"), locks: {}, scheme: "match", width: "wide", empty: false, history: [] };
+
+  function load() { try { const v = JSON.parse(localStorage.getItem(STORE) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+  function store(list) { try { localStorage.setItem(STORE, JSON.stringify(list)); } catch (e) { /* storage blocked: the rail lives for this visit only */ } }
+  let saved = load();
+
+  function newSeed() {
+    let s = 0;
+    try { const a = new Uint32Array(1); crypto.getRandomValues(a); s = a[0] % 2147483647; } catch (e) { s = Date.now() % 2147483647; }
+    return s || 1;
+  }
+
+  /* Tabs */
+  const tabs = $("tabs");
+  SCREENS.forEach(s => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tab"; b.id = "tab-" + s; b.textContent = SCREEN_LABEL[s];
+    b.addEventListener("click", () => { apply(Object.assign({}, state.config, { screen: s }), false); });
+    tabs.appendChild(b);
+  });
+
+  /* Controls */
+  const ctls = $("ctls");
+  const lockSvg = '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="10" height="7" rx="1"/><path class="shut" d="M5 7V5a3 3 0 0 1 6 0v2"/><path class="open" d="M5 7V5a3 3 0 0 1 5.8-1"/></svg>';
+  for (const k of KEYS) {
+    const wrap = document.createElement("div");
+    wrap.className = "ctl"; wrap.id = "row-" + k.key;
+    if (k.kind === "num") {
+      wrap.innerHTML = '<div class="ctl-top"><label for="c-' + k.key + '">' + k.label + '<span class="ctl-key">' + k.key + "</span></label>" +
+        '<output id="v-' + k.key + '" for="c-' + k.key + '"></output>' +
+        '<button type="button" class="lock" id="l-' + k.key + '" aria-pressed="false" aria-label="Lock ' + k.key + '" title="Lock: a new look keeps this value">' + lockSvg + "</button></div>" +
+        '<input type="range" id="c-' + k.key + '" min="' + k.min + '" max="' + k.max + '" step="' + k.step + '">';
+      wrap.querySelector("input").addEventListener("input", e => {
+        const v = snap(k, Number(e.target.value));
+        apply(Object.assign({}, state.config, { [k.key]: v }), false, true);
+      });
+    } else {
+      const radios = k.options.map(o => '<input type="radio" name="c-' + k.key + '" id="c-' + k.key + "-" + o + '" value="' + o + '"><label for="c-' + k.key + "-" + o + '">' + o + "</label>").join("");
+      wrap.innerHTML = '<div class="ctl-top"><span class="lbl" id="lbl-' + k.key + '">' + k.label + '<span class="ctl-key">' + k.key + "</span></span><span></span>" +
+        '<button type="button" class="lock" id="l-' + k.key + '" aria-pressed="false" aria-label="Lock ' + k.key + '" title="Lock: a new look keeps this value">' + lockSvg + "</button></div>" +
+        '<div class="seg" role="radiogroup" aria-labelledby="lbl-' + k.key + '">' + radios + "</div>";
+      wrap.querySelectorAll("input").forEach(inp => inp.addEventListener("change", () => {
+        const v = k.options.find(o => String(o) === inp.value);
+        apply(Object.assign({}, state.config, { [k.key]: v }), false, true);
+      }));
+    }
+    wrap.querySelector(".lock").addEventListener("click", e => {
+      state.locks[k.key] = !state.locks[k.key];
+      e.currentTarget.setAttribute("aria-pressed", String(!!state.locks[k.key]));
+    });
+    ctls.appendChild(wrap);
+  }
+
+  function syncControls() {
+    const c = state.config;
+    for (const k of KEYS) {
+      if (k.kind === "num") {
+        $("c-" + k.key).value = c[k.key];
+        $("v-" + k.key).textContent = (k.key === "ratio" ? c[k.key].toFixed(2) : String(c[k.key])) + (k.unit && k.unit !== "×" ? " " + k.unit : "");
+      } else {
+        const r = $("c-" + k.key + "-" + c[k.key]); if (r) r.checked = true;
+      }
+    }
+    if (document.activeElement !== $("seed")) $("seed").value = c.seed;
+    SCREENS.forEach(s => $("tab-" + s).setAttribute("aria-pressed", String(s === c.screen)));
+    $("p-scheme-" + state.scheme).checked = true;
+    $("p-width-" + state.width).checked = true;
+    $("p-empty").checked = state.empty;
+    $("prevLook").disabled = state.history.length === 0;
+  }
+
+  const stage = $("stage");
+  function draw() {
+    stage.dataset.scheme = state.scheme === "match" ? "" : state.scheme;
+    if (state.scheme === "match") stage.removeAttribute("data-scheme");
+    stage.classList.toggle("phone", state.width === "phone");
+    stage.innerHTML = render(state.config, { empty: state.empty });
+    const sizes = canvasFontSizes(stage);
+    const ok = sizes.length <= 2;
+    const app = stage.firstElementChild;
+    const wider = app && app.scrollWidth > stage.clientWidth + 1;
+    $("sizes").textContent = (wider ? "Wider than this window: scroll the canvas sideways. " : "") + "Type sizes on this screen: " + sizes.join(" and ") + (ok ? "" : " (more than two, a defect)");
+    $("sizes").style.color = ok ? "" : "var(--lab-red)";
+    if (!ok) console.error("Canvas has more than two type sizes:", sizes);
+  }
+  function writeHash() {
+    const parts = [state.config.screen];
+    if (state.scheme !== "match") parts.push(state.scheme);
+    if (state.width === "phone") parts.push("phone");
+    if (state.empty) parts.push("empty");
+    try { history.replaceState(null, "", "#" + parts.join("-")); } catch (e) { /* the host may refuse; the page still works */ }
+  }
+  function apply(next, pushHistory, fromControl) {
+    if (pushHistory) { state.history.push(state.config); if (state.history.length > 50) state.history.shift(); }
+    state.config = next;
+    syncControls(); draw(); writeHash();
+  }
+  function readHash() {
+    const parts = (location.hash || "").slice(1).toLowerCase().split("-").filter(Boolean);
+    const screen = parts.find(p => SCREENS.includes(p));
+    state.scheme = parts.includes("dark") ? "dark" : parts.includes("light") ? "light" : "match";
+    state.width = parts.includes("phone") ? "phone" : "wide";
+    state.empty = parts.includes("empty");
+    if (screen) state.config = Object.assign({}, state.config, { screen: screen });
+  }
+
+  function newLook() { apply(variation(state.config, newSeed(), state.locks), true); }
+  stage.addEventListener("click", newLook);
+  stage.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); newLook(); } });
+  $("newLook").addEventListener("click", newLook);
+  $("prevLook").addEventListener("click", () => {
+    const prev = state.history.pop();
+    if (prev) apply(Object.assign({}, prev, { screen: state.config.screen }), false);
+  });
+  $("seed").addEventListener("change", e => {
+    const s = Math.trunc(Number(e.target.value));
+    if (!Number.isFinite(s)) { e.target.value = state.config.seed; return; }
+    apply(variation(state.config, s, state.locks), true);
+  });
+  $("reset").addEventListener("click", () => apply(defaults(state.config.screen), true));
+
+  document.querySelectorAll('input[name="scheme"]').forEach(i => i.addEventListener("change", () => { state.scheme = i.value; draw(); writeHash(); }));
+  document.querySelectorAll('input[name="width"]').forEach(i => i.addEventListener("change", () => { state.width = i.value; draw(); writeHash(); }));
+  $("p-empty").addEventListener("change", e => { state.empty = e.target.checked; draw(); writeHash(); });
+
+  /* Save */
+  function summary(c) {
+    const t = Math.round(c.textSize * c.ratio * 100) / 100;
+    return c.textSize + "/" + t + " px · " + c.strong + " · " + c.paper + " · " + c.record + " · " + c.refs + (c.accent !== "none" ? " · " + c.accent : "") + " · seed " + c.seed;
+  }
+  function drawRail() {
+    const rail = $("rail");
+    rail.innerHTML = "";
+    $("railEmpty").hidden = saved.length > 0;
+    saved.forEach((c, i) => {
+      const li = document.createElement("li");
+      const a = document.createElement("button");
+      a.type = "button"; a.className = "apply"; a.id = "saved-" + i;
+      a.innerHTML = "Look " + (i + 1) + "<small>" + summary(c) + "</small>";
+      a.addEventListener("click", () => {
+        const res = sanitize(c, state.config);
+        apply(Object.assign(res.config, { screen: state.config.screen }), true);
+        $("savedJson").value = JSON.stringify(ordered(state.config), null, 2);
+      });
+      const rm = document.createElement("button");
+      rm.type = "button"; rm.className = "remove"; rm.id = "remove-" + i; rm.textContent = "Remove";
+      rm.setAttribute("aria-label", "Remove look " + (i + 1));
+      rm.addEventListener("click", () => { saved.splice(i, 1); store(saved); drawRail(); });
+      li.appendChild(a); li.appendChild(rm); rail.appendChild(li);
+    });
+  }
+  $("save").addEventListener("click", () => {
+    const json = JSON.stringify(ordered(state.config), null, 2);
+    const box = $("savedJson");
+    box.value = json;
+    const last = saved[saved.length - 1];
+    if (!last || JSON.stringify(ordered(last)) !== JSON.stringify(ordered(state.config))) { saved.push(ordered(state.config)); store(saved); drawRail(); }
+    const st = $("saveStatus");
+    st.className = "status-line";
+    const fallback = () => { box.focus(); box.select(); st.textContent = "Copy was blocked. The JSON is selected below: press Cmd+C or Ctrl+C."; };
+    try {
+      navigator.clipboard.writeText(json).then(() => { st.textContent = "Saved and copied. Send me the JSON."; }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  /* Load */
+  $("loadBtn").addEventListener("click", () => {
+    const st = $("loadStatus");
+    let obj;
+    try { obj = JSON.parse($("loadJson").value); }
+    catch (e) { st.className = "status-line bad"; st.textContent = "This is not valid JSON. Paste the whole object, from { to }."; return; }
+    try {
+      const res = sanitize(obj, state.config);
+      apply(res.config, true);
+      st.className = "status-line";
+      st.textContent = "Applied." + (res.notes.length ? " " + res.notes.join(" ") : "");
+    } catch (e) { st.className = "status-line bad"; st.textContent = e.message; }
+  });
+
+  window.addEventListener("hashchange", () => { readHash(); syncControls(); draw(); });
+  readHash();
+  syncControls();
+  drawRail();
+  draw();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => draw());
+  window.__lab = { render, variation, sanitize, defaults, ordered, KEYS, SCREENS, canvasFontSizes, state, apply, draw };
+}
+if (typeof document !== "undefined") boot();
+</script>

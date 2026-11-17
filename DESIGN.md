@@ -63,8 +63,17 @@ A look is one JSON object. The lab draws every screen from it, and the app reads
 | `seed` | The number the variation was drawn from | | any integer |
 
 Colours, light then dark: ink `#111111` / `#ededed`; paper white `#ffffff` / `#111111`, warm `#fbf9f4` /
-`#141311`, cool `#f7f9fb` / `#0f1215`; grey `#5c5c5c` / `#a6a6a6`; line `#d9d9d9` / `#333333`. With one
-grey, rules use `grey` at 35% opacity. Grey text on paper must pass WCAG AA (4.5 to 1).
+`#141311`, cool `#f7f9fb` / `#0f1215`; grey `#5c5c5c` / `#a6a6a6`; line `#d9d9d9` / `#333333`; orange `#bf5700` / `#e8813a`. With one
+grey, rules use `grey` at 35% opacity. Grey text on paper must pass WCAG AA (4.5 to 1). Orange on warm
+paper is just under that (about 4.4 to 1), so orange text needs the heavy weight there.
+
+Found when the lab drew these values:
+
+- Two rules never touch. A section head has a rule above it; the first record under it has none.
+- A record in `catalogue` style takes three lines, not six: name; then dates, extent and status on one
+  line; then provenance. The field order does not change.
+- On a phone the gutter takes about 70px of 390px. `refs` set to `inline` suits a phone better.
+- With `notes` at 0 the notes column is not drawn, so the main column keeps the page.
 
 ## 4. Named patterns
 
