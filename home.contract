@@ -47,7 +47,7 @@ members App
   derive onHome = top(nav).name == "home"
   resource homeList = loadQueue() when onHome as shape Queue else empty()
   // An answer changes the record: the activity list is read again, so the app knows when resumes will be written again.
-  mutation answerSent as shape Sent queue refreshes homeList, bank, activity then afterAnswer
+  mutation answerSent as shape Sent queue refreshes homeList, tree, activity then afterAnswer
   mutation snoozeSent as shape Sent queue refreshes homeList then afterSnooze
   // The item in focus, by key ("" for the first). A choice picked that needs a value, and that value.
   state focusKey = ""

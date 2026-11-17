@@ -5,13 +5,14 @@
 // source is read, and once when it starts. A LinkedIn export's positions are kept as data when it is read (lib/linkedin.ts).
 import { writeFileSync } from 'node:fs';
 import { applyExtraction, associate, bankSignature, db, type SourceRow } from './lib/db.ts';
+import { syncProjects } from './lib/projects.ts';
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
 import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
-import { lastAnswerAt, rewriteDue } from './lib/raised.ts';
+import { holdSince, rewriteDue } from './lib/raised.ts';
 import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
@@ -134,9 +135,10 @@ if (process.env.EGG_AUTO_RESUME !== 'off') void (async () => {
     await Bun.sleep(5000);
     const sig = bankSignature();
     if (sig !== seen) { seen = sig; since = Date.now(); continue; }
-    // Also held back for a while after the person's last answer to a raised question, so one sitting of answers
-    // (each can change a role) causes one rewrite, not one for each answer (ANSWER_HOLD_MS in lib/raised.ts).
-    if (!rewriteDue(Date.now(), since, QUIET, lastAnswerAt())) continue;
+    // Also held back for a while after the person's last answer to a raised question or last hand edit to the record,
+    // so one sitting of answers or edits (each can change a role) causes one rewrite, not one for each
+    // (ANSWER_HOLD_MS and holdSince in lib/raised.ts).
+    if (!rewriteDue(Date.now(), since, QUIET, holdSince())) continue;
     const n = db.query("UPDATE jobs SET resume_status = 'queued', resume_note = '' WHERE outcome = '' AND status = 'done' AND resume != '' AND edited = 0 AND resume_status IN ('', 'done', 'failed') AND bank_sig != ?").run(sig).changes;
     if (n) console.log(`the bank changed: ${n} unsent resume${n === 1 ? '' : 's'} queued to be written again`);
   }
@@ -191,8 +193,9 @@ for (;;) {
     const n = applyExtraction(source.id, found, Date.now());
     // A LinkedIn export's positions are also kept as rows, to compare with the roles (a text with none changes nothing).
     if (source.kind === 'text') { const kept = storePositions(source.body, source.id, Date.now()); if (kept) console.log(`  ${kept} LinkedIn positions kept`); }
-    // File a repository's project under the employer whose organisation or name it carries.
-    if (source.kind === 'github') associate((await hub()).login);
+    // File a repository's project under the employer whose organisation or name it carries, and give each
+    // repository its project in the tree.
+    if (source.kind === 'github') { associate((await hub()).login); syncProjects(); }
     db.query("UPDATE sources SET status = 'done', note = ? WHERE id = ?").run(n === 0 ? 'Nothing new was found in it.' : '', source.id);
     // New facts make the profile out of date: write it again once the queue is empty.
     if (n > 0) db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");

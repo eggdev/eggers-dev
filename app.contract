@@ -11,11 +11,11 @@
 // server.ts keeps it all; worker.ts does the slow reading and writing. Nothing is polled while nothing runs: each
 // screen loads its data when it opens and after the owner acts, and while work waits or runs the app asks only for
 // the activity list, every 10 seconds, while the tab is shown (activity.contract).
-use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight from "./look.contract"
+use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight, lookBeside, experienceLook from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
 use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
-use Bank, Overlap, Profile, Direction, Person, ExperienceScreen, RoleScreen, FactScreen, EditFactScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, roleName, factCount, plainLoadError from "./record.contract"
+use Tree, FactFull, Made, ExpState, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
@@ -24,11 +24,18 @@ font "Geist" = "assets/fonts/Geist.ttf"
 routes nav
   tab home "/"
   // Record: Experience at its root; Profile and Sources open over it from Record's second line, each with its own
-  // screens over it in turn.
+  // screens over it in turn. Experience is one screen for every route below: read as Roles (its root, and an item of
+  // the tree open), Projects or Facts, with an item open or not (record.contract's ExperienceScreen).
   tab bank "/record"
     role "/record/role/:id"
+    day "/record/role/:id/day"
+    project "/record/project/:id"
     fact "/record/fact/:id"
-    edit "/record/fact/:id/edit"
+    asProjects "/record/projects"
+      pProject "/record/projects/:id"
+      pFact "/record/projects/fact/:id"
+    asFacts "/record/facts"
+      fFact "/record/facts/:id"
     profile "/profile"
       direction "/profile/direction"
       details "/profile/details"
@@ -181,6 +188,14 @@ fn companyCount(n: number): string = `${n} ${n == 1 ? "company" : "companies"}`
 fn loadError(code: string): string = code == "offline" ? "Can’t reach the server. Check that it’s running, then try again." : "The server couldn’t answer. Try again."
 // A failed read of the machine: the data module's own sentence, or the usual words for a lost connection.
 fn failText(code: string): string = code.includes(" ") ? code : loadError(code)
+// The Experience screen's routes: the lists of its three views, and an item open in each.
+fn isExperience(name: string): bool = name == "bank" or name == "asProjects" or name == "asFacts" or isItem(name)
+fn isItem(name: string): bool = name == "role" or name == "day" or name == "project" or name == "fact" or name == "pProject" or name == "pFact" or name == "fFact"
+fn viewOfRoute(name: string): string = name == "asProjects" or name == "pProject" or name == "pFact" ? "projects" : name == "asFacts" or name == "fFact" ? "facts" : "roles"
+fn listOfView(view: string): string = view == "projects" ? "asProjects" : view == "facts" ? "asFacts" : "bank"
+fn openOfRoute(name: string, id: string): string = name == "role" ? `role:${id}` : name == "day" ? `day:${id}` : name == "project" or name == "pProject" ? `project:${id}` : name == "fact" or name == "pFact" or name == "fFact" ? `fact:${id}` : ""
+// An address that opens an item of the tree, from a link.
+fn isItemUrl(url: string): bool = url.startsWith("/record/role/") or url.startsWith("/record/project/") or url.startsWith("/record/fact/") or url.startsWith("/record/projects/") or url.startsWith("/record/facts/")
 fn plural(n: number, word: string): string = `${n} ${word}${n == 1 ? "" : "s"}`
 // How long ago, in words, from the ticked time; "" when unknown.
 fn ago(at: number, now: number): string = at <= 0 ? "" : now - at < 60000 ? "less than a minute ago" : now - at < 3600000 ? `${plural(floor((now - at) / 60000), "minute")} ago` : now - at < 86400000 ? `${plural(floor((now - at) / 3600000), "hour")} ago` : `${plural(floor((now - at) / 86400000), "day")} ago`
@@ -226,8 +241,21 @@ component App
   state lastJobAct = ""
   state actedLead = ""
   state lastLeadAct = ""
-  state actedFact = ""
-  state lastFactAct = ""
+  // The Experience screen (record.contract's ExpState says what each is).
+  state adding = ""
+  state editing = ""
+  state deleting = ""
+  state just = ""
+  state justWord = "Just added"
+  // The last role line was refused for saying "at" twice: the add-role form asks for the title and employer apart.
+  state roleSplit = false
+  state shownAll: string[] = []
+  state factSort = "ref"
+  state factDesc = false
+  state projectsFilter = "all"
+  state changeOn = ""
+  state lastChange = ""
+  state leaveTo = ""
   state actedSource = ""
   state lastSourceAct = ""
   // The last thing tried on the Jobs list, in Talk and on the watchlist: an error shows only for that, and is put away when the person moves on.
@@ -245,10 +273,14 @@ component App
   // Each screen's data is asked for while that screen shows, and again each time it opens; a screen not shown asks
   // nothing and keeps what it last showed. Nothing is asked on a timer (activity.contract says when work is).
   derive topName = top(nav).name
-  derive bankShown = topName == "bank" or topName == "role" or topName == "fact" or topName == "edit"
   derive sourcesShown = topName == "sources" or topName == "source"
   derive talkShown = topName == "talk" or topName == "questions"
-  resource bank = loadBank() when bankShown as shape Bank else empty()
+  // The record as one tree, while Experience is shown; the open fact whole (its story and evidence), while one is open.
+  derive onExperience = nav.tab == "bank" and isExperience(topName)
+  resource tree = loadTree() when onExperience as shape Tree else empty()
+  derive openKey = onExperience ? openOfRoute(topName, top(nav).params.id) : ""
+  derive openFactId = keyKind(openKey) == "fact" ? keyId(openKey) : ""
+  resource factFull = loadFact(openFactId) when openFactId != "" as shape FactFull else empty()
   resource lib = loadSources() when sourcesShown as shape SourceList else empty()
   resource inbox = loadInbox() when topName == "add" as shape Inbox else empty()
   resource profile = loadProfile() when topName == "profile" as shape Profile else empty()
@@ -274,8 +306,7 @@ component App
   derive inRecord = nav.tab == "bank"
   derive inSystem = nav.tab == "publicPage"
   derive recordAt = stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
-  // The open questions about two roles that both say Present, read while Experience or a role is shown.
-  derive onExperience = top(nav).name == "bank" or top(nav).name == "role"
+  // The open questions about two roles that both say Present, read while Experience is shown.
   resource overlaps = loadOverlaps() when onExperience as shape Overlap[] else empty()
   // Slow work started here is in the activity list at once: each write that asks for work reads the list again.
   mutation asked as shape Reply refreshes profile, activity
@@ -286,9 +317,9 @@ component App
   mutation talkCleared as shape Reply refreshes talk
   // A change to the record can make the studio write unsent resumes again by itself a few minutes later: the
   // activity list is read once more, so the app knows when (activity.contract, dueIn).
-  mutation savedFact as shape Reply refreshes bank, profile, activity then afterSaveFact
-  mutation removedFact as shape Reply refreshes bank, profile, activity then afterRemoveFact
-  mutation roleSaved as shape Reply refreshes bank, overlaps, activity then afterRoleSave
+  // A role, project or fact added by hand; one edited, moved or deleted.
+  mutation made as shape Made refreshes tree, profile, activity then afterMade
+  mutation changed as shape Made refreshes tree, factFull, overlaps, profile, activity then afterChanged
   mutation added as shape Reply refreshes lib, inbox, hub, activity then afterAdd
   mutation reread as shape Reply refreshes lib, activity
   mutation jobAdded as shape Reply refreshes jobs, activity then afterJobAdd
@@ -306,8 +337,7 @@ component App
   mutation companyAdded as shape Reply refreshes companies then afterCompany
   mutation companyRemoved as shape Reply refreshes companies, leads
   mutation checkAsked as shape Reply refreshes leads, activity
-  mutation removedSource as shape Reply refreshes lib, bank, profile, activity then afterRemoveSource
-  derive selectedFact = match stack(nav).filter(e => e.name == "fact").at(-1) { case some(e) => e.params.id, case none => "" }
+  mutation removedSource as shape Reply refreshes lib, tree, profile, activity then afterRemoveSource
   derive selectedJob = match stack(nav).filter(e => e.name == "job" or e.name == "resume" or e.name == "editResume").at(-1) { case some(e) => e.params.id, case none => "" }
   derive jobsError = match failure(jobs) { case some(f) => plainLoadError(f.code), case none => "" }
   derive activityError = match failure(activity) { case some(f) => plainLoadError(f.code), case none => "" }
@@ -357,11 +387,14 @@ component App
   derive lastTalk = match talk.messages.at(-1) { case some(m) => m.id, case none => "" }
   derive personError = pending(personSaved) ? "" : match personSaved { case some(r) => r.error, case none => "" }
   derive askError = pending(asked) ? "" : match asked { case some(r) => r.error, case none => "" }
-  derive bankError = match failure(bank) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive treeError = match failure(tree) { case some(f) => plainLoadError(f.code), case none => "" }
   derive libError = match failure(lib) { case some(f) => plainLoadError(f.code), case none => "" }
-  derive removeFactError = pending(removedFact) ? "" : match removedFact { case some(r) => r.error, case none => "" }
-  derive roleError = pending(roleSaved) ? "" : match roleSaved { case some(r) => r.error, case none => "" }
-  derive saveFactError = pending(savedFact) ? "" : match savedFact { case some(r) => r.error, case none => "" }
+  derive madeError = pending(made) ? "" : match made { case some(r) => r.error, case none => "" }
+  derive madeKey = match made { case some(r) => (r.ok ? `${r.kind}:${r.id}` : ""), case none => "" }
+  derive changeError = pending(changed) ? "" : match changed { case some(r) => r.error, case none => "" }
+  derive changeOk = match changed { case some(r) => r.ok, case none => false }
+  derive expView = viewOfRoute(topName)
+  derive expState = ExpState(view=expView, open=openKey, just=just, justWord=justWord, q=bankQuery, adding=adding, editing=editing, deleting=deleting, shownAll=shownAll, madeError=madeError, madeSplit=roleSplit, changeError=changeError, changeOn=changeOn, busy=(pending(made) or pending(changed)), wide=wide, beside=(viewport.width >= lookBeside()), projectsOf=projectsFilter, sortKey=factSort, sortDesc=factDesc)
   derive addError = match added { case some(r) => r.error, case none => "" }
   derive rereadError = pending(reread) ? "" : match reread { case some(r) => r.error, case none => "" }
   derive removeSourceError = pending(removedSource) ? "" : match removedSource { case some(r) => r.error, case none => "" }
@@ -448,7 +481,7 @@ component App
 
   // Loads the shown screen again (Try again, a return to the tab): a resource whose screen is not shown asks nothing.
   action pull
-    refresh bank
+    refresh tree
     refresh lib
     refresh profile
     refresh jobs
@@ -489,9 +522,13 @@ component App
   // the one it was opened from; a fact or source opened from another of its kind takes its place.
   action follow(url: string)
     rowTried = false
+    just = ""
+    adding = ""
+    editing = ""
+    deleting = ""
     if url != "/"
       sendHeld()
-    nav = (top(nav).name == "fact" and url.startsWith("/record/fact/") and not url.endsWith("/edit")) or (top(nav).name == "source" and url.startsWith("/source/")) ? replace(nav, url) : go(nav, url)
+    nav = (isItem(top(nav).name) and isItemUrl(url)) or (top(nav).name == "source" and url.startsWith("/source/")) ? replace(nav, url) : go(nav, url)
   // The resume's page goes back to its job: the page under it, or (after a reload or a link straight to the resume)
   // the job's page in its place.
   action backToJob(id: string)
@@ -782,31 +819,112 @@ component App
       nav = back(nav)
   action writeProfile
     send asked = askProfile()
-  action openEdit
-    nav = push(nav, path("edit", selectedFact))
-  action saveFact(id: string, text: string, detail: string, metric: string, roleId: string, kind: string)
-    if text.trim() != "" and not pending(savedFact)
-      actedFact = id
-      lastFactAct = "save"
-      send savedFact = saveFact(id, text.trim(), detail.trim(), metric.trim(), roleId, kind)
-  // The sheet closes only on an ok reply; a refusal keeps it open, saying why.
-  action afterSaveFact
-    if saveFactError == "" and top(nav).name == "edit"
-      nav = back(nav)
-  action saveRole(id: string, standing: string, reach: string, partOf: string)
-    send roleSaved = saveRole(id, standing, reach, partOf)
-  action afterRoleSave
-    if roleError == "" and top(nav).name == "role"
-      nav = back(nav)
-  action removeFact
-    actedFact = selectedFact
-    lastFactAct = "remove"
-    send removedFact = removeFact(selectedFact)
-  action afterRemoveFact
-    if removeFactError == "" and top(nav).name == "fact"
-      nav = back(nav)
-  action askRemoveFact
-    showModal("remove-fact")
+  // ---------- Experience ----------
+  // An item opens over the list it was opened from (Back closes it); another opened while one is open takes its place.
+  action openItem(url: string)
+    nav = isItem(top(nav).name) ? replace(nav, url) : go(nav, url)
+  // Close goes back to the list when the list is under the item, else puts the view's list in its place.
+  action closeItem
+    just = ""
+    editing = ""
+    deleting = ""
+    adding = ""
+    let under = match stack(nav).at(-2) { case some(e) => e.name == listOfView(expView), case none => false }
+    nav = under ? back(nav) : replace(nav, viewHref(expView))
+  // Read as Roles, Projects or Facts: the view's own list, over Experience's root.
+  action setView(v: string)
+    just = ""
+    adding = ""
+    editing = ""
+    deleting = ""
+    nav = v == "roles" ? select(select(nav, "bank"), "bank") : push(select(select(nav, "bank"), "bank"), viewHref(v))
+  action filterProjects(v: string)
+    just = ""
+    projectsFilter = v
+  action sortFacts(k: string)
+    just = ""
+    factDesc = factSort == k ? not factDesc : false
+    factSort = k
+  action showAll(group: string)
+    just = ""
+    shownAll = shownAll.includes(group) ? shownAll.filter(g => g != group) : shownAll.concat([group])
+  action openAddForm(ctx: string)
+    just = ""
+    editing = ""
+    deleting = ""
+    adding = ctx
+    roleSplit = false
+  action closeAdd
+    adding = ""
+    roleSplit = false
+  // A role as one line, or (once a line was refused as unclear) as its title and employer apart.
+  action addRole(line: string, title: string, company: string, dates: string, employment: string, location: string)
+    if not pending(made)
+      send made = addRole(line.trim(), title.trim(), company.trim(), dates.trim(), employment, location.trim())
+  // ctx is where the form is open; home is where the project goes: role:<id>, side, or new (a role made from newRole).
+  action addProject(ctx: string, title: string, home: string, newRole: string, dates: string, result: string, situation: string, did: string, learned: string, lives: string)
+    if not pending(made)
+      send made = addProject(title.trim(), ctx == "sides" ? "side" : home, newRole.trim(), dates.trim(), result.trim(), situation.trim(), did.trim(), learned.trim(), lives.trim())
+  // home is where the fact goes: the group the form is open in, or (from the Facts view) the one chosen.
+  action addFact(ctx: string, text: string, home: string, newRole: string, metric: string)
+    if not pending(made)
+      send made = addFact(text.trim(), ctx == "facts" ? home : ctx.startsWith("in-day:") ? `day:${keyId(ctx)}` : `project:${keyId(ctx)}`, newRole.trim(), metric.trim())
+  // A new item opens at once, marked "Just added" until the next action, in the view it was added from.
+  action afterMade
+    roleSplit = match made { case some(r) => r.split, case none => false }
+    if madeKey != ""
+      adding = ""
+      just = madeKey
+      justWord = "Just added"
+      openItem(hrefOf(expView, madeKey))
+  action startEdit(key: string)
+    just = ""
+    adding = ""
+    deleting = ""
+    editing = key
+  action stopEdit
+    editing = ""
+  // Each save sends only the fields the owner changed (`changed`, by name): a Save with no change changes nothing.
+  action saveRole(id: string, changed: string[], title: string, company: string, start: string, end: string, employment: string, location: string, reach: string, marks: string[])
+    changeOn = `role:${id}`
+    lastChange = "edit"
+    send changed = saveRole(id, changed, title.trim(), company.trim(), start.trim(), end.trim(), employment, location.trim(), reach, marks)
+  action saveProject(id: string, changed: string[], title: string, dates: string, lives: string, result: string, situation: string, did: string, learned: string, place: string)
+    changeOn = `project:${id}`
+    lastChange = "edit"
+    send changed = saveProject(id, changed, title.trim(), dates.trim(), lives.trim(), result.trim(), situation.trim(), did.trim(), learned.trim(), place)
+  action saveFact(id: string, changed: string[], text: string, detail: string, metric: string, kind: string)
+    changeOn = `fact:${id}`
+    lastChange = "edit"
+    send changed = saveFact(id, changed, text.trim(), detail.trim(), metric.trim(), kind)
+  // A fact moved stays open, in its new place, marked as an item just put there.
+  action moveFact(id: string, home: string)
+    just = ""
+    changeOn = `fact:${id}`
+    lastChange = "move"
+    send changed = moveFact(id, home)
+  action askDelete(key: string)
+    just = ""
+    editing = ""
+    adding = ""
+    deleting = key
+  action keepIt
+    deleting = ""
+  // After a delete the item above it opens, or the list when there is none.
+  action removeItem(key: string)
+    changeOn = key
+    lastChange = "delete"
+    leaveTo = match first(chainOf(tree, key)) { case some(k) => hrefOf(expView, k), case none => viewHref(expView) }
+    send changed = removeItem(keyKind(key), keyId(key))
+  action afterChanged
+    if changeOk and lastChange == "edit"
+      editing = ""
+    if changeOk and lastChange == "move"
+      just = changeOn
+      justWord = "Moved"
+    if changeOk and lastChange == "delete"
+      deleting = ""
+      nav = replace(nav, leaveTo)
   action openAdd
     draftTitle = ""
     draftText = ""
@@ -911,31 +1029,11 @@ component App
                 column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="home-scroll" flex=1 min-height=0
                     HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome, digest=shownDigest)
-              if e.name == "bank"
-                column navigationKey=`${e.id}` navigationScroll="bank-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="bank-scroll" flex=1 min-height=0
-                    ExperienceScreen(bank=bank, failed=failed(bank), error=bankError, query=bankQuery, overlaps=overlaps, wide=wide, search=searchBank, add=openAdd, retry=pull, home=pick("home"))
-              if e.name == "fact"
-                column navigationKey=`${e.id}` navigationScroll="fact-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="fact-scroll" flex=1 min-height=0
-                    if bank.facts.filter(x => x.id == e.params.id).length == 0
-                      RecordWait(title="Fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your record. It was deleted, or replaced when its source was read again." : bankError), backLabel="Back to Experience", back=back, testId="fact-gone")
-                    for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
-                      FactScreen(fact=f, role=roleName(bank.roles, f.roleId), error=(actedFact == f.id and lastFactAct == "remove" ? removeFactError : ""), edit=openEdit, askRemove=askRemoveFact, back=back)
-              if e.name == "role"
-                column navigationKey=`${e.id}` navigationScroll="role-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="role-scroll" flex=1 min-height=0
-                    if bank.roles.filter(x => x.id == e.params.id).length == 0
-                      RecordWait(title="Role", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This role is no longer in your record." : bankError), backLabel="Back to Experience", back=back, testId="role-gone")
-                    for r in bank.roles.filter(x => x.id == e.params.id) key=r.id
-                      RoleScreen(role=r, facts=bank.facts.filter(f => f.roleId == r.id), employers=bank.roles.filter(x => x.employer), places=bank.places, overlaps=overlaps, error=roleError, busy=pending(roleSaved), wide=wide, save=saveRole, back=back, home=pick("home"))
-              if e.name == "edit"
-                column navigationKey=`${e.id}` navigationScroll="edit-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="edit-scroll" flex=1 min-height=0
-                    if bank.facts.filter(x => x.id == e.params.id).length == 0
-                      RecordWait(title="Edit fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your record." : bankError), backLabel="Back to Experience", back=back, testId="edit-gone")
-                    for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
-                      EditFactScreen(fact=f, places=bank.places, error=(actedFact == f.id and lastFactAct == "save" ? saveFactError : ""), busy=pending(savedFact), save=saveFact, cancel=back)
+              // Experience: one screen for each of its routes, drawn for the top of the tab's stack only, so its rows'
+              // testIds and its scrollers' ids are never on the page twice.
+              if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
+                column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
+                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll)
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0
@@ -1271,12 +1369,6 @@ component App
                         Actions(testId="add-actions-row")
                           MainAction(label="Add", press=add, disabled=(addHint != ""), keys="", testId="add-save")
                           Action(label="Cancel", press=leaveAdd, disabled=false, keys="", testId="add-cancel")
-      dialog id="remove-fact" role="alertdialog" aria-label="Delete this fact?"
-        text "It’s removed from your record and from future profiles and resumes, and stays out when its source is read again. This can’t be undone."
-        button press=removeFact destructive=true commandfor="remove-fact" command="close" testId="remove-fact-confirm"
-          text "Delete"
-        button commandfor="remove-fact" command="close" testId="remove-fact-cancel"
-          text "Cancel"
       dialog id="clear-talk" role="alertdialog" aria-label="Start the conversation over?"
         text "The messages are cleared. Facts already added to your record stay."
         button press=clearTalk destructive=true commandfor="clear-talk" command="close" testId="clear-talk-confirm"

@@ -31,7 +31,31 @@ export function oldDatabase(file: string) {
   d.run("INSERT INTO answered (question, at) VALUES ('What did the console replace?', 1)");
   // The bank's signature by the old rule: facts and roles only.
   const sig = new Bun.CryptoHasher('sha256').update(JSON.stringify([d.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all(), d.query('SELECT id, company, title, start, end, standing, reach, part_of FROM roles ORDER BY id').all()])).digest('hex').slice(0, 24);
-  const rows = { roles: d.query('SELECT * FROM roles ORDER BY id').all(), facts: d.query('SELECT * FROM facts ORDER BY id').all(), sources: d.query('SELECT * FROM sources').all() };
+  const rows = { roles: d.query('SELECT * FROM roles ORDER BY id').all(), facts: d.query(`SELECT ${OLD_FACT_COLUMNS} FROM facts ORDER BY id`).all(), sources: d.query('SELECT * FROM sources').all() };
+  d.close();
+  return { sig, rows };
+}
+
+// The columns facts had before the record became a tree: a comparison of old rows names them, so new columns
+// cannot break it.
+export const OLD_FACT_COLUMNS = 'id, role_id, kind, text, metric, skills, evidence, source_id, status, created_at, detail';
+
+// The same old database with every kind of row the tree reads from `roles`: a repository's project group filed
+// under an employer (role 3, from oldDatabase), the person's own side project (role 4), and a repository nobody has
+// placed (role 5), each with a fact. Nothing in it says which level a row is: the new code works it out. Its one
+// resume is unsent, not edited by hand, and written from the record as it is now, so any change to the record's
+// signature would queue it to be written again.
+export function oldTreeDatabase(file: string) {
+  oldDatabase(file);
+  const d = new Database(file);
+  d.run("INSERT INTO roles (id, company, title, start, end, standing) VALUES (4, 'lantern-notes', '', '2022-05', '2023-01', 'personal')");
+  d.run("INSERT INTO roles (id, company, title, start, end) VALUES (5, 'avery/sketchbook', '', '2019-02', '2019-08')");
+  d.run("INSERT INTO facts (id, role_id, kind, text, skills, created_at) VALUES (3, 3, 'project', 'Wrote the dispatch queue.', 'Go', 1)");
+  d.run("INSERT INTO facts (id, role_id, kind, text, skills, created_at) VALUES (4, 4, 'project', 'Built a notes app for small teams.', 'TypeScript', 1)");
+  d.run("INSERT INTO facts (id, role_id, kind, text, created_at) VALUES (5, 5, 'other', 'Drew a sketch a day for six months.', 1)");
+  const sig = new Bun.CryptoHasher('sha256').update(JSON.stringify([d.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all(), d.query('SELECT id, company, title, start, end, standing, reach, part_of FROM roles ORDER BY id').all()])).digest('hex').slice(0, 24);
+  d.query("UPDATE jobs SET edited = 0, resume_status = 'done', bank_sig = ? WHERE id = 1").run(sig);
+  const rows = { roles: d.query('SELECT * FROM roles ORDER BY id').all(), facts: d.query(`SELECT ${OLD_FACT_COLUMNS} FROM facts ORDER BY id`).all(), jobs: d.query('SELECT id, resume, resume_status, bank_sig, edited FROM jobs ORDER BY id').all() };
   d.close();
   return { sig, rows };
 }

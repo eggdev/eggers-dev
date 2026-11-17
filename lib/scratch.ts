@@ -16,8 +16,9 @@ await import('./person.ts'); await import('./talk.ts'); await import('./directio
 
 // Empties every table a test writes to.
 export function reset(): void {
-  for (const t of ['facts', 'roles', 'sources', 'jobs', 'answered', 'deleted_facts', 'raised_questions', 'skills', 'linkedin_positions', 'talk', 'queue_snoozes']) db.run(`DELETE FROM ${t}`);
+  for (const t of ['facts', 'roles', 'projects', 'sources', 'jobs', 'answered', 'deleted_facts', 'raised_questions', 'skills', 'linkedin_positions', 'talk', 'queue_snoozes', 'id_floor']) db.run(`DELETE FROM ${t}`);
   db.run('UPDATE skills_review SET reviewed_at = 0 WHERE id = 1');
+  db.run('UPDATE record_written SET at = 0 WHERE id = 1');
   db.run("UPDATE profile SET gaps = '', body = '' WHERE id = 1");
   db.run("UPDATE direction SET body = '' WHERE id = 1");
   db.run("UPDATE person SET name = 'Avery Lindqvist', location = 'Duluth, MN', email = 'avery@lindqvist.example', phone = '2185550142', website = '', github = '', linkedin = '' WHERE id = 1");

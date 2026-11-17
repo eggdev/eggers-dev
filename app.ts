@@ -17,7 +17,7 @@ async function get(path: string): Promise<unknown> {
 }
 
 // A write: a refusal or a lost server is a reply in words, so a sheet keeps what was typed.
-async function write(method: string, path: string, body?: unknown): Promise<Result<'removeFact'>> {
+async function write(method: string, path: string, body?: unknown): Promise<Result<'removeSource'>> {
   try {
     const res = await fetch(`${API}${path}`, { method, exactTimeout: 10000, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     if (res.ok) return { ok: true, error: '' };
@@ -29,13 +29,25 @@ async function write(method: string, path: string, body?: unknown): Promise<Resu
   }
 }
 
+// A write to the record: what it made or changed (its kind and id, and a role made on the spot with it), or a
+// refusal in words, so a form keeps what was typed.
+async function made(method: string, path: string, body?: unknown): Promise<Result<'addRole'>> {
+  const r = await exchange(method, path, body ?? {});
+  return r.ok ? { ok: true, error: '', kind: text(r.body.kind), id: text(r.body.id), made: text(r.body.madeRole), split: false }
+    : { ok: false, error: r.error, kind: '', id: '', made: '', split: r.body?.split === true };
+}
+// The fields of a save that the owner changed, by name.
+const only = (changed: string[], all: Record<string, string>) => Object.fromEntries(Object.entries(all).filter(([k]) => changed.includes(k)));
+// Where a fact goes, as the server takes it: a role's Day to day, a project, General, or a role made on the spot.
+const where = (home: string, newRole: string) => (home.startsWith('day:') ? { roleId: home.slice(4), projectId: '' } : home.startsWith('project:') ? { projectId: home.slice(8) } : home === 'new' ? { newRole } : { roleId: '', projectId: '' });
+
 // A write whose reply carries data (a draft, notes): its JSON body, or a refusal in words.
-async function exchange(method: string, path: string, body: unknown, timeout = 10000): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; error: string }> {
+async function exchange(method: string, path: string, body: unknown, timeout = 10000): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; error: string; body?: Record<string, unknown> }> {
   try {
     const res = await fetch(`${API}${path}`, { method, exactTimeout: timeout, headers, body: JSON.stringify(body) });
     const said = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (res.ok) return { ok: true, body: said };
-    return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.' };
+    return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.', body: said };
   } catch (e) {
     if ((e as { code?: string }).code === 'bake') throw e;
     return { ok: false, error: UNREACHABLE };
@@ -144,16 +156,51 @@ function resumeLinesOf(body: string): { id: string; kind: string; text: string }
 const SEVERITY = ['high', 'warn', 'info'];
 
 const sources: Sources = {
-  loadBank: async (): Promise<Result<'loadBank'>> => {
-    const b = (await get('/bank')) as { roles?: unknown; facts?: unknown };
+  // The record as one tree (GET /tree): every role, project and fact with its reference.
+  loadTree: async (): Promise<Result<'loadTree'>> => {
+    const t = (await get('/tree')) as { roles?: unknown; projects?: unknown; facts?: unknown };
     return {
       loaded: true,
-      roles: rows(b.roles).map((r) => ({ id: text(r.id), name: text(r.name), period: text(r.period), start: text(r.start), end: text(r.end), standing: text(r.standing), reach: text(r.reach), employer: r.employer === true, partOf: text(r.partOf), partOfName: text(r.partOfName) })),
-      places: rows((b as { places?: unknown }).places ?? []).map((r) => ({ id: text(r.id), name: text(r.name) })),
-      facts: rows(b.facts).map((f) => ({ id: text(f.id), roleId: text(f.roleId), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric),
-        skills: text(f.skills), evidence: text(f.evidence), source: text(f.source), added: text(f.added), edited: f.edited === true })),
+      roles: rows(t.roles).map((r) => { const m = obj(r.marks) ?? {}; return { id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end), location: text(r.location),
+        employment: text(r.employment), reach: text(r.reach), markCompany: text(m.company), markTitle: text(m.title), markStart: text(m.start), markEnd: text(m.end), markType: text(m.type), markLocation: text(m.location) }; }),
+      projects: rows(t.projects).map((p) => ({ id: text(p.id), ref: text(p.ref), roleId: text(p.roleId), place: text(p.place), carried: p.carried === true, title: text(p.title), start: text(p.start), end: text(p.end),
+        lives: text(p.lives), situation: text(p.situation), did: text(p.did), result: text(p.result), learned: text(p.learned) })),
+      facts: rows(t.facts).map((f) => ({ id: text(f.id), ref: text(f.ref), roleId: text(f.roleId), projectId: text(f.projectId), text: text(f.text), metric: text(f.metric), kind: text(f.kind) })),
     };
   },
+  // One fact whole, while it is open.
+  loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
+    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '', source: '', added: '', edited: false };
+    if (fact === '') return none;
+    // A fact deleted while it was open is gone, not a failed read.
+    const res = await fetch(`${API}/facts/${id(fact)}`, { exactTimeout: 10000, headers });
+    if (res.status === 404) return none;
+    if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+    const f = (await res.json()) as Record<string, unknown>;
+    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence), source: text(f.source), added: text(f.added), edited: f.edited === true };
+  },
+  // The role as one line ("title at employer"), or, once a line was refused as unclear, its title and employer apart.
+  addRole: ([line, title, company, when, employment, location]) => made('POST', '/roles', { ...(line !== '' ? { line } : { title, company }), when, employment, location }),
+  // home: role:<id>, side, or new (the role newRole names, made on the spot).
+  addProject: ([title, home, newRole, when, result, situation, did, learned, lives]) =>
+    made('POST', '/projects', { title, when, result, situation, did, learned, lives, ...(home === 'side' ? { side: true } : home === 'new' ? { newRole } : { roleId: home.replace(/^role:/, '') }) }),
+  // home: day:<role>, project:<id>, general, or new (the role newRole names).
+  addFact: ([body, home, newRole, metric]) => made('POST', '/facts', { text: body, metric, ...where(home, newRole) }),
+  // Only the fields named in `changed` are sent, so a Save with no change asks the server to change nothing.
+  // marks: where each field comes from, in the order company, title, start, end, type, location ('' clears one); a
+  // mark is sent when its name ("mark:title") is in `changed`.
+  saveRole: ([role, changed, title, company, start, end, employment, location, reach, marks]) => {
+    const keys = ['company', 'title', 'start', 'end', 'type', 'location'];
+    const official = Object.fromEntries(keys.map((k, i) => [k, marks[i] ?? '']).filter(([k]) => changed.includes(`mark:${k}`)));
+    return made('PATCH', `/roles/${id(role)}`, { ...only(changed, { title, company, start, end, employment, location, reach }), official });
+  },
+  // place: role:<id> or side for a project that is placed here; '' leaves it where it is.
+  saveProject: ([project, changed, title, when, lives, result, situation, did, learned, place]) =>
+    made('PATCH', `/projects/${id(project)}`, { ...only(changed, { title, when, lives, result, situation, did, learned }), ...(!changed.includes('place') ? {} : place === 'side' ? { side: true } : place.startsWith('role:') ? { roleId: place.slice(5) } : {}) }),
+  saveFact: ([fact, changed, body, detail, metric, kind]) => made('PATCH', `/facts/${id(fact)}`, only(changed, { text: body, detail, metric, kind })),
+  moveFact: ([fact, home]) => made('PATCH', `/facts/${id(fact)}`, where(home, '')),
+  // A project's facts stay when it is deleted.
+  removeItem: ([kind, item]) => made('DELETE', `/${kind === 'role' ? 'roles' : kind === 'project' ? 'projects' : 'facts'}/${id(item)}${kind === 'project' ? '?facts=keep' : ''}`),
   // A waiting source's place in line comes from the activity log (loadActivity), as every slow-work line's does.
   loadSources: async (): Promise<Result<'loadSources'>> => ({ loaded: true,
     items: rows(await get('/sources')).map((s) => ({ id: text(s.id), kind: text(s.kind), title: text(s.title), detail: text(s.detail),
@@ -313,9 +360,6 @@ const sources: Sources = {
   // Its reply holds the one-time code, which is dropped here: the screen shows the code only from the latest status.
   codexLogin: async () => outcome(await studio('POST', '/codex/login', {}, 150000)),
   codexCancel: async () => outcome(await studio('POST', '/codex/cancel', {}, 30000)),
-  saveFact: ([fact, body, detail, metric, roleId, kind]) => write('PATCH', `/facts/${id(fact)}`, { text: body, detail, metric, roleId, kind }),
-  saveRole: ([role, standing, reach, partOf]) => write('PATCH', `/roles/${id(role)}`, { standing, reach, partOf }),
-  removeFact: ([fact]) => write('DELETE', `/facts/${id(fact)}`),
   addSource: ([kind, title, body, author]) => write('POST', '/sources', { kind, title, body, author }),
   uploadSource: async ([path, name], _store, storage) => {
     if (!path.startsWith('app:/tmp/picked/')) return { ok: false, error: 'Choose the file again.' };

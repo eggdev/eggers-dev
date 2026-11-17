@@ -16,7 +16,7 @@
 // Times are milliseconds since 1970. The usual duration of a kind is the median of its last 10 finished runs, and is
 // unknown (-1) until 3 have finished: the screens then say "a few minutes", never an invented number.
 import { db } from './db.ts';
-import { ANSWER_HOLD_MS, lastAnswerAt } from './raised.ts';
+import { ANSWER_HOLD_MS, holdSince } from './raised.ts';
 // The talk table is made there; the triggers below follow it.
 import './talk.ts';
 
@@ -178,7 +178,7 @@ export type Digest = { id: string; line: string; link: string; endedAt: number }
 export type Activity = { busy: boolean; lastEnded: number; lastChanged: number; changes: { kind: string; at: number }[]; dueIn: number; items: Item[]; done: Item[]; digest: Digest[] };
 
 // The worker's rule for writing unsent resumes again (worker.ts): the bank still for EGG_RESUME_QUIET_MS, and the last
-// answer to a raised question at least ANSWER_HOLD_MS old. The daily watchlist check is never reported: an idle tab
+// answer to a raised question or hand edit to the record at least ANSWER_HOLD_MS old. The daily watchlist check is never reported: an idle tab
 // must not wake the studio for it.
 const QUIET = Number(process.env.EGG_RESUME_QUIET_MS ?? 180_000), DUE_WITHIN = 20 * 60_000, OVERDUE = 60_000;
 export function dueIn(now: number, signature: () => string): number {
@@ -189,7 +189,7 @@ export function dueIn(now: number, signature: () => string): number {
   if (sigs.every((x) => x === sig)) return 0;
   let seen = db.query('SELECT sig, since FROM activity_bank WHERE id = 1').get() as { sig: string; since: number };
   if (seen.sig !== sig) { db.query('UPDATE activity_bank SET sig = ?, since = ? WHERE id = 1').run(sig, now); seen = { sig, since: now }; }
-  const answered = lastAnswerAt(), due = Math.max(seen.since + QUIET, answered > 0 ? answered + ANSWER_HOLD_MS : 0);
+  const answered = holdSince(), due = Math.max(seen.since + QUIET, answered > 0 ? answered + ANSWER_HOLD_MS : 0);
   // Overdue for more than a minute: the worker is not taking it (stopped, or the rule is off there), so say nothing.
   return due - now > DUE_WITHIN || now - due > OVERDUE ? 0 : Math.max(1, due - now);
 }

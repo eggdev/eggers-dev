@@ -1,0 +1,20 @@
+{
+  "spine": "jobs-then-side",
+  "open": "beside",
+  "depth": "roles",
+  "add": "form",
+  "views": "three",
+  "uses": "none",
+  "missing": "asked",
+  "derived": "on",
+  "official": "full",
+  "refs": "gutter",
+  "capture": "off",
+  "factsShown": 6,
+  "indent": 1.5,
+  "parts": 4,
+  "derivedLines": 3,
+  "rowGap": 12,
+  "sectionGap": 48,
+  "seed": 0
+}

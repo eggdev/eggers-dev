@@ -1,30 +1,71 @@
 // Record: the owner's working life as records (DESIGN.md rule 4), and the screens beside it. Its second line
-// (`RecordNav`, drawn once by the root under the main line) holds Experience (the roles and their facts, at /record), Profile, Direction, Details and Sources.
-// Each screen is one document column (`Page`), drawn only with the shared pieces of look.contract. The data and
-// the actions are the root's (app.contract); a screen with a form keeps its drafts itself.
-use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, statusWord, look, lookTight from "./look.contract"
+// (`RecordNav`, drawn once by the root under the main line) holds Experience (the record as one tree: roles, their
+// projects and facts, at /record), Profile, Direction, Details and Sources.
+// Each screen is drawn only with the shared pieces of look.contract. The data and the actions are the root's
+// (app.contract); a form keeps its drafts itself.
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, statusWord, look, lookTight, experienceLook from "./look.contract"
 use usualWords, inHand from "./activity.contract"
 
-shape Role
+// The record as one tree (lib/tree.ts, GET /tree): Role → Project → Fact, side projects beside the roles, and
+// "General" for facts that belong to no role. Each item carries its reference number. A fact's story and evidence
+// are read with the fact itself (`FactFull`), when it is opened.
+// A role is the official record: employer (company), title, start, end, employment type and location, each with where
+// it comes from (mark…: hr | memory | "" for not marked). employment: employee | contract | part-time | own | "".
+shape TreeRole
   id: string
-  name: string
-  period: string
-  // The dates as the person gave them: YYYY-MM or YYYY; an empty end is the present.
+  ref: string
+  title: string
+  company: string
   start: string
   end: string
-  // What kind of work it was, which decides how much it counts toward a job's fit.
-  // standing: employer | own | contract | personal, reach: live | retired | never; "" is not set.
-  standing: string
+  location: string
+  employment: string
   reach: string
-  // An employer is a role with a job title. A project (a repository's work) may be part of one:
-  // partOf is that employer's id, "" for none, and it then counts as that employer's work.
-  employer: bool
-  partOf: string
-  partOfName: string
+  markCompany: string
+  markTitle: string
+  markStart: string
+  markEnd: string
+  markType: string
+  markLocation: string
 
-shape Fact
+// place: role (in the role roleId), side (the owner's own), unplaced (a repository nobody has placed yet). carried: its
+// name and dates are a repository's or side project's own row, which the resume pipeline reads.
+shape TreeProject
   id: string
+  ref: string
   roleId: string
+  place: string
+  carried: bool
+  title: string
+  start: string
+  end: string
+  lives: string
+  situation: string
+  did: string
+  result: string
+  learned: string
+
+// roleId and projectId "" is General; roleId alone is the role's Day to day.
+shape TreeFact
+  id: string
+  ref: string
+  roleId: string
+  projectId: string
+  text: string
+  metric: string
+  kind: string
+
+shape Tree
+  // False until the first answer arrives: an empty record is not a failed read.
+  loaded: bool
+  roles: TreeRole[]
+  projects: TreeProject[]
+  facts: TreeFact[]
+
+// One fact whole: its story, what supports it and where it came from ("added" is "3 Mar 2026", "" when unknown).
+shape FactFull
+  loaded: bool
+  id: string
   kind: string
   text: string
   detail: string
@@ -32,21 +73,24 @@ shape Fact
   skills: string
   evidence: string
   source: string
-  // The day it was added ("3 Mar 2026", "" when unknown), and whether the person has edited what a source said.
   added: string
   edited: bool
 
-shape Bank
-  // False until the first answer arrives: an empty bank is not a failed read.
-  loaded: bool
-  roles: Role[]
-  // Every role a fact can be filed under, with or without facts yet, and "General".
-  places: Place[]
-  facts: Fact[]
+// A place a fact or a project can go, as the choosers list it.
+shape Home
+  value: string
+  label: string
 
-shape Place
+// The answer to a write in the record: what was made or changed ("role", "project", "fact", with its id), the role
+// made on the spot with it ("" for none), or the refusal in words.
+shape Made
+  ok: bool
+  error: string
+  kind: string
   id: string
-  name: string
+  made: string
+  // A role line refused because it says "at" more than once: the form then asks for the title and employer apart.
+  split: bool
 
 // Two roles that both say Present, which the server holds as an open question.
 shape Overlap
@@ -93,28 +137,87 @@ shape Person
   linkedin: string
 
 fn kindLabel(k: string): string = k == "accomplishment" ? "Accomplishment" : k == "project" ? "Project" : k == "responsibility" ? "Responsibility" : k == "skill" ? "Skill" : k == "education" ? "Education" : "Other"
-fn factMatches(f: Fact, q: string): bool = q.trim() == "" or `${f.text} ${f.skills} ${f.metric}`.toLowerCase().includes(q.trim().toLowerCase())
-// A fact's extent: the measured result when there is one, since that is what a resume wants; else its kind.
-fn factMeta(f: Fact): string = f.metric != "" ? f.metric : kindLabel(f.kind)
-fn roleName(roles: Role[], id: string): string = match first(roles.filter(r => r.id == id)) { case some(r) => r.name, case none => "General" }
-fn placeName(places: Place[], id: string): string = match first(places.filter(p => p.id == id)) { case some(p) => p.name, case none => "another role" }
-fn factCount(n: number): string = `${n} ${n == 1 ? "fact" : "facts"}`
-fn roleCount(n: number): string = `${n} ${n == 1 ? "role" : "roles"}`
-fn standingLabel(v: string): string = v == "employer" ? "Employer" : v == "own" ? "Own company" : v == "contract" ? "Contract" : v == "personal" ? "Personal project" : "Not set"
-fn reachLabel(v: string): string = v == "live" ? "In production" : v == "retired" ? "Was in production" : v == "never" ? "Never reached users" : "Not set"
-fn roleKind(r: Role): string = r.partOf != "" ? (r.reach == "" ? `Part of ${r.partOfName}, Reached users not set` : `Part of ${r.partOfName}, ${reachLabel(r.reach).toLowerCase()}`) : r.standing == "" and r.reach == "" ? "Kind of work not set" : r.reach == "" ? `${standingLabel(r.standing)}, Reached users not set` : r.standing == "" ? `${reachLabel(r.reach)}, Type of work not set` : `${standingLabel(r.standing)}, ${reachLabel(r.reach).toLowerCase()}`
+// A count never breaks between its number and its word: they are joined by a no-break space.
+fn factCount(n: number): string = `${n} ${n == 1 ? "fact" : "facts"}`
+fn projectCount(n: number): string = `${n} ${n == 1 ? "project" : "projects"}`
+fn many(n: number, one: string, more: string): string = `${n} ${n == 1 ? one : more}`
 // Reference numbers (DESIGN.md section 4), from the database id and never from a position: R-07, F-0142.
 fn roleRef(id: string): string = id.length >= 2 ? `R-${id}` : `R-0${id}`
 fn factRef(id: string): string = id.length >= 4 ? `F-${id}` : id.length == 3 ? `F-0${id}` : id.length == 2 ? `F-00${id}` : `F-000${id}`
-// A role's date range in years: "2019–2023", "2021–Present", one year alone when it starts and ends in it.
-fn yearOf(ym: string): string = ym.slice(0, 4)
-fn roleYears(r: Role): string = r.start == "" ? "" : r.end == "" ? `${yearOf(r.start)}–Present` : yearOf(r.start) == yearOf(r.end) ? yearOf(r.start) : `${yearOf(r.start)}–${yearOf(r.end)}`
-// A fact's provenance line: where it came from, and when. Only what the record holds; "" when it holds nothing.
-fn factFrom(f: Fact): string = `${f.source == "Added by hand" ? (f.added == "" ? "Added by hand" : `Added by hand on ${f.added}`) : (f.added == "" ? `From ${f.source}` : `From ${f.source}, added ${f.added}`)}.${f.edited ? " Edited by you since." : ""}`
+// A fact's provenance line: where it came from, and when. Only what the record holds.
+fn factFrom(f: FactFull): string = `${f.source == "Added by hand" ? (f.added == "" ? "Added by hand" : `Added by hand on ${f.added}`) : (f.added == "" ? `From ${f.source}` : `From ${f.source}, added ${f.added}`)}.${f.edited ? " Edited by you since." : ""}`
 // The roles that say Present beside this one, while the person has not said how they relate.
 fn othersOf(os: Overlap[], id: string): string[] = os.filter(o => o.a == id or o.b == id).map(o => o.a == id ? o.b : o.a)
 // A failed read in the owner's words: no machine terms here (DESIGN.md rule 10).
 fn plainLoadError(code: string): string = code == "offline" ? "The studio can’t be reached right now. Try again in a moment." : "This couldn’t be loaded. Try again."
+
+// ---------- Dates, names and the grey line of an item ----------
+fn monthName(m: string): string = m == "01" ? "Jan" : m == "02" ? "Feb" : m == "03" ? "Mar" : m == "04" ? "Apr" : m == "05" ? "May" : m == "06" ? "Jun" : m == "07" ? "Jul" : m == "08" ? "Aug" : m == "09" ? "Sep" : m == "10" ? "Oct" : m == "11" ? "Nov" : "Dec"
+// "2023-03" as "Mar 2023"; a year alone as itself.
+fn ymText(s: string): string = s.length == 7 ? `${monthName(s.slice(5, 7))} ${s.slice(0, 4)}` : s
+// A role's dates: "Mar 2023–Present"; "" with no start.
+fn roleWhen(r: TreeRole): string = r.start == "" ? "" : `${ymText(r.start)}–${r.end == "" ? "Present" : ymText(r.end)}`
+// A project's years: "2023–2024", "2024", "2023–Present"; "" with no start.
+fn projectWhen(p: TreeProject): string = p.start == "" ? "" : p.end == "" ? `${p.start.slice(0, 4)}–Present` : p.start.slice(0, 4) == p.end.slice(0, 4) ? p.start.slice(0, 4) : `${p.start.slice(0, 4)}–${p.end.slice(0, 4)}`
+// What the owner types for a project's dates, from what is stored: "2023–2024", "2024".
+fn projectWhenTyped(p: TreeProject): string = p.start == "" ? "" : p.end == "" ? `${ymText(p.start)} – now` : p.start == p.end ? ymText(p.start) : `${ymText(p.start)} – ${ymText(p.end)}`
+fn joinParts(parts: string[]): string = parts.filter(p => p != "").join(" · ")
+fn stripEnd(s: string): string = s.endsWith(".") ? s.slice(0, s.length - 1) : s
+fn firstSentence(t: string): string = stripEnd(match first(t.trim().split(". ")) { case some(s) => s, case none => "" })
+fn employmentLabel(e: string): string = e == "employee" ? "Employee" : e == "contract" ? "Contract" : e == "part-time" ? "Part-time" : e == "own" ? "Own company" : ""
+fn reachLabel(v: string): string = v == "live" ? "In production" : v == "retired" ? "Was in production" : v == "never" ? "Never reached users" : ""
+fn markLabel(m: string): string = m == "hr" ? "As HR records it" : m == "memory" ? "From memory" : "Source not marked"
+fn roleName(r: TreeRole): string = r.title == "" ? r.company : `${r.title}, ${r.company}`
+// A role in a chooser or a filter: two roles at one employer are told apart by title, and the years tell apart a
+// title held twice.
+fn roleChoice(r: TreeRole): string = r.start == "" ? roleName(r) : `${roleName(r)} (${r.start.slice(0, 4)}–${r.end == "" ? "Present" : r.end.slice(0, 4)})`
+fn dayName(r: TreeRole): string = `Day to day at ${r.company}`
+// The metric, when the sentence does not already say it.
+fn factSub(f: TreeFact): string = f.metric != "" and not f.text.toLowerCase().includes(f.metric.toLowerCase()) ? f.metric : ""
+
+// ---------- The tree ----------
+fn keyKind(k: string): string = k.indexOf(":") < 0 ? "" : k.slice(0, k.indexOf(":"))
+fn keyId(k: string): string = k.indexOf(":") < 0 ? "" : k.slice(k.indexOf(":") + 1)
+fn rolesOf(t: Tree, id: string): TreeRole[] = t.roles.filter(r => r.id == id)
+fn projectsOf(t: Tree, roleId: string): TreeProject[] = t.projects.filter(p => p.place == "role" and p.roleId == roleId)
+fn factsInProject(t: Tree, id: string): TreeFact[] = t.facts.filter(f => f.projectId == id)
+fn dayFacts(t: Tree, roleId: string): TreeFact[] = t.facts.filter(f => f.roleId == roleId and f.projectId == "")
+fn generalFacts(t: Tree): TreeFact[] = t.facts.filter(f => f.roleId == "" and f.projectId == "")
+fn roleOfName(t: Tree, id: string): string = match first(rolesOf(t, id)) { case some(r) => roleName(r), case none => "" }
+fn companyOf(t: Tree, id: string): string = match first(rolesOf(t, id)) { case some(r) => r.company, case none => "" }
+fn projectTitle(t: Tree, id: string): string = match first(t.projects.filter(p => p.id == id)) { case some(p) => p.title, case none => "" }
+fn projectRoleOf(t: Tree, id: string): string = match first(t.projects.filter(p => p.id == id)) { case some(p) => p.roleId, case none => "" }
+// Where a fact is, in words: its project, Day to day, or General.
+fn factGroup(t: Tree, f: TreeFact): string = f.projectId != "" ? projectTitle(t, f.projectId) : f.roleId != "" ? "Day to day" : "General"
+// Where a fact is, in the fewest words: its project's name, "Day to day at" its employer, or General.
+fn factPlace(t: Tree, f: TreeFact): string = f.projectId != "" ? projectTitle(t, f.projectId) : f.roleId != "" ? `Day to day at ${companyOf(t, f.roleId)}` : "General"
+fn factRole(t: Tree, f: TreeFact): string = f.roleId != "" ? companyOf(t, f.roleId) : f.projectId != "" ? "Side project" : ""
+// The items above an item, nearest first: a fact's project (or Day to day) and role; a project's role.
+fn projectChain(t: Tree, id: string): string[] = projectRoleOf(t, id) != "" ? [`role:${projectRoleOf(t, id)}`] : []
+fn factChain(t: Tree, id: string): string[] = match first(t.facts.filter(f => f.id == id)) { case some(f) => f.projectId != "" ? [`project:${f.projectId}`].concat(projectChain(t, f.projectId)) : f.roleId != "" ? [`day:${f.roleId}`, `role:${f.roleId}`] : [], case none => [] }
+fn chainOf(t: Tree, key: string): string[] = keyKind(key) == "fact" ? factChain(t, keyId(key)) : keyKind(key) == "project" ? projectChain(t, keyId(key)) : keyKind(key) == "day" ? [`role:${keyId(key)}`] : []
+// The same, top first, as the breadcrumb reads it.
+fn crumbChain(t: Tree, key: string): string[] = keyKind(key) == "fact" ? factChain(t, keyId(key)).filter(k => keyKind(k) == "role").concat(factChain(t, keyId(key)).filter(k => keyKind(k) != "role")) : chainOf(t, key)
+// Where an item opens in a view: the Roles view's routes, the Projects view's, or the Facts view's.
+fn hrefOf(view: string, key: string): string = view == "projects" and keyKind(key) == "project" ? path("pProject", keyId(key)) : view == "projects" and keyKind(key) == "fact" ? path("pFact", keyId(key)) : view == "facts" and keyKind(key) == "fact" ? path("fFact", keyId(key)) : keyKind(key) == "role" ? path("role", keyId(key)) : keyKind(key) == "day" ? path("day", keyId(key)) : keyKind(key) == "project" ? path("project", keyId(key)) : path("fact", keyId(key))
+fn viewHref(view: string): string = view == "projects" ? path("asProjects") : view == "facts" ? path("asFacts") : path("bank")
+fn viewName(view: string): string = view == "projects" ? "Projects" : view == "facts" ? "Facts" : "Experience"
+fn crumbName(t: Tree, key: string): string = keyKind(key) == "role" ? roleOfName(t, keyId(key)) : keyKind(key) == "day" ? `Day to day at ${companyOf(t, keyId(key))}` : projectTitle(t, keyId(key))
+// A group's facts as shown: the first few (experienceLook().factsShown), all of them once asked or while searching,
+// and a fact just added even past the first few.
+fn shownIn(fs: TreeFact[], group: string, all: string[], q: string, just: string): TreeFact[] = q != "" or all.includes(group) ? fs : fs.slice(0, experienceLook().factsShown).concat(fs.slice(experienceLook().factsShown).filter(f => `fact:${f.id}` == just))
+fn moreLabel(fs: TreeFact[], group: string, all: string[]): string = all.includes(group) ? "Show fewer" : `Show all ${fs.length}`
+// The grey line of each kind of item: when, and what it holds.
+fn roleSub(t: Tree, r: TreeRole): string = joinParts([r.company, roleWhen(r), projectsOf(t, r.id).length > 0 ? projectCount(projectsOf(t, r.id).length) : "", factCount(t.facts.filter(f => f.roleId == r.id).length)])
+fn projectSub(t: Tree, p: TreeProject, view: string): string = joinParts([p.place == "side" ? "Side project" : p.place == "unplaced" ? "Not placed yet" : view == "projects" ? companyOf(t, p.roleId) : "", projectWhen(p), p.result != "" ? firstSentence(p.result) : factCount(factsInProject(t, p.id).length)])
+// The mark on the item just added ("Just added") or just moved ("Moved"), until the next action.
+fn justMark(key: string, s: ExpState): string = key == s.just ? s.justWord : ""
+// The places a fact can go: each role's Day to day and its projects, the side projects, the unplaced, and General.
+fn factHomes(t: Tree): Home[] = t.roles.map(r => [Home(value=`day:${r.id}`, label=`Day to day: ${roleChoice(r)}`)].concat(projectsOf(t, r.id).map(p => Home(value=`project:${p.id}`, label=`${p.ref} ${p.title} (${r.company})`)))).flat().concat(t.projects.filter(p => p.place != "role").map(p => Home(value=`project:${p.id}`, label=`${p.ref} ${p.title} (${p.place == "side" ? "side project" : "not placed yet"})`))).concat([Home(value="general", label="General (no role)")])
+fn factHomeOf(f: TreeFact): string = f.projectId != "" ? `project:${f.projectId}` : f.roleId != "" ? `day:${f.roleId}` : "general"
+fn newestHome(t: Tree): string = match first(t.roles.filter(r => r.start != "")) { case some(r) => `day:${r.id}`, case none => "general" }
+fn newestRole(t: Tree, filter: string): string = rolesOf(t, filter).length > 0 ? `role:${filter}` : filter == "side" ? "side" : match first(t.roles.filter(r => r.start != "")) { case some(r) => `role:${r.id}`, case none => "new" }
+
 
 // Record's second line. `at` is the screen shown: bank | profile | direction | details | sources.
 component RecordNav
@@ -163,226 +266,1041 @@ component OverlapLine
       StrongLine(text=`Overlaps ${roleRef(other)}, ${otherName}. Both say Present.`, testId=testId)
       Action(label="Settle it on Home", press=home, disabled=false, keys="", testId=`${testId}-go`)
 
-// Experience: every role as a record, its facts as records under it, and a search over the facts.
+// Experience: the record as one tree. Read as Roles (the tree: roles, then side projects, then General), Projects
+// (every project, by role) or Facts (every fact, sorted). An item opens beside the list on a wide window, or under its
+// own row on a narrow one; the open item comes from the route, so a reload lands on it. Only the top level is open at
+// the start; the items above an open, just added or found item open to show it.
 component ExperienceScreen
   props
-    bank: Bank
+    tree: Tree
     failed: bool
     error: string
-    query: string
+    s: ExpState
+    fact: FactFull
     overlaps: Overlap[]
-    wide: bool
+    scrollId: string
     search: action
-    add: action
+    setView: action
+    filterProjects: action
+    sortFacts: action
     retry: action
+    addSource: action
     home: action
-  derive q = query.trim()
-  derive shownRoles = bank.roles.filter(r => q == "" or bank.facts.filter(f => f.roleId == r.id and factMatches(f, q)).length > 0)
-  derive unclassed = bank.roles.filter(r => r.id != "0" and r.partOf == "" and (r.standing == "" or r.reach == "")).length
-  derive roleTotal = bank.roles.filter(r => r.id != "0").length
+    close: action
+    openAdd: action
+    closeAdd: action
+    addRole: action
+    addProject: action
+    addFact: action
+    startEdit: action
+    stopEdit: action
+    saveRole: action
+    saveProject: action
+    saveFact: action
+    moveFact: action
+    askDelete: action
+    keepIt: action
+    remove: action
+    showAll: action
+  derive q = s.q.trim().toLowerCase()
+  derive under = not s.beside
+  derive hitRoles = q == "" ? [] : tree.roles.filter(r => `${r.title} ${r.company} ${r.location}`.toLowerCase().includes(q)).map(r => r.id)
+  derive hitProjects = q == "" ? [] : tree.projects.filter(p => `${p.title} ${p.lives} ${p.situation} ${p.did} ${p.result} ${p.learned}`.toLowerCase().includes(q)).map(p => p.id)
+  derive hitFacts = q == "" ? [] : tree.facts.filter(f => `${f.text} ${f.metric}`.toLowerCase().includes(q)).map(f => f.id)
+  // The item just added stays on screen, with the items above it, whatever the search or the view would hide.
+  derive justChain = s.just == "" ? [] : [s.just].concat(chainOf(tree, s.just))
+  derive shownFacts = tree.facts.filter(f => q == "" or hitFacts.includes(f.id) or hitProjects.includes(f.projectId) or hitRoles.includes(f.roleId) or justChain.includes(`fact:${f.id}`))
+  derive shownProjects = tree.projects.filter(p => q == "" or hitProjects.includes(p.id) or hitRoles.includes(p.roleId) or shownFacts.filter(f => f.projectId == p.id).length > 0 or justChain.includes(`project:${p.id}`))
+  derive shownRoles = tree.roles.filter(r => q == "" or hitRoles.includes(r.id) or shownProjects.filter(p => p.place == "role" and p.roleId == r.id).length > 0 or shownFacts.filter(f => f.roleId == r.id).length > 0 or justChain.includes(`role:${r.id}`))
+  // The items open in the list: those above the open item and the one just added, and those above what a search found.
+  derive found = q == "" ? [] : shownFacts.filter(f => hitFacts.includes(f.id)).map(f => chainOf(tree, `fact:${f.id}`)).flat().concat(shownProjects.filter(p => hitProjects.includes(p.id) and p.roleId != "").map(p => `role:${p.roleId}`))
+  derive expanded = chainOf(tree, s.open).concat(chainOf(tree, s.just)).concat(found)
+  derive nothing = q != "" and s.just == "" and shownRoles.length == 0 and shownProjects.length == 0 and shownFacts.length == 0
+  derive empty = tree.loaded and tree.roles.length == 0 and tree.projects.length == 0 and tree.facts.length == 0
+  derive sides = shownProjects.filter(p => p.place == "side")
+  derive unplaced = shownProjects.filter(p => p.place == "unplaced")
+  derive general = shownFacts.filter(f => f.roleId == "" and f.projectId == "")
+  derive listed = sortBy(shownProjects.filter(p => s.projectsOf == "all" or (s.projectsOf == "side" ? p.place != "role" : p.roleId == s.projectsOf) or justChain.includes(`project:${p.id}`)), p => p.start, "desc")
+  derive factOrder = s.sortDesc ? sortBy(shownFacts, f => sortValue(tree, f, s.sortKey), "desc") : sortBy(shownFacts, f => sortValue(tree, f, s.sortKey))
   view
-    Page(testId="bank")
-      Section(testId="bank-top")
-        Title(text="Experience", testId="bank-title")
-        if bank.loaded and bank.facts.length > 0
-          QuietLine(text=(roleTotal == 0 ? `${factCount(bank.facts.length)}.` : `${factCount(bank.facts.length)} across ${roleCount(roleTotal)}.`), testId="bank-count")
-      if not bank.loaded
-        Section(testId="bank-wait")
-          if failed
-            FailLine(text=error, testId="bank-error")
-            Action(label="Try again", press=retry, disabled=false, keys="", testId="bank-retry")
+    if s.beside
+      Beside(testId="bank-beside")
+        BesideList(scrollId=scrollId, testId="bank")
+          ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource)
+          if tree.loaded
+            ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+        BesidePane(label="The opened item", testId="bank-pane")
+          if s.open == ""
+            QuietLine(text="Open a role, a project or a fact on the left. It opens here, and the list stays.", testId="pane-none")
           else
-            QuietLine(text="Loading your record…", testId="bank-loading")
-      else if bank.facts.length == 0
-        Section(testId="bank-empty")
-          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and the facts found in it appear here, by role.", testId="bank-empty-text")
-          MainAction(label="Add a source", press=add, disabled=false, keys="", testId="bank-add")
-      else
-        Section(testId="bank-find")
-          SearchField(value=query, label="Search facts", hint="Search facts and skills", change=search, testId="bank-search")
-          if q != "" and bank.facts.filter(f => factMatches(f, q)).length == 0
-            QuietLine(text=`No fact matches “${q}”.`, testId="bank-none")
-          if unclassed > 0 and q == ""
-            QuietLine(text=`Kind of work isn’t set for ${roleCount(unclassed)}, so that work counts as middling evidence for a job. Set it on each role’s page.`, testId="bank-unclassed")
-        for r in shownRoles key=r.id
-          Section(testId=`bank-role-${r.id}`)
-            if r.id == "0"
-              SectionHead(text="General", testId="bank-general")
-            else
-              Record(code=roleRef(r.id), name=r.name, href=`/record/role/${r.id}`, strong=true, dates=roleYears(r), extent=factCount(bank.facts.filter(f => f.roleId == r.id).length), word=statusWord("role", ""), showWord=true, place="", provenance="", wide=wide, testId=`role-${r.id}`)
-                QuietLine(text=roleKind(r), testId=`role-kind-${r.id}`)
-                for o in othersOf(overlaps, r.id) key=o
-                  OverlapLine(other=o, otherName=placeName(bank.places, o), home=home, testId=`role-${r.id}-overlap-${o}`)
-            for f in bank.facts.filter(f => f.roleId == r.id and factMatches(f, q)) key=f.id
-              Record(code=factRef(f.id), name=f.text, href=`/record/fact/${f.id}`, strong=false, dates="", extent=factMeta(f), word=statusWord("fact", ""), showWord=true, place="", provenance="", wide=wide, testId=`fact-${f.id}`)
+            ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+    else
+      scroll id=scrollId flex=1 min-height=0
+        Page(testId="bank")
+          ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource)
+          if tree.loaded
+            ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
 
-// A role: its record, what kind of work it was (which decides how much it counts toward a job's fit), and its
-// facts. Saving the kind of work returns to Experience; leaving with a change asks first.
-component RoleScreen
+// A fact's value for the Facts view's sort: an empty value sorts after the rest.
+fn sortValue(t: Tree, f: TreeFact, key: string): string = key == "fact" ? f.text.toLowerCase() : key == "number" ? (f.metric == "" ? "~" : f.metric.toLowerCase()) : key == "role" ? (factRole(t, f) == "" ? "~" : factRole(t, f).toLowerCase()) : key == "project" ? factGroup(t, f).toLowerCase() : f.ref
+// The order the Facts view is in, and how to turn it round, in one short line.
+fn sortName(key: string): string = key == "fact" ? "Fact" : key == "number" ? "Number" : key == "role" ? "Role" : key == "project" ? "Project" : "Ref"
+fn sortWords(key: string, desc: bool): string = key == "ref" ? (desc ? "newest first" : "oldest first") : desc ? "Z to A" : "A to Z"
+
+// The page's head: its title, the record in numbers, the three ways to read it, and the search.
+component ExpHead
   props
-    role: Role
-    facts: Fact[]
-    employers: Role[]
-    places: Place[]
+    tree: Tree
+    s: ExpState
+    failed: bool
+    error: string
+    empty: bool
+    nothing: bool
+    search: action
+    setView: action
+    retry: action
+    addSource: action
+  view
+    Section(testId="bank-top")
+      Title(text="Experience", testId="bank-title")
+      if tree.loaded and not empty
+        QuietLine(text=joinParts([many(tree.roles.length, "role", "roles"), projectCount(tree.projects.filter(p => p.place == "role").length), many(tree.projects.filter(p => p.place == "side").length, "side project", "side projects"), factCount(tree.facts.length)]), testId="bank-count")
+    if not tree.loaded
+      Section(testId="bank-wait")
+        if failed
+          FailLine(text=error, testId="bank-error")
+          Action(label="Try again", press=retry, disabled=false, keys="", testId="bank-retry")
+        else
+          QuietLine(text="Loading your record…", testId="bank-loading")
+    else
+      Section(testId="bank-find")
+        if empty
+          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and what is found in it appears here. Or add a role or a side project by hand.", testId="bank-empty-text")
+          MainAction(label="Add a source", press=addSource, disabled=false, keys="", testId="bank-add")
+        else
+          InlineField(label="Read as")
+            Choices(label="Read as")
+              ChoiceWord(label="Roles", chosen=(s.view == "roles"), press=setView("roles"), testId="view-roles")
+              ChoiceWord(label="Projects", chosen=(s.view == "projects"), press=setView("projects"), testId="view-projects")
+              ChoiceWord(label="Facts", chosen=(s.view == "facts"), press=setView("facts"), testId="view-facts")
+          SearchField(value=s.q, label="Search the record", hint="Search roles, projects and facts", change=search, testId="bank-search")
+          if nothing
+            Line(text=`Nothing matches “${s.q.trim()}”.`, testId="bank-none")
+            Action(label="Clear the search", press=search(""), disabled=false, keys="", testId="bank-clear")
+
+// The list, as the view reads it. On a narrow window the open item is drawn under its own row.
+component ExpBody
+  props
+    tree: Tree
+    s: ExpState
+    fact: FactFull
     overlaps: Overlap[]
+    shownRoles: TreeRole[]
+    shownProjects: TreeProject[]
+    shownFacts: TreeFact[]
+    sides: TreeProject[]
+    unplaced: TreeProject[]
+    general: TreeFact[]
+    listed: TreeProject[]
+    factOrder: TreeFact[]
+    expanded: string[]
+    filterProjects: action
+    sortFacts: action
+    home: action
+    close: action
+    openAdd: action
+    closeAdd: action
+    addRole: action
+    addProject: action
+    addFact: action
+    startEdit: action
+    stopEdit: action
+    saveRole: action
+    saveProject: action
+    saveFact: action
+    moveFact: action
+    askDelete: action
+    keepIt: action
+    remove: action
+    showAll: action
+  derive under = not s.beside
+  view
+    if s.view == "projects"
+      Section(testId="projects")
+        InlineField(label="Show the projects of")
+          select value=s.projectsOf change=filterProjects aria-label="Show the projects of" max-width="100%" testId="projects-of"
+            option "Every role" value="all"
+            for r in tree.roles key=r.id
+              option roleChoice(r) value=r.id
+            option "Side projects" value="side"
+        if s.adding == "projects"
+          AddProjectForm(noun="project", side=false, chooser=true, roles=tree.roles, home=newestRole(tree, s.projectsOf), error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("projects"), cancel=closeAdd)
+        else
+          Action(label="Add a project", press=openAdd("projects"), disabled=false, keys="", testId="add-projects")
+        TreeList(testId="projects-list")
+          for p, i in listed key=p.id
+            TreeRow(code=p.ref, name=p.title, href=hrefOf("projects", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "projects"), mark=justMark(`project:${p.id}`, s), level=0, current=(s.open == `project:${p.id}`), rule=(i > 0), wide=s.wide, testId=`project-${p.id}`)
+            if under and s.open == `project:${p.id}`
+              UnderRow(level=0, label="The opened item", testId="under")
+                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+            if expanded.includes(`project:${p.id}`)
+              for f in shownFacts.filter(x => x.projectId == p.id) key=f.id
+                TreeRow(code=f.ref, name=f.text, href=hrefOf("projects", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=1, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
+                if under and s.open == `fact:${f.id}`
+                  UnderRow(level=1, label="The opened item", testId="under")
+                    ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+          if listed.length == 0
+            QuietLine(text="No project yet. Add a project.", testId="projects-none")
+    else if s.view == "facts"
+      Section(testId="facts")
+        if s.adding == "facts"
+          AddFactForm(chooser=true, homes=factHomes(tree), home=newestHome(tree), error=s.madeError, busy=s.busy, save=addFact("facts"), cancel=closeAdd)
+        else
+          Action(label="Add a fact", press=openAdd("facts"), disabled=false, keys="", testId="add-facts")
+        InlineField(label="Sort by")
+          Choices(label="Sort by")
+            ChoiceWord(label="Ref", chosen=(s.sortKey == "ref"), press=sortFacts("ref"), testId="sort-ref")
+            ChoiceWord(label="Fact", chosen=(s.sortKey == "fact"), press=sortFacts("fact"), testId="sort-fact")
+            ChoiceWord(label="Number", chosen=(s.sortKey == "number"), press=sortFacts("number"), testId="sort-number")
+            ChoiceWord(label="Role", chosen=(s.sortKey == "role"), press=sortFacts("role"), testId="sort-role")
+            ChoiceWord(label="Project", chosen=(s.sortKey == "project"), press=sortFacts("project"), testId="sort-project")
+        QuietLine(text=`${factCount(factOrder.length)}, ${sortWords(s.sortKey, s.sortDesc)}. Choose ${sortName(s.sortKey)} again to turn it round.`, testId="sort-order")
+        TreeList(testId="facts-list")
+          for f, i in factOrder key=f.id
+            TreeRow(code=f.ref, name=f.text, href=hrefOf("facts", `fact:${f.id}`), strong=false, quiet=false, sub=joinParts([f.metric, factPlace(tree, f)]), mark=justMark(`fact:${f.id}`, s), level=0, current=(s.open == `fact:${f.id}`), rule=(i > 0), wide=s.wide, testId=`fact-${f.id}`)
+            if under and s.open == `fact:${f.id}`
+              UnderRow(level=0, label="The opened item", testId="under")
+                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+          if factOrder.length == 0
+            QuietLine(text="No fact yet. Add a fact.", testId="facts-none")
+    else
+      Section(testId="roles")
+        SectionHead(text="Roles", testId="roles-head")
+        if s.adding == "roles"
+          AddRoleForm(error=s.madeError, split=s.madeSplit, busy=s.busy, wide=s.wide, save=addRole, cancel=closeAdd)
+        else
+          Action(label="Add a role", press=openAdd("roles"), disabled=false, keys="", testId="add-roles")
+        TreeList(testId="roles-list")
+          for r, i in shownRoles key=r.id
+            TreeRow(code=r.ref, name=r.title, href=hrefOf("roles", `role:${r.id}`), strong=true, quiet=false, sub=roleSub(tree, r), mark=justMark(`role:${r.id}`, s), level=0, current=(s.open == `role:${r.id}`), rule=(i > 0), wide=s.wide, testId=`role-${r.id}`)
+              for o in othersOf(overlaps, r.id) key=o
+                OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`role-${r.id}-overlap-${o}`)
+            if under and s.open == `role:${r.id}`
+              UnderRow(level=0, label="The opened item", testId="under")
+                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+            if expanded.includes(`role:${r.id}`)
+              for p in shownProjects.filter(x => x.place == "role" and x.roleId == r.id) key=p.id
+                TreeRow(code=p.ref, name=p.title, href=hrefOf("roles", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "roles"), mark=justMark(`project:${p.id}`, s), level=1, current=(s.open == `project:${p.id}`), rule=false, wide=s.wide, testId=`project-${p.id}`)
+                if under and s.open == `project:${p.id}`
+                  UnderRow(level=1, label="The opened item", testId="under")
+                    ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+                if expanded.includes(`project:${p.id}`)
+                  for f in shownIn(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
+                    TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=2, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
+                    if under and s.open == `fact:${f.id}`
+                      UnderRow(level=2, label="The opened item", testId="under")
+                        ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+                  if shownFacts.filter(x => x.projectId == p.id).length > experienceLook().factsShown and s.q.trim() == ""
+                    TreeLine(level=2, wide=s.wide)
+                      Action(label=moreLabel(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll), press=showAll(`project:${p.id}`), disabled=false, keys="", testId=`more-project-${p.id}`)
+              TreeRow(code="", name=`${dayName(r)} · ${factCount(dayFacts(tree, r.id).length)}`, href=hrefOf("roles", `day:${r.id}`), strong=false, quiet=true, sub="", mark="", level=1, current=(s.open == `day:${r.id}`), rule=false, wide=s.wide, testId=`day-${r.id}`)
+              if under and s.open == `day:${r.id}`
+                UnderRow(level=1, label="The opened item", testId="under")
+                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+              if expanded.includes(`day:${r.id}`)
+                for f in shownIn(shownFacts.filter(x => x.roleId == r.id and x.projectId == ""), `day:${r.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
+                  TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=2, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
+                  if under and s.open == `fact:${f.id}`
+                    UnderRow(level=2, label="The opened item", testId="under")
+                      ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+                if dayFacts(tree, r.id).length > experienceLook().factsShown and s.q.trim() == ""
+                  TreeLine(level=2, wide=s.wide)
+                    Action(label=moreLabel(dayFacts(tree, r.id), `day:${r.id}`, s.shownAll), press=showAll(`day:${r.id}`), disabled=false, keys="", testId=`more-day-${r.id}`)
+          if tree.roles.length == 0
+            QuietLine(text="No role yet. Add a role.", testId="roles-none")
+      SidesSection(tree=tree, s=s, fact=fact, overlaps=overlaps, title="Side projects", projects=sides, shownFacts=shownFacts, expanded=expanded, testId="sides", close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+      if unplaced.length > 0
+        SidesSection(tree=tree, s=s, fact=fact, overlaps=overlaps, title="Not placed yet", projects=unplaced, shownFacts=shownFacts, expanded=expanded, testId="unplaced", close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+      if general.length > 0
+        Section(testId="general")
+          SectionHead(text="General", testId="general-head")
+          QuietLine(text="Facts that belong to no role, such as education and skills.", testId="general-hint")
+          TreeList(testId="general-list")
+            for f in shownIn(general, "general", s.shownAll, s.q.trim(), s.just) key=f.id
+              TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=0, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
+              if under and s.open == `fact:${f.id}`
+                UnderRow(level=0, label="The opened item", testId="under")
+                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+            if general.length > experienceLook().factsShown and s.q.trim() == ""
+              TreeLine(level=0, wide=s.wide)
+                Action(label=moreLabel(general, "general", s.shownAll), press=showAll("general"), disabled=false, keys="", testId="more-general")
+
+// The side projects (the owner's own), or the repositories nobody placed: the same rows, each with its facts once open.
+component SidesSection
+  props
+    tree: Tree
+    s: ExpState
+    fact: FactFull
+    overlaps: Overlap[]
+    title: string
+    projects: TreeProject[]
+    shownFacts: TreeFact[]
+    expanded: string[]
+    testId: string
+    close: action
+    home: action
+    openAdd: action
+    closeAdd: action
+    addProject: action
+    addFact: action
+    startEdit: action
+    stopEdit: action
+    saveRole: action
+    saveProject: action
+    saveFact: action
+    moveFact: action
+    askDelete: action
+    keepIt: action
+    remove: action
+    showAll: action
+  derive under = not s.beside
+  view
+    Section(testId=testId)
+      SectionHead(text=title, testId=`${testId}-head`)
+      if testId == "sides"
+        if s.adding == "sides"
+          AddProjectForm(noun="side project", side=true, chooser=false, roles=[], home="side", error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("sides"), cancel=closeAdd)
+        else
+          Action(label="Add a side project", press=openAdd("sides"), disabled=false, keys="", testId="add-sides")
+      else
+        QuietLine(text="Repositories the studio could not place. Open one and say which role it was for, or that it is your own side project.", testId=`${testId}-hint`)
+      TreeList(testId=`${testId}-list`)
+        for p, i in projects key=p.id
+          TreeRow(code=p.ref, name=p.title, href=hrefOf("roles", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "roles"), mark=justMark(`project:${p.id}`, s), level=0, current=(s.open == `project:${p.id}`), rule=(i > 0), wide=s.wide, testId=`project-${p.id}`)
+          if under and s.open == `project:${p.id}`
+            UnderRow(level=0, label="The opened item", testId="under")
+              ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+          if expanded.includes(`project:${p.id}`)
+            for f in shownIn(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
+              TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=1, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
+              if under and s.open == `fact:${f.id}`
+                UnderRow(level=1, label="The opened item", testId="under")
+                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll)
+        if testId == "sides" and tree.projects.filter(p => p.place == "side").length == 0
+          QuietLine(text="No side project yet. Add a side project.", testId="sides-none")
+
+// What the Experience screen is showing and doing, as the root holds it. view: roles | projects | facts. open: the
+// item open, as a key ("role:4", "day:4", "project:12", "fact:142"; "" for none). just: the item just added or moved,
+// marked "Just added" until the next action. adding: where an add form is open ("roles", "sides", "in-role:4",
+// "in-day:4", "in-project:12", "projects", "facts"). editing and deleting: the key of the item being edited, or asked
+// about deleting. shownAll: the groups showing all their facts. changeOn: the item the last edit, move or delete
+// was about, whose refusal is said there. beside: the opened item is drawn beside the list (a wide window), else under
+// its own row.
+shape ExpState
+  view: string
+  open: string
+  just: string
+  // "Just added" or "Moved".
+  justWord: string
+  q: string
+  adding: string
+  editing: string
+  deleting: string
+  shownAll: string[]
+  madeError: string
+  madeSplit: bool
+  changeError: string
+  changeOn: string
+  busy: bool
+  wide: bool
+  beside: bool
+  projectsOf: string
+  sortKey: string
+  sortDesc: bool
+
+// An opened item's head: its reference, its name, when and what it holds, and the way to close it. Under its own
+// row (`full` false, a narrow window) the row already says all that, so only Close is drawn.
+component ItemHead
+  props
+    code: string
+    name: string
+    strong: bool
+    sub: string
+    mark: string
+    full: bool
+    close: action
+  view
+    if not full
+      Action(label="Close", press=close, disabled=false, keys="", testId="pane-close")
+    else
+      column gap=lookTight() align-items="start"
+        if code != ""
+          Ref(code=code, testId="pane-ref")
+        if strong
+          ItemTitle(text=name, testId="pane-title")
+        else
+          StrongLine(text=name, testId="pane-title")
+        TreeSub(text=sub, mark=mark, testId="pane-sub")
+        Action(label="Close", press=close, disabled=false, keys="", testId="pane-close")
+
+// The facts of one group (a project, Day to day, General) as rows inside an opened item, with "Show all" past the
+// first few, its empty state, and adding a fact to it.
+component FactRows
+  props
+    tree: Tree
+    facts: TreeFact[]
+    group: string
+    ctx: string
+    addLabel: string
+    s: ExpState
+    showAll: action
+    openAdd: action
+    closeAdd: action
+    addFact: action
+  view
+    TreeList(testId=`in-${group.replaceAll(":", "-")}-facts`)
+      for f in shownIn(facts, group, s.shownAll, "", s.just) key=f.id
+        TreeRow(code=f.ref, name=f.text, href=hrefOf(s.view, `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=0, current=false, rule=false, wide=s.wide, testId=`in-fact-${f.id}`)
+      if facts.length > experienceLook().factsShown
+        TreeLine(level=0, wide=s.wide)
+          Action(label=moreLabel(facts, group, s.shownAll), press=showAll(group), disabled=false, keys="", testId=`in-more-${group.replaceAll(":", "-")}`)
+      if facts.length == 0
+        TreeLine(level=0, wide=s.wide)
+          QuietLine(text="No fact yet. Add a fact.", testId=`in-none-${group.replaceAll(":", "-")}`)
+      TreeLine(level=0, wide=s.wide)
+        if s.adding == ctx
+          AddFactForm(chooser=false, homes=[], home="", error=s.madeError, busy=s.busy, save=addFact(ctx), cancel=closeAdd)
+        else
+          Action(label=addLabel, press=openAdd(ctx), disabled=false, keys="", testId=`add-${ctx.replaceAll(":", "-")}`)
+
+// The opened item: where it is, its record, what can be done to it, and what is in it. One piece for every kind, drawn
+// beside the list on a wide window and under the item's own row on a narrow one.
+component ItemPane
+  props
+    tree: Tree
+    s: ExpState
+    fact: FactFull
+    overlaps: Overlap[]
+    close: action
+    home: action
+    openAdd: action
+    closeAdd: action
+    addProject: action
+    addFact: action
+    startEdit: action
+    stopEdit: action
+    saveRole: action
+    saveProject: action
+    saveFact: action
+    moveFact: action
+    askDelete: action
+    keepIt: action
+    remove: action
+    showAll: action
+  derive kind = keyKind(s.open)
+  derive id = keyId(s.open)
+  derive chain = crumbChain(tree, s.open).filter(k => s.view == "roles" or (s.view == "projects" and keyKind(k) == "project"))
+  derive general = kind == "fact" and generalFacts(tree).filter(f => f.id == id).length > 0
+  derive changeHere = s.changeOn == s.open ? s.changeError : ""
+  view
+    column gap=look().rowGap min-width=0 testId="pane"
+      if s.beside
+        Crumbs(label="Where this is")
+          Crumb(label=viewName(s.view), href=viewHref(s.view), first=true, testId="crumb-top")
+          for k in chain key=k
+            Crumb(label=crumbName(tree, k), href=hrefOf(s.view, k), first=false, testId=`crumb-${k.replaceAll(":", "-")}`)
+          if general and s.view == "roles"
+            Crumb(label="General", href="", first=false, testId="crumb-general")
+      if not tree.loaded
+        QuietLine(text="Loading…", testId="pane-loading")
+      else if kind == "role"
+        for r in rolesOf(tree, id) key=r.id
+          ItemHead(code=r.ref, name=r.title, strong=true, sub=roleSub(tree, r), mark=justMark(s.open, s), full=s.beside, close=close)
+          for o in othersOf(overlaps, r.id) key=o
+            OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`role-overlap-${o}`)
+          if s.editing == s.open
+            EditRoleForm(role=r, error=changeHere, busy=s.busy, wide=s.wide, save=saveRole, cancel=stopEdit)
+          else
+            column gap=lookTight() testId="official"
+              FieldRow(label="Employer", value=r.company, mark=markLabel(r.markCompany), wide=s.wide, testId="official-company")
+              FieldRow(label="Official title", value=r.title, mark=markLabel(r.markTitle), wide=s.wide, testId="official-title")
+              FieldRow(label="Start", value=ymText(r.start), mark=markLabel(r.markStart), wide=s.wide, testId="official-start")
+              FieldRow(label="End", value=(r.end == "" and r.start != "" ? "Present" : ymText(r.end)), mark=markLabel(r.markEnd), wide=s.wide, testId="official-end")
+              FieldRow(label="Employment type", value=employmentLabel(r.employment), mark=markLabel(r.markType), wide=s.wide, testId="official-type")
+              FieldRow(label="Location", value=r.location, mark=markLabel(r.markLocation), wide=s.wide, testId="official-location")
+            if r.reach != ""
+              FieldRow(label="Reached users", value=reachLabel(r.reach), mark="", wide=s.wide, testId="role-reach")
+            if s.deleting == s.open
+              DeleteAsk(question=`Delete ${r.ref}, its ${projectCount(projectsOf(tree, r.id).filter(p => not p.carried).length)} and ${factCount(tree.facts.filter(f => f.roleId == r.id and (f.projectId == "" or projectsOf(tree, r.id).filter(p => p.id == f.projectId and not p.carried).length > 0)).length)}? A repository filed under it stays, not placed. This cannot be undone.`, label=`Delete ${r.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
+            else
+              Actions(testId="pane-actions")
+                Action(label="Edit official record", press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
+                DangerAction(label="Delete role", press=askDelete(s.open), disabled=false, testId="pane-delete")
+          TreeList(testId="in-projects")
+            for p in projectsOf(tree, r.id) key=p.id
+              TreeRow(code=p.ref, name=p.title, href=hrefOf(s.view, `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "roles"), mark=justMark(`project:${p.id}`, s), level=0, current=false, rule=false, wide=s.wide, testId=`in-project-${p.id}`)
+            if projectsOf(tree, r.id).length == 0
+              TreeLine(level=0, wide=s.wide)
+                QuietLine(text="No project yet. Add a project.", testId="in-none-projects")
+            TreeLine(level=0, wide=s.wide)
+              if s.adding == `in-role:${r.id}`
+                AddProjectForm(noun="project", side=false, chooser=false, roles=[], home=`role:${r.id}`, error=s.madeError, busy=s.busy, wide=s.wide, save=addProject(`in-role:${r.id}`), cancel=closeAdd)
+              else
+                Action(label="Add a project", press=openAdd(`in-role:${r.id}`), disabled=false, keys="", testId=`add-in-role-${r.id}`)
+            TreeRow(code="", name=`${dayName(r)} · ${factCount(dayFacts(tree, r.id).length)}`, href=hrefOf(s.view, `day:${r.id}`), strong=false, quiet=true, sub="", mark="", level=0, current=false, rule=false, wide=s.wide, testId=`in-day-${r.id}`)
+        if rolesOf(tree, id).length == 0
+          QuietLine(text="This role is no longer in your record.", testId="pane-gone")
+      else if kind == "day"
+        for r in rolesOf(tree, id) key=r.id
+          ItemHead(code="", name=dayName(r), strong=true, sub=factCount(dayFacts(tree, r.id).length), mark="", full=s.beside, close=close)
+          QuietLine(text="What you did in this role outside its projects.", testId="day-hint")
+          FactRows(tree=tree, facts=dayFacts(tree, r.id), group=s.open, ctx=`in-day:${r.id}`, addLabel="Add a fact to Day to day", s=s, showAll=showAll, openAdd=openAdd, closeAdd=closeAdd, addFact=addFact)
+        if rolesOf(tree, id).length == 0
+          QuietLine(text="This role is no longer in your record.", testId="pane-gone")
+      else if kind == "project"
+        for p in tree.projects.filter(x => x.id == id) key=p.id
+          ItemHead(code=p.ref, name=p.title, strong=true, sub=projectSub(tree, p, s.view), mark=justMark(s.open, s), full=s.beside, close=close)
+          if p.place == "unplaced"
+            StrongLine(text="Not placed yet.", testId="pane-unplaced")
+            QuietLine(text="The studio could not tell whether this was work for one of your roles or your own side project. Say which, and it is filed there.", testId="pane-unplaced-hint")
+          if s.editing == s.open
+            EditProjectForm(project=p, noun=(p.place == "role" ? "project" : "side project"), roles=tree.roles, error=changeHere, busy=s.busy, save=saveProject, cancel=stopEdit)
+          else
+            column gap=look().rowGap testId="parts"
+              if p.lives != ""
+                Labelled(label="Where it lives", value=p.lives, testId="part-lives")
+              if p.result != ""
+                Labelled(label="Result", value=p.result, testId="part-result")
+              else
+                Action(label="Add the result", press=startEdit(s.open), disabled=false, keys="", testId="part-result-add")
+              if p.situation != ""
+                Labelled(label="Situation", value=p.situation, testId="part-situation")
+              else
+                Action(label="Add the situation", press=startEdit(s.open), disabled=false, keys="", testId="part-situation-add")
+              if p.did != ""
+                Labelled(label="What I did", value=p.did, testId="part-did")
+              else
+                Action(label="Add what you did", press=startEdit(s.open), disabled=false, keys="", testId="part-did-add")
+              if p.learned != ""
+                Labelled(label="What I learned", value=p.learned, testId="part-learned")
+              else
+                Action(label="Add what you learned", press=startEdit(s.open), disabled=false, keys="", testId="part-learned-add")
+            if s.deleting == s.open
+              DeleteAsk(question=`Delete ${p.ref}? ${factsInProject(tree, p.id).length == 0 ? "It holds no fact." : `Its ${factCount(factsInProject(tree, p.id).length)} ${factsInProject(tree, p.id).length == 1 ? "stays" : "stay"} in ${p.place == "role" ? `Day to day at ${companyOf(tree, p.roleId)}` : "General"}.`}`, label=`Delete ${p.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
+            else
+              Actions(testId="pane-actions")
+                Action(label=(p.place == "unplaced" ? "Place it" : p.place == "side" ? "Edit the side project" : "Edit the project"), press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
+                DangerAction(label=(p.place == "side" ? "Delete side project" : "Delete project"), press=askDelete(s.open), disabled=false, testId="pane-delete")
+          FactRows(tree=tree, facts=factsInProject(tree, p.id), group=s.open, ctx=`in-project:${p.id}`, addLabel="Add a fact", s=s, showAll=showAll, openAdd=openAdd, closeAdd=closeAdd, addFact=addFact)
+        if tree.projects.filter(x => x.id == id).length == 0
+          QuietLine(text="This project is no longer in your record.", testId="pane-gone")
+      else if kind == "fact"
+        for f in tree.facts.filter(x => x.id == id) key=f.id
+          ItemHead(code=f.ref, name=f.text, strong=false, sub=joinParts([f.metric, kindLabel(f.kind)]), mark=justMark(s.open, s), full=s.beside, close=close)
+          if fact.loaded and fact.id == f.id
+            QuietLine(text=factFrom(fact), testId="fact-from")
+            if s.editing == s.open
+              EditFactForm(fact=f, detail=fact.detail, error=changeHere, busy=s.busy, save=saveFact, cancel=stopEdit)
+            else
+              if fact.detail != ""
+                Labelled(label="Story", value=fact.detail, testId="fact-detail-text")
+              Labelled(label="Category", value=kindLabel(f.kind), testId="fact-kind")
+              if fact.skills != ""
+                Labelled(label="Skills", value=fact.skills, testId="fact-skills")
+              Labelled(label="Evidence", value=(fact.evidence == "" ? "None recorded." : fact.evidence), testId="fact-evidence")
+              MoveFact(fact=f, homes=factHomes(tree), error=(s.deleting == "" ? changeHere : ""), busy=s.busy, move=moveFact)
+              if s.deleting == s.open
+                DeleteAsk(question=`Delete ${f.ref}? It is removed from your record and stays out when its source is read again. This cannot be undone.`, label=`Delete ${f.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
+              else
+                Actions(testId="pane-actions")
+                  Action(label="Edit the fact", press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
+                  DangerAction(label="Delete fact", press=askDelete(s.open), disabled=false, testId="pane-delete")
+          else
+            QuietLine(text="Loading…", testId="fact-loading")
+        if tree.facts.filter(x => x.id == id).length == 0
+          QuietLine(text="This fact is no longer in your record. It was deleted, or replaced when its source was read again.", testId="pane-gone")
+
+// ---------- Adding, editing, moving and deleting, in place ----------
+// Each form opens only when the owner asks (an "Add …" or "Edit …" action), saves only on its Add or Save action,
+// and has Cancel. Only the first line is needed; every other field says "(optional)". A refusal is said under the
+// form, in the server's words, and the form keeps what was typed.
+
+// A new role: "title at employer" on the first line; when, employment type and (under More) location.
+component AddRoleForm
+  props
+    error: string
+    // The last line was refused because it says "at" more than once: the title and the employer are asked apart.
+    split: bool
+    busy: bool
+    wide: bool
+    save: action
+    cancel: action
+  state line = ""
+  state title = ""
+  state company = ""
+  // Once asked apart, they stay apart until the form closes.
+  state apart = false
+  state dates = ""
+  state employment = ""
+  state location = ""
+  state more = false
+  action editLine(v: string)
+    line = v
+  action editWhen(v: string)
+    dates = v
+  action pickEmployment(v: string)
+    employment = v
+  action editLocation(v: string)
+    location = v
+  action showMore
+    more = true
+  action editTitle(v: string)
+    title = v
+  action editCompany(v: string)
+    company = v
+  // The line as typed is kept as the title, so a line refused for saying "at" twice is not typed again.
+  action submit
+    if split or apart
+      apart = true
+      save("", title, company, dates, employment, location)
+    else
+      title = line
+      save(line, "", "", dates, employment, location)
+  view
+    InPlaceForm(label="Add a role", testId="new-role-form")
+      if split or apart
+        FieldLabel(label="Title")
+          input value=title input=editTitle submit=submit aria-label="Title" autocomplete="off" aria-invalid=(error != "") testId="new-title"
+        FieldLabel(label="Employer")
+          input value=company input=editCompany submit=submit placeholder="Harborlight Systems" aria-label="Employer" autocomplete="off" autofocus=true testId="new-employer"
+      else
+        FieldLabel(label="Role: title at employer")
+          input value=line input=editLine submit=submit placeholder="Director of Engineering at Harborlight Systems" aria-label="Role: title at employer" autocomplete="off" autofocus=true aria-invalid=(error != "") testId="new-first"
+      FieldPair(wide=wide)
+        PairField(label="When (optional)")
+          input value=dates input=editWhen submit=submit placeholder="Mar 2023 – now" aria-label="When (optional)" autocomplete="off" testId="new-when"
+        PairField(label="Employment type (optional)")
+          select value=employment change=pickEmployment aria-label="Employment type (optional)" testId="new-employment"
+            option "Not set" value=""
+            option "Employee" value="employee"
+            option "Contract" value="contract"
+            option "Part-time" value="part-time"
+            option "Own company" value="own"
+      if more
+        FieldLabel(label="Location (optional)")
+          input value=location input=editLocation submit=submit placeholder="Duluth, MN" aria-label="Location (optional)" autocomplete="off" testId="new-location"
+      else
+        Action(label="More: Location", press=showMore, disabled=false, keys="", testId="new-more")
+      if error != ""
+        FailLine(text=error, testId="new-error")
+      Actions(testId="new-actions")
+        MainAction(label="Add role", press=submit, disabled=busy, keys="", testId="new-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="new-cancel")
+
+// A new project: in the role it is added from, on the side, or (from the Projects view) in the role chosen, which
+// may be a new one ("A new role…", written as title at employer). Its result is asked at once; the other parts under
+// More.
+component AddProjectForm
+  props
+    noun: string
+    side: bool
+    chooser: bool
+    roles: TreeRole[]
+    home: string
     error: string
     busy: bool
     wide: bool
     save: action
-    back: action
-    home: action
-  state standing = role.standing
+    cancel: action
+  state title = ""
+  state where = home
+  state newRole = ""
+  state dates = ""
+  state result = ""
+  state situation = ""
+  state did = ""
+  state learned = ""
+  state lives = ""
+  state more = false
+  action editTitle(v: string)
+    title = v
+  action pickWhere(v: string)
+    where = v
+  action editNewRole(v: string)
+    newRole = v
+  action editWhen(v: string)
+    dates = v
+  action editResult(v: string)
+    result = v
+  action editSituation(v: string)
+    situation = v
+  action editDid(v: string)
+    did = v
+  action editLearned(v: string)
+    learned = v
+  action editLives(v: string)
+    lives = v
+  action showMore
+    more = true
+  action submit
+    save(title, where, newRole, dates, result, situation, did, learned, lives)
+  view
+    InPlaceForm(label=`Add a ${noun}`, testId="new-project-form")
+      FieldLabel(label=(side ? "Side project" : "Project"))
+        input value=title input=editTitle submit=submit placeholder=(side ? "Built tidewater, an open-source tide-table library" : "Merged three deploy systems into one") aria-label=(side ? "Side project" : "Project") autocomplete="off" autofocus=true aria-invalid=(error != "") testId="new-first"
+      if chooser
+        FieldLabel(label="Which role?")
+          select value=where change=pickWhere aria-label="Which role?" align-self="flex-start" max-width="100%" testId="new-home"
+            for r in roles key=r.id
+              option roleChoice(r) value=`role:${r.id}`
+            option "Side project" value="side"
+            option "A new role…" value="new"
+        if where == "new"
+          FieldLabel(label="The new role: title at employer")
+            input value=newRole input=editNewRole submit=submit placeholder="Head of Platform at Fernway" aria-label="The new role: title at employer" autocomplete="off" testId="new-role"
+      FieldLabel(label="When (optional)")
+        input value=dates input=editWhen submit=submit placeholder="2023–2024" aria-label="When (optional)" autocomplete="off" testId="new-when"
+      FieldLabel(label="Result: what came of it (optional)")
+        textarea value=result input=editResult aria-label="Result: what came of it (optional)" rows=2 testId="new-result"
+      if more
+        if side
+          FieldLabel(label="Where it lives (optional)")
+            input value=lives input=editLives submit=submit placeholder="A code repository" aria-label="Where it lives (optional)" autocomplete="off" testId="new-lives"
+        FieldLabel(label="Situation (optional)")
+          textarea value=situation input=editSituation aria-label="Situation (optional)" rows=2 testId="new-situation"
+        FieldLabel(label="What I did (optional)")
+          textarea value=did input=editDid aria-label="What I did (optional)" rows=2 testId="new-did"
+        FieldLabel(label="What I learned (optional)")
+          textarea value=learned input=editLearned aria-label="What I learned (optional)" rows=2 testId="new-learned"
+      else
+        Action(label=(side ? "More: Where it lives, Situation, What I did, What I learned" : "More: Situation, What I did, What I learned"), press=showMore, disabled=false, keys="", testId="new-more")
+      if error != ""
+        FailLine(text=error, testId="new-error")
+      Actions(testId="new-actions")
+        MainAction(label=(side ? "Add side project" : "Add project"), press=submit, disabled=busy, keys="", testId="new-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="new-cancel")
+
+// A new fact: in the group it is added from, or (from the Facts view) where it is chosen to belong, which may be a
+// new role. Its number is optional.
+component AddFactForm
+  props
+    chooser: bool
+    homes: Home[]
+    home: string
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state body = ""
+  state metric = ""
+  state where = home
+  state newRole = ""
+  action editBody(v: string)
+    body = v
+  action editMetric(v: string)
+    metric = v
+  action pickWhere(v: string)
+    where = v
+  action editNewRole(v: string)
+    newRole = v
+  action submit
+    save(body, where, newRole, metric)
+  view
+    InPlaceForm(label="Add a fact", testId="new-fact-form")
+      FieldLabel(label="Fact")
+        input value=body input=editBody submit=submit placeholder="Cut median deploy time from 47 minutes to 9 minutes." aria-label="Fact" autocomplete="off" autofocus=true aria-invalid=(error != "") testId="new-first"
+      if chooser
+        FieldLabel(label="Where it belongs")
+          select value=where change=pickWhere aria-label="Where it belongs" align-self="flex-start" max-width="100%" testId="new-home"
+            for h in homes key=h.value
+              option h.label value=h.value
+            option "A new role…" value="new"
+        if where == "new"
+          FieldLabel(label="The new role: title at employer")
+            input value=newRole input=editNewRole submit=submit placeholder="Head of Platform at Fernway" aria-label="The new role: title at employer" autocomplete="off" testId="new-role"
+      FieldLabel(label="Number (optional)")
+        input value=metric input=editMetric submit=submit placeholder="47 to 9 minutes" aria-label="Number (optional)" autocomplete="off" testId="new-metric"
+      if error != ""
+        FailLine(text=error, testId="new-error")
+      Actions(testId="new-actions")
+        MainAction(label="Add fact", press=submit, disabled=busy, keys="", testId="new-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="new-cancel")
+
+// A field of the official record and where its value comes from. A value the owner changes, with no mark chosen, is
+// marked From memory.
+component OfficialField
+  props
+    label: string
+    value: string
+    mark: string
+    hint: string
+    wide: bool
+    field: string
+    edit: action
+    pick: action
+  view
+    FieldPair(wide=wide)
+      PairField(label=label)
+        input value=value input=edit placeholder=hint aria-label=label autocomplete="off" testId=`edit-${field}`
+      PairField(label="Where it comes from")
+        select value=mark change=pick aria-label=`Where the ${label.toLowerCase()} comes from` testId=`edit-${field}-mark`
+          option "Not marked" value=""
+          option "As HR records it" value="hr"
+          option "From memory" value="memory"
+
+// Whether a field's mark is to be sent: it was changed, or its value was (a changed value with no mark is "From memory").
+fn markChanged(mark: string, stored: string, valueChanged: bool): bool = mark != stored or valueChanged
+// The official record of a role, edited: six fields, each with where it comes from, and whether its work reached users.
+component EditRoleForm
+  props
+    role: TreeRole
+    error: string
+    busy: bool
+    wide: bool
+    save: action
+    cancel: action
+  state title = role.title
+  state company = role.company
+  state start = ymText(role.start)
+  state end = ymText(role.end)
+  state employment = role.employment
+  state location = role.location
   state reach = role.reach
-  state partOf = role.partOf
-  derive dirty = standing != role.standing or reach != role.reach or partOf != role.partOf
-  action leave
-    if dirty
-      showModal("discard-edits")
-    else
-      back()
-  action pickPartOf(v: string)
-    partOf = v
-  action pickStanding(v: string)
-    standing = v
+  state mTitle = role.markTitle
+  state mCompany = role.markCompany
+  state mStart = role.markStart
+  state mEnd = role.markEnd
+  state mType = role.markType
+  state mLocation = role.markLocation
+  action editTitle(v: string)
+    title = v
+  action editCompany(v: string)
+    company = v
+  action editStart(v: string)
+    start = v
+  action editEnd(v: string)
+    end = v
+  action editLocation(v: string)
+    location = v
+  action pickEmployment(v: string)
+    employment = v
   action pickReach(v: string)
     reach = v
+  action markTitle(v: string)
+    mTitle = v
+  action markCompany(v: string)
+    mCompany = v
+  action markStart(v: string)
+    mStart = v
+  action markEnd(v: string)
+    mEnd = v
+  action markType(v: string)
+    mType = v
+  action markLocation(v: string)
+    mLocation = v
+  action submit
+    save(role.id, [title != role.title ? "title" : "", company != role.company ? "company" : "", start != ymText(role.start) ? "start" : "", end != ymText(role.end) ? "end" : "", employment != role.employment ? "employment" : "", location != role.location ? "location" : "", reach != role.reach ? "reach" : "", markChanged(mCompany, role.markCompany, company != role.company) ? "mark:company" : "", markChanged(mTitle, role.markTitle, title != role.title) ? "mark:title" : "", markChanged(mStart, role.markStart, start != ymText(role.start)) ? "mark:start" : "", markChanged(mEnd, role.markEnd, end != ymText(role.end)) ? "mark:end" : "", markChanged(mType, role.markType, employment != role.employment) ? "mark:type" : "", markChanged(mLocation, role.markLocation, location != role.location) ? "mark:location" : ""].filter(k => k != ""), title, company, start, end, employment, location, reach, [mCompany == "" and company != role.company ? "memory" : mCompany, mTitle == "" and title != role.title ? "memory" : mTitle, mStart == "" and start != ymText(role.start) ? "memory" : mStart, mEnd == "" and end != ymText(role.end) ? "memory" : mEnd, mType == "" and employment != role.employment ? "memory" : mType, mLocation == "" and location != role.location ? "memory" : mLocation])
   view
-    Page(testId="role")
-      Section(testId="role-top")
-        Action(label="Back to Experience", press=leave, disabled=false, keys="", testId="role-back")
-      Section(testId="role-head")
-        RecordHead(code=roleRef(role.id), name=role.name, dates=roleYears(role), extent=factCount(facts.length), word=statusWord("role", ""), showWord=true, place="", provenance="", testId="role-title")
-          for o in othersOf(overlaps, role.id) key=o
-            OverlapLine(other=o, otherName=placeName(places, o), home=home, testId=`role-overlap-${o}`)
-      Section(testId="role-form")
-        SectionHead(text="Kind of work", testId="role-kind-head")
-        QuietLine(text=(partOf == "" ? "Used to weigh this work when a job is read: paid, production and recent work count for more than a personal project that never shipped." : "It counts as that employer’s work, and is written up under that job in your profile and resumes."), testId="role-hint")
-        if not role.employer
-          FieldLabel(label="Done for")
-            select value=partOf change=pickPartOf aria-label="The employer it was done for" align-self="flex-start" max-width="100%" testId="role-part-of"
-              option "No employer" value=""
-              for e in employers key=e.id
-                option e.name value=e.id
-        if partOf == ""
-          FieldLabel(label="Type of work")
-            select value=standing change=pickStanding aria-label="Type of work" align-self="flex-start" max-width="100%" testId="role-standing"
-              option "Not set" value=""
-              option "Employer" value="employer"
-              option "Own company" value="own"
-              option "Contract" value="contract"
-              option "Personal project" value="personal"
-        FieldLabel(label="Reached users")
-          select value=reach change=pickReach aria-label="Reached users" align-self="flex-start" max-width="100%" testId="role-reach"
+    InPlaceForm(label="Official record", testId="edit-role-form")
+      StrongLine(text="Official record", testId="edit-role-head")
+      OfficialField(label="Official title", value=title, mark=mTitle, hint="", wide=wide, field="title", edit=editTitle, pick=markTitle)
+      OfficialField(label="Employer", value=company, mark=mCompany, hint="", wide=wide, field="company", edit=editCompany, pick=markCompany)
+      OfficialField(label="Start", value=start, mark=mStart, hint="Mar 2023", wide=wide, field="start", edit=editStart, pick=markStart)
+      OfficialField(label="End", value=end, mark=mEnd, hint="Leave blank if you still work here", wide=wide, field="end", edit=editEnd, pick=markEnd)
+      FieldPair(wide=wide)
+        PairField(label="Employment type")
+          select value=employment change=pickEmployment aria-label="Employment type" testId="edit-employment"
             option "Not set" value=""
-            option "In production" value="live"
-            option "Was in production" value="retired"
-            option "Never reached users" value="never"
-        if error != ""
-          FailLine(text=error, testId="role-error")
-        Actions(testId="role-actions")
-          MainAction(label="Save kind of work", press=save(role.id, (partOf == "" ? standing : ""), reach, partOf), disabled=busy, keys="", testId="role-save")
-          Action(label="Cancel", press=leave, disabled=false, keys="", testId="role-cancel")
-      Section(testId="role-facts")
-        SectionHead(text="Facts", testId="role-facts-head")
-        for f in facts key=f.id
-          Record(code=factRef(f.id), name=f.text, href=`/record/fact/${f.id}`, strong=false, dates="", extent=factMeta(f), word=statusWord("fact", ""), showWord=true, place="", provenance="", wide=wide, testId=`role-fact-${f.id}`)
+            option "Employee" value="employee"
+            option "Contract" value="contract"
+            option "Part-time" value="part-time"
+            option "Own company" value="own"
+        PairField(label="Where it comes from")
+          select value=mType change=markType aria-label="Where the employment type comes from" testId="edit-employment-mark"
+            option "Not marked" value=""
+            option "As HR records it" value="hr"
+            option "From memory" value="memory"
+      OfficialField(label="Location", value=location, mark=mLocation, hint="", wide=wide, field="location", edit=editLocation, pick=markLocation)
+      FieldLabel(label="Reached users (weighs this work for a job’s fit)")
+        select value=reach change=pickReach aria-label="Reached users" align-self="flex-start" max-width="100%" testId="edit-reach"
+          option "Not set" value=""
+          option "In production" value="live"
+          option "Was in production" value="retired"
+          option "Never reached users" value="never"
+      if error != ""
+        FailLine(text=error, testId="edit-error")
+      Actions(testId="edit-actions")
+        MainAction(label="Save", press=submit, disabled=busy, keys="", testId="edit-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="edit-cancel")
 
-// One fact: its record with where it came from, the story behind it, where it is filed, what supports it.
-component FactScreen
+// Where a project is, as its chooser says it: role:<id>, side, or "" for not placed yet.
+fn placeOf(p: TreeProject): string = p.place == "side" ? "side" : p.place == "unplaced" ? "" : `role:${p.roleId}`
+// A project edited: its name, dates and four parts. One nobody placed (or a side project) is placed here too: a role,
+// or the owner's own side project. A project of a role stays in it.
+component EditProjectForm
   props
-    fact: Fact
-    role: string
+    project: TreeProject
+    noun: string
+    roles: TreeRole[]
     error: string
-    edit: action
-    askRemove: action
-    back: action
+    busy: bool
+    save: action
+    cancel: action
+  state title = project.title
+  state dates = projectWhenTyped(project)
+  state lives = project.lives
+  state result = project.result
+  state situation = project.situation
+  state did = project.did
+  state learned = project.learned
+  state place = placeOf(project)
+  action editTitle(v: string)
+    title = v
+  action editWhen(v: string)
+    dates = v
+  action editLives(v: string)
+    lives = v
+  action editResult(v: string)
+    result = v
+  action editSituation(v: string)
+    situation = v
+  action editDid(v: string)
+    did = v
+  action editLearned(v: string)
+    learned = v
+  action pickPlace(v: string)
+    place = v
+  action submit
+    save(project.id, [title != project.title ? "title" : "", dates != projectWhenTyped(project) ? "when" : "", lives != project.lives ? "lives" : "", result != project.result ? "result" : "", situation != project.situation ? "situation" : "", did != project.did ? "did" : "", learned != project.learned ? "learned" : "", project.carried and place != placeOf(project) ? "place" : ""].filter(k => k != ""), title, dates, lives, result, situation, did, learned, project.carried ? place : "")
   view
-    Page(testId="fact")
-      Section(testId="fact-top")
-        Action(label="Back to Experience", press=back, disabled=false, keys="", testId="fact-back")
-      Section(testId="fact-head")
-        RecordHead(code=factRef(fact.id), name=fact.text, dates="", extent=factMeta(fact), word=statusWord("fact", ""), showWord=true, place="", provenance=factFrom(fact), testId="fact-text")
-      if fact.detail != ""
-        Section(testId="fact-story")
-          SectionHead(text="Story", testId="fact-story-head")
-          Line(text=fact.detail, testId="fact-detail-text")
-      Section(testId="fact-fields")
-        Labelled(label="Role", value=role, testId="fact-role")
-        Labelled(label="Category", value=kindLabel(fact.kind), testId="fact-kind")
-        if fact.metric != ""
-          Labelled(label="Measured result", value=fact.metric, testId="fact-metric")
-        if fact.skills != ""
-          Labelled(label="Skills", value=fact.skills, testId="fact-skills")
-      Section(testId="fact-support")
-        SectionHead(text="Evidence", testId="fact-evidence-head")
-        Line(text=(fact.evidence == "" ? "None recorded." : fact.evidence), testId="fact-evidence")
-      Section(testId="fact-actions")
-        if error != ""
-          FailLine(text=error, testId="fact-error")
-        MainAction(label="Edit", press=edit, disabled=false, keys="", testId="fact-edit")
-        DangerAction(label="Delete fact", press=askRemove, disabled=false, testId="fact-delete")
+    InPlaceForm(label=`Edit the ${noun}`, testId="edit-project-form")
+      FieldLabel(label=(project.place == "role" ? "Project" : "Side project"))
+        input value=title input=editTitle submit=submit aria-label="Name" autocomplete="off" testId="edit-title"
+      if project.carried
+        FieldLabel(label="Which role?")
+          select value=place change=pickPlace aria-label="Which role?" align-self="flex-start" max-width="100%" testId="edit-place"
+            if project.place == "unplaced"
+              option "Not placed yet" value=""
+            for r in roles key=r.id
+              option roleChoice(r) value=`role:${r.id}`
+            option "My own side project" value="side"
+      FieldLabel(label="When (optional)")
+        input value=dates input=editWhen submit=submit placeholder="2023–2024" aria-label="When (optional)" autocomplete="off" testId="edit-when"
+      if project.place != "role"
+        FieldLabel(label="Where it lives (optional)")
+          input value=lives input=editLives submit=submit placeholder="A code repository" aria-label="Where it lives (optional)" autocomplete="off" testId="edit-lives"
+      FieldLabel(label="Result (optional)")
+        textarea value=result input=editResult aria-label="Result (optional)" rows=2 testId="edit-result"
+      FieldLabel(label="Situation (optional)")
+        textarea value=situation input=editSituation aria-label="Situation (optional)" rows=2 testId="edit-situation"
+      FieldLabel(label="What I did (optional)")
+        textarea value=did input=editDid aria-label="What I did (optional)" rows=2 testId="edit-did"
+      FieldLabel(label="What I learned (optional)")
+        textarea value=learned input=editLearned aria-label="What I learned (optional)" rows=2 testId="edit-learned"
+      if error != ""
+        FailLine(text=error, testId="edit-error")
+      Actions(testId="edit-actions")
+        MainAction(label="Save", press=submit, disabled=busy, keys="", testId="edit-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="edit-cancel")
 
-// Edit a fact: its drafts start from the fact. Save returns to the fact on an ok reply; a refusal stays here,
-// saying why. Leaving with a change asks first.
-component EditFactScreen
+// A fact edited: its words, its story, its number and its category. Cancel with a change asks first, in the page.
+component EditFactForm
   props
-    fact: Fact
-    places: Place[]
+    fact: TreeFact
+    detail: string
     error: string
     busy: bool
     save: action
     cancel: action
   state body = fact.text
-  state story = fact.detail
+  state story = detail
   state metric = fact.metric
-  state roleId = fact.roleId
   state kind = fact.kind
-  derive dirty = body != fact.text or story != fact.detail or metric != fact.metric or roleId != fact.roleId or kind != fact.kind
-  action pickRole(v: string)
-    roleId = v
-  action pickKind(v: string)
-    kind = v
-  action leave
-    if dirty
-      showModal("discard-edits")
-    else
-      cancel()
+  state asking = false
+  derive dirty = body != fact.text or story != detail or metric != fact.metric or kind != fact.kind
   action editBody(v: string)
     body = v
   action editStory(v: string)
     story = v
   action editMetric(v: string)
     metric = v
+  action pickKind(v: string)
+    kind = v
+  action leave
+    if dirty
+      asking = true
+    else
+      cancel()
+  action keepEditing
+    asking = false
+  action submit
+    save(fact.id, [body != fact.text ? "text" : "", story != detail ? "detail" : "", metric != fact.metric ? "metric" : "", kind != fact.kind ? "kind" : ""].filter(k => k != ""), body, story, metric, kind)
   view
-    Page(testId="edit")
-      Section(testId="edit-top")
-        Title(text=`Edit ${factRef(fact.id)}`, testId="edit-title")
-      Section(testId="edit-form")
-        FieldLabel(label="Fact")
-          textarea value=body input=editBody placeholder="What you did, in one sentence" aria-label="Fact" rows=4 aria-invalid=(error != "") testId="edit-text"
-        if error != ""
-          FailLine(text=error, testId="edit-error")
-        FieldLabel(label="Story")
-          textarea value=story input=editStory placeholder="The situation, what you did and decided, what was hard, what came of it" aria-label="Story" rows=6 testId="edit-story"
-        FieldLabel(label="Measured result")
-          input value=metric input=editMetric placeholder="Such as 40% fewer support tickets" aria-label="Measured result" enterkeyhint="done" testId="edit-metric"
-        QuietLine(text=(body.trim() == "" ? "Enter the fact to save it." : "Leave the result empty if nothing was measured."), testId="edit-hint")
-        FieldLabel(label="Filed under")
-          select value=roleId change=pickRole aria-label="Role" align-self="flex-start" max-width="100%" testId="edit-role"
-            for r in places key=r.id
-              option r.name value=r.id
-        FieldLabel(label="Category")
-          select value=kind change=pickKind aria-label="Category" align-self="flex-start" max-width="100%" testId="edit-kind"
-            option "Accomplishment" value="accomplishment"
-            option "Project" value="project"
-            option "Responsibility" value="responsibility"
-            option "Skill" value="skill"
-            option "Education" value="education"
-            option "Other" value="other"
-      Section(testId="edit-actions")
-        Actions(testId="edit-actions-row")
-          MainAction(label="Save", press=save(fact.id, body, story, metric, roleId, kind), disabled=(body.trim() == "" or busy), keys="", testId="edit-save")
+    InPlaceForm(label="Edit the fact", testId="edit-fact-form")
+      FieldLabel(label="Fact")
+        textarea value=body input=editBody aria-label="Fact" rows=3 aria-invalid=(error != "") testId="edit-text"
+      FieldLabel(label="Story (optional)")
+        textarea value=story input=editStory placeholder="The situation, what you did and decided, what was hard, what came of it" aria-label="Story (optional)" rows=5 testId="edit-story"
+      FieldLabel(label="Number (optional)")
+        input value=metric input=editMetric submit=submit placeholder="47 to 9 minutes" aria-label="Number (optional)" autocomplete="off" testId="edit-metric"
+      FieldLabel(label="Category")
+        select value=kind change=pickKind aria-label="Category" align-self="flex-start" max-width="100%" testId="edit-kind"
+          option "Accomplishment" value="accomplishment"
+          option "Project" value="project"
+          option "Responsibility" value="responsibility"
+          option "Skill" value="skill"
+          option "Education" value="education"
+          option "Other" value="other"
+      if error != ""
+        FailLine(text=error, testId="edit-error")
+      if asking
+        StrongLine(text="Discard your changes? What you changed here hasn’t been saved.", testId="edit-discard-ask")
+        Actions(testId="edit-discard-actions")
+          DangerAction(label="Discard", press=cancel, disabled=false, testId="edit-discard")
+          Action(label="Keep editing", press=keepEditing, disabled=false, keys="", testId="edit-keep")
+      else
+        Actions(testId="edit-actions")
+          MainAction(label="Save", press=submit, disabled=busy, keys="", testId="edit-save")
           Action(label="Cancel", press=leave, disabled=false, keys="", testId="edit-cancel")
+
+// Where a fact belongs, and moving it: Day to day or a project of any role, a side project, or General.
+component MoveFact
+  props
+    fact: TreeFact
+    homes: Home[]
+    error: string
+    busy: bool
+    move: action
+  state where = factHomeOf(fact)
+  action pickWhere(v: string)
+    where = v
+  view
+    column gap=lookTight()
+      InlineField(label="Belongs to")
+        select value=where change=pickWhere aria-label="Belongs to" max-width="100%" testId="move-home"
+          for h in homes key=h.value
+            option h.label value=h.value
+        Action(label="Move it", press=move(fact.id, where), disabled=(busy or where == factHomeOf(fact)), keys="", testId="move-go")
+      if error != ""
+        FailLine(text=error, testId="move-error")
+
+// Deleting asks first, in the page: what goes and what stays, then the red action and the way to keep it.
+component DeleteAsk
+  props
+    question: string
+    label: string
+    error: string
+    busy: bool
+    yes: action
+    no: action
+  view
+    column gap=lookTight() role="alert"
+      StrongLine(text=question, testId="delete-ask")
+      if error != ""
+        FailLine(text=error, testId="delete-error")
+      Actions(testId="delete-actions")
+        DangerAction(label=label, press=yes, disabled=busy, testId="delete-yes")
+        Action(label="Keep it", press=no, disabled=false, keys="", testId="delete-no")
 
 // The profile: one document written from the whole record, set in the two sizes, and the questions whose
 // answers would strengthen it. Writing it is slow work, said in one line.

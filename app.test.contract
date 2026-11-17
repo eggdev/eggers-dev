@@ -103,7 +103,8 @@ test "a source is added from the empty record, waits to be read, refuses a repea
   reload
   expect state author == "ada"
 
-test "facts are in the record with no review step; a role shows its reference and date range; one fact is edited with its story, and one is deleted only after asking"
+test "facts are in the record with no review step; a role shows its reference and dates; one fact is edited with its story, and one is deleted only after asking"
+  size 1280x800
   clock data
   tap "nav-record"
   clock settle
@@ -116,45 +117,50 @@ test "facts are in the record with no review step; a role shows its reference an
   // Nothing is polled while no work runs: written elsewhere, the facts show once the screen is opened again.
   reload
   clock data
-  expect state bank.facts.length == 3
+  expect state tree.facts.length == 3
   expect tree missing "bank-add"
-  expect text "bank-unclassed" == "Kind of work isn’t set for 1 role, so that work counts as middling evidence for a job. Set it on each role’s page."
-  expect text "role-kind-1" == "Kind of work not set"
+  expect text "bank-count" == "1 role · 0 projects · 0 side projects · 3 facts"
   expect text "role-1-ref" == "R-01"
-  expect text "role-1" == "Staff Engineer, Acme"
-  expect text "role-1-span" == "2021–Present · 2 facts"
-  expect text "role-1-status" == "Confirmed"
-  expect text "fact-1-ref" == "F-0001"
-  expect text "fact-2-span" == "900 ms to 210 ms"
+  expect text "role-1" == "Staff Engineer"
+  expect text "role-1-sub" == "Acme · Mar 2021–Present · 2 facts"
   tap "role-1"
   clock settle
-  expect text "role-title-ref" == "R-01"
-  expect text "role-title" == "Staff Engineer, Acme"
-  expect text "role-title-span" == "2021–Present · 2 facts"
-  expect tree has "role-fact-1"
-  type "role-standing" "employer"
-  type "role-reach" "live"
-  tap "role-save"
+  clock data
+  expect text "pane-ref" == "R-01"
+  expect text "pane-title" == "Staff Engineer"
+  expect text "official-company" == "Acme"
+  expect text "official-company-mark" == "From memory"
+  expect text "official-type" == "Not recorded"
+  expect text "in-day-1" == "Day to day at Acme · 2 facts"
+  // How the work counts for a job: its employment type and whether it reached users.
+  tap "pane-edit"
+  clock settle
+  type "edit-employment" "employee"
+  type "edit-reach" "live"
+  tap "edit-save"
   clock data
   clock settle
-  expect text "role-kind-1" == "Employer, in production"
-  expect tree missing "bank-unclassed"
-  tap "fact-1"
+  expect text "official-type" == "Employee"
+  expect text "official-type-mark" == "From memory"
+  expect text "role-reach" == "In production"
+  tap "in-day-1"
   clock settle
-  expect text "fact-text" == "Built the billing export service."
-  expect text "fact-text-ref" == "F-0001"
-  expect text "fact-text-status" == "Confirmed"
-  expect tree has "fact-text-from"
+  tap "in-fact-1"
+  clock settle
+  clock data
+  expect text "pane-title" == "Built the billing export service."
+  expect text "pane-ref" == "F-0001"
+  expect tree has "fact-from"
   expect text "fact-detail-text" == "Finance closed the month by hand. Designed and built the export in Go."
-  expect text "fact-role" == "Staff Engineer, Acme"
+  expect text "crumb-role-1" == "Staff Engineer, Acme"
+  expect text "crumb-day-1" == "Day to day at Acme"
   expect text "fact-skills" == "Go, Postgres"
-  back
-  clock settle
   tap "fact-2"
   clock settle
-  expect text "fact-metric" == "900 ms to 210 ms"
+  clock data
+  expect text "pane-sub" == "900 ms to 210 ms · Accomplishment"
   expect tree missing "fact-detail-text"
-  tap "fact-edit"
+  tap "pane-edit"
   clock settle
   expect text "edit-text" == "Cut checkout latency."
   type "edit-text" "Cut checkout p95 latency by rewriting the cart query."
@@ -162,19 +168,21 @@ test "facts are in the record with no review step; a role shows its reference an
   tap "edit-save"
   clock data
   clock settle
-  expect text "fact-text" == "Cut checkout p95 latency by rewriting the cart query."
+  expect text "pane-title" == "Cut checkout p95 latency by rewriting the cart query."
   expect text "fact-detail-text" == "Checkout timed out on large carts. Found the N+1 query and replaced it."
-  back
+  expect text "pane-sub" == "900 ms to 210 ms · Accomplishment"
+  tap "pane-close"
   clock settle
   tap "fact-3"
   clock settle
-  expect text "fact-role" == "General"
-  tap "fact-delete"
-  clock settle
-  tap "remove-fact-confirm"
-  clock settle
   clock data
-  expect state bank.facts.length == 2
+  expect text "crumb-general" == "General"
+  tap "pane-delete"
+  expect text "delete-ask" == "Delete F-0003? It is removed from your record and stays out when its source is read again. This cannot be undone."
+  tap "delete-yes"
+  clock data
+  clock settle
+  expect state tree.facts.length == 2
   expect tree missing "fact-3"
 
 test "the profile is asked for, shows as being written, then shows the document with what is worth adding, and says when the bank has moved on"
@@ -185,7 +193,7 @@ test "the profile is asked for, shows as being written, then shows the document 
   expect tree has "profile-write"
   tap "profile-write"
   clock data
-  expect text "profile-writing" == "Writing your profile from 2 facts. Usually a few minutes."
+  expect text "profile-writing" == "Writing your profile from 2 facts. Usually a few minutes."
   expect text "profile-writing-status" == "Waiting"
   request POST "/profile/save" {"body": "# Professional profile\n\n## Summary\n\nI build billing systems.", "gaps": ["What did the billing export replace, and who used it?"]}
   // While work waits, the activity list is asked for every 10 seconds; the profile's writing has ended, so it loads again.
@@ -480,26 +488,40 @@ test "experience is searched, a fact's category is changed, and an edit with cha
   clock data
   tap "nav-record"
   clock settle
+  clock data
   type "bank-search" "zzzz no such fact"
   clock settle
-  expect text "bank-none" == "No fact matches “zzzz no such fact”."
-  type "bank-search" ""
+  expect text "bank-none" == "Nothing matches “zzzz no such fact”."
+  tap "bank-clear"
   clock settle
+  expect tree missing "bank-none"
+  expect text "bank-search" == ""
+  // A search opens what holds the facts it finds.
+  type "bank-search" "billing export"
+  clock settle
+  expect tree has "fact-1"
+  expect tree missing "fact-2"
   tap "fact-1"
   clock settle
-  tap "fact-edit"
+  clock data
+  tap "pane-edit"
   clock settle
   type "edit-metric" "changed and not saved"
   tap "edit-cancel"
-  clock settle
-  tap "discard-edits-cancel"
-  clock settle
+  expect text "edit-discard-ask" == "Discard your changes? What you changed here hasn’t been saved."
+  tap "edit-keep"
   expect text "edit-metric" == "changed and not saved"
   tap "edit-cancel"
-  clock settle
-  tap "discard-edits-confirm"
-  clock settle
+  tap "edit-discard"
   expect tree missing "edit-save"
+  expect text "fact-kind" == "Project"
+  tap "pane-edit"
+  clock settle
+  type "edit-kind" "skill"
+  tap "edit-save"
+  clock data
+  clock settle
+  expect text "fact-kind" == "Skill"
 
 test "the public page says publishing works only in the deployed studio, fills the field from the bank, shows unsaved changes, and saves with its notes"
   clock data
@@ -856,3 +878,245 @@ test "when the activity list can't be had, the last answer stands and is asked f
   clock data
   expect state activityFails == 0
   expect tree missing "studio-down-line"
+
+// The record as a tree. From here the record holds roles R-01 to R-03 (Acme, Northwind, Initech), F-0001, F-0002 and
+// F-0004 in Acme's Day to day and F-0005 in General; what these tests add is numbered after them.
+test "a role, a project in it, a fact in that project, a Day to day fact and a side project are each added by a form, and each lands in its place with its reference, marked Just added"
+  size 1280x800
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "add-roles"
+  clock settle
+  type "new-first" "Head of Platform"
+  tap "new-save"
+  clock data
+  expect text "new-error" == "Write the role as title at employer, such as Director of Engineering at Harborlight Systems."
+  expect text "new-first" == "Head of Platform"
+  // A line that says "at" twice is not split by a guess: the title and the employer are asked apart.
+  type "new-first" "Head of Data at Scale at Acme"
+  tap "new-save"
+  clock data
+  expect text "new-error" == "This says “at” more than once, so the studio cannot tell the title from the employer. Write them in their own fields."
+  expect text "new-title" == "Head of Data at Scale at Acme"
+  expect tree missing "new-first"
+  tap "new-cancel"
+  clock settle
+  tap "add-roles"
+  clock settle
+  type "new-first" "Head of Platform at Fernway"
+  type "new-when" "Mar 2023 – now"
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "role-4-ref" == "R-04"
+  expect text "role-4-sub-mark" == "Just added"
+  expect text "pane-title" == "Head of Platform"
+  expect text "pane-sub-mark" == "Just added"
+  expect text "in-none-projects" == "No project yet. Add a project."
+  tap "add-in-role-4"
+  clock settle
+  expect tree missing "pane-sub-mark"
+  type "new-first" "Moved every service to one cloud"
+  type "new-result" "One bill and one on-call rota."
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "project-1-ref" == "P-001"
+  expect text "project-1-sub-mark" == "Just added"
+  expect text "pane-title" == "Moved every service to one cloud"
+  expect text "crumb-role-4" == "Head of Platform, Fernway"
+  tap "add-in-project-1"
+  clock settle
+  type "new-first" "Moved 40 services in two quarters."
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "fact-6-ref" == "F-0006"
+  expect text "fact-6-sub-mark" == "Just added"
+  expect text "crumb-project-1" == "Moved every service to one cloud"
+  tap "crumb-role-4"
+  clock settle
+  tap "in-day-4"
+  clock settle
+  tap "add-in-day-4"
+  clock settle
+  type "new-first" "Ran the weekly platform review."
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "fact-7-sub-mark" == "Just added"
+  expect text "crumb-day-4" == "Day to day at Fernway"
+  tap "pane-close"
+  clock settle
+  tap "add-sides"
+  clock settle
+  type "new-first" "Built tidewater"
+  type "new-when" "2015–2019"
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "project-2-ref" == "P-002"
+  expect text "project-2-sub" == "Side project · 2015–2019 · 0 facts"
+  expect text "project-2-sub-mark" == "Just added"
+  expect text "pane-title" == "Built tidewater"
+  expect text "bank-count" == "4 roles · 1 project · 1 side project · 6 facts"
+
+test "the three views show the same items, and a project added from the Projects view with a new role creates the role"
+  size 1280x800
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "view-projects"
+  clock settle
+  clock data
+  expect text "project-1" == "Moved every service to one cloud"
+  expect text "project-1-sub" == "Fernway · One bill and one on-call rota"
+  expect text "project-2" == "Built tidewater"
+  tap "view-facts"
+  clock settle
+  expect text "fact-6" == "Moved 40 services in two quarters."
+  expect text "fact-6-sub" == "Moved every service to one cloud"
+  expect text "fact-7-sub" == "Day to day at Fernway"
+  tap "sort-fact"
+  clock settle
+  expect text "sort-order" == "6 facts, A to Z. Choose Fact again to turn it round."
+  tap "view-roles"
+  clock settle
+  expect text "role-4" == "Head of Platform"
+  tap "view-projects"
+  clock settle
+  tap "add-projects"
+  clock settle
+  type "new-first" "Rebuilt the search index"
+  type "new-home" "new"
+  tap "new-save"
+  clock data
+  expect text "new-error" == "Name the new role as title at employer, or pick one from the list."
+  type "new-role" "Staff Engineer at Quillfeather Labs"
+  tap "new-save"
+  clock data
+  clock settle
+  expect text "project-3-sub-mark" == "Just added"
+  expect text "project-3-sub" == "Quillfeather Labs · 0 facts"
+  expect state tree.roles.0 .company == "Quillfeather Labs"
+  tap "view-roles"
+  clock settle
+  // R-05 is the side project's own row, which the resume pipeline reads: the new role is R-06.
+  expect text "role-6-ref" == "R-06"
+  expect text "role-6" == "Staff Engineer"
+
+test "a fact moves from Day to day into a project of its role and back, and deleting a project keeps its facts in Day to day"
+  size 1280x800
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "role-4"
+  clock settle
+  tap "in-day-4"
+  clock settle
+  tap "in-fact-7"
+  clock settle
+  clock data
+  expect text "crumb-day-4" == "Day to day at Fernway"
+  type "move-home" "project:1"
+  tap "move-go"
+  clock data
+  clock settle
+  expect text "crumb-project-1" == "Moved every service to one cloud"
+  expect text "pane-sub-mark" == "Moved"
+  type "move-home" "day:4"
+  tap "move-go"
+  clock data
+  clock settle
+  expect text "crumb-day-4" == "Day to day at Fernway"
+  tap "crumb-role-4"
+  clock settle
+  tap "in-project-1"
+  clock settle
+  tap "pane-delete"
+  expect text "delete-ask" == "Delete P-001? Its 1 fact stays in Day to day at Fernway."
+  tap "delete-no"
+  expect tree missing "delete-ask"
+  tap "pane-delete"
+  tap "delete-yes"
+  clock data
+  clock settle
+  expect text "pane-title" == "Head of Platform"
+  expect text "in-day-4" == "Day to day at Fernway · 2 facts"
+  expect tree missing "in-project-1"
+  tap "in-day-4"
+  clock settle
+  expect text "in-fact-6" == "Moved 40 services in two quarters."
+
+test "a role's official record shows its six fields, each with where it comes from, and a mark the owner sets"
+  size 1280x800
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "role-4"
+  clock settle
+  expect text "official-company" == "Fernway"
+  expect text "official-company-mark" == "From memory"
+  expect text "official-title" == "Head of Platform"
+  expect text "official-start" == "Mar 2023"
+  expect text "official-end" == "Present"
+  expect text "official-end-mark" == "Source not marked"
+  expect text "official-type" == "Not recorded"
+  expect text "official-location" == "Not recorded"
+  tap "pane-edit"
+  clock settle
+  type "edit-title-mark" "hr"
+  type "edit-location" "Duluth, MN"
+  tap "edit-save"
+  clock data
+  clock settle
+  expect text "official-title-mark" == "As HR records it"
+  expect text "official-location" == "Duluth, MN"
+  expect text "official-location-mark" == "From memory"
+  expect text "official-company-mark" == "From memory"
+
+test "a search finds a role and hides the rest, says when nothing matches, and clears"
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  type "bank-search" "fernway"
+  clock settle
+  expect tree has "role-4"
+  expect tree missing "role-1"
+  type "bank-search" "qqqq"
+  clock settle
+  expect text "bank-none" == "Nothing matches “qqqq”."
+  expect tree missing "role-4"
+  tap "bank-clear"
+  clock settle
+  expect tree has "role-1"
+  expect tree has "role-4"
+
+test "on a wide window an item opens beside the list, and a reload lands on the same item"
+  size 1280x800
+  clock data
+  tap "nav-record"
+  clock settle
+  clock data
+  expect tree has "bank-beside"
+  expect text "pane-none" == "Open a role, a project or a fact on the left. It opens here, and the list stays."
+  tap "role-4"
+  clock settle
+  clock data
+  expect text "pane-title" == "Head of Platform"
+  expect tree has "role-1"
+  expect tree has "bank-pane"
+  reload
+  clock data
+  clock settle
+  expect text "pane-title" == "Head of Platform"
+  expect tree has "role-1"
+  tap "pane-close"
+  clock settle
+  expect text "pane-none" == "Open a role, a project or a fact on the left. It opens here, and the list stays."

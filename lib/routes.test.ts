@@ -121,3 +121,44 @@ test('a hand edit is stored with plain line endings, and is then left alone', as
   await call('POST', '/skills', { marks: [{ name: 'TypeScript', mark: 'confident' }] });
   expect((resumes() as { resume: string }[])[1].resume).toBe(stored.resume);
 });
+
+// The record as a tree, over HTTP. These come last: they change roles, and so the record's signature (never a stored
+// resume: no worker runs here).
+test('the tree lists roles, projects and facts with references, and no story or evidence', async () => {
+  const t = (await call('GET', '/tree')).body;
+  expect(t.roles.map((r: { ref: string }) => r.ref)).toEqual(['R-04', 'R-01', 'R-02']);
+  expect(t.projects).toEqual([expect.objectContaining({ ref: 'P-001', place: 'role', roleId: '1', title: 'harborlight/dispatch', carried: true })]);
+  expect(t.facts).toEqual([{ id: '1', ref: 'F-0001', roleId: '1', projectId: '', text: 'Built the dispatch console.', metric: '640 users', kind: 'accomplishment' },
+    { id: '2', ref: 'F-0002', roleId: '2', projectId: '', text: 'Rebuilt the quoting API.', metric: '', kind: 'project' }]);
+  expect(t.counts).toEqual({ roles: 3, projects: 1, sides: 0, unplaced: 0, facts: 2 });
+  const one = (await call('GET', '/facts/1')).body;
+  expect(one).toMatchObject({ ref: 'F-0001', detail: 'The story.', skills: 'TypeScript, Go', source: 'Added by hand' });
+  expect((await call('GET', '/facts/99')).status).toBe(404);
+});
+
+test('the bank the old screens read is unchanged', async () => {
+  const b = (await call('GET', '/bank')).body;
+  expect(Object.keys(b)).toEqual(['roles', 'places', 'facts']);
+  expect(Object.keys(b.facts[0])).toEqual(['id', 'roleId', 'kind', 'text', 'detail', 'metric', 'skills', 'evidence', 'source', 'added', 'edited']);
+  expect(Object.keys(b.roles[0])).toEqual(['id', 'name', 'period', 'standing', 'reach', 'employer', 'partOf', 'partOfName', 'start', 'end', 'note', 'label']);
+  expect(b.places.map((p: { name: string }) => p.name)).toContain('General (no role)');
+});
+
+test('a project and a fact go to a role made on the spot, which must read title at employer', async () => {
+  const stored = resumes();
+  expect(await call('POST', '/projects', { title: 'Platform rewrite', newRole: 'Fernway' })).toMatchObject({ status: 400, body: { error: 'Name the new role as title at employer, or pick one from the list.' } });
+  const p = await call('POST', '/projects', { title: 'Platform rewrite', newRole: 'Head of Platform at Fernway', when: '2024–2025', result: 'One platform.' });
+  expect(p).toMatchObject({ status: 201, body: { ok: true, kind: 'project', ref: 'P-002', madeRole: '5' } });
+  const f = await call('POST', '/facts', { text: 'Moved 40 services.', projectId: p.body.id });
+  expect(f).toMatchObject({ status: 201, body: { ok: true, kind: 'fact', id: '3', ref: 'F-0003' } });
+  const t = (await call('GET', '/tree')).body;
+  expect(t.roles.find((r: { id: string }) => r.id === '5')).toMatchObject({ title: 'Head of Platform', company: 'Fernway', marks: { company: 'memory', title: 'memory' } });
+  expect(t.facts.find((x: { id: string }) => x.id === '3')).toMatchObject({ roleId: '5', projectId: p.body.id });
+  // A partial edit keeps the rest; the project goes and its fact stays, in Day to day.
+  expect((await call('PATCH', '/facts/1', { metric: '650 users' })).status).toBe(200);
+  expect((await call('GET', '/facts/1')).body).toMatchObject({ text: 'Built the dispatch console.', detail: 'The story.', metric: '650 users' });
+  expect((await call('DELETE', `/projects/${p.body.id}`)).status).toBe(200);
+  expect((await call('GET', '/tree')).body.facts.find((x: { id: string }) => x.id === '3')).toMatchObject({ roleId: '5', projectId: '' });
+  // No stored resume changed: writing them again is the worker's, after the record has been still for a while.
+  expect(resumes()).toEqual(stored);
+});

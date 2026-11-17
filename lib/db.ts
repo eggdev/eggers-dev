@@ -52,6 +52,81 @@ for (const column of ["standing TEXT NOT NULL DEFAULT ''", "reach TEXT NOT NULL 
 for (const column of ["note TEXT NOT NULL DEFAULT ''", "label TEXT NOT NULL DEFAULT ''"]) {
   try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
 }
+// The record as a tree (lib/tree.ts, lib/projects.ts, lib/record.ts): Role → Project → Fact. Every change here is
+// additive and safe to run again: it creates tables, adds columns and adds triggers, and changes no stored value.
+// A project is a row of its own, or (a repository's project group, a side project) a `roles` row it points at with
+// `via_role`: the resume pipeline then reads the rows it always read. Title, dates and role are this table's only
+// while via_role is NULL; the parts (situation, what I did, result, what I learned) and where it lives are always here.
+// origin: owner (written by hand) or proposal:<id> (kept from a proposal).
+db.run(`CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, role_id INTEGER, via_role INTEGER UNIQUE, title TEXT NOT NULL DEFAULT '',
+  start TEXT NOT NULL DEFAULT '', end TEXT NOT NULL DEFAULT '', lives TEXT NOT NULL DEFAULT '',
+  situation TEXT NOT NULL DEFAULT '', did TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '', learned TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'owner', created_at INTEGER NOT NULL DEFAULT 0)`);
+// A fact filed in a project of its role keeps its role_id, so a resume reads it where it always did. baseline, team
+// and own_part are text, so "about 40 people" stays as the person said it.
+for (const column of ['project_id INTEGER', "baseline TEXT NOT NULL DEFAULT ''", "team TEXT NOT NULL DEFAULT ''", "own_part TEXT NOT NULL DEFAULT ''"]) {
+  try { db.run(`ALTER TABLE facts ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+// official: where each field of a role's official record comes from, as JSON {company, title, start, end, type,
+// location} with values hr | memory; a field not in it is not marked. propose_status and propose_note follow a request
+// to propose projects for the role (a later stage).
+for (const column of ["official TEXT NOT NULL DEFAULT '{}'", "propose_status TEXT NOT NULL DEFAULT ''", "propose_note TEXT NOT NULL DEFAULT ''"]) {
+  try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+// Reference numbers are never reused (DESIGN.md section 4). `roles.id` and `facts.id` are plain INTEGER PRIMARY KEYs,
+// so SQLite would hand out the highest id again once its row is deleted. The highest id ever deleted is kept here,
+// and every insert takes its id from `nextId` below.
+db.run('CREATE TABLE IF NOT EXISTS id_floor (name TEXT PRIMARY KEY, high INTEGER NOT NULL)');
+// When the owner last changed the record by hand (lib/record.ts): the worker holds its rewrite of unsent resumes for a
+// while after it, as after an answer (lib/raised.ts, holdSince), so one sitting of edits causes one rewrite.
+db.run('CREATE TABLE IF NOT EXISTS record_written (id INTEGER PRIMARY KEY CHECK (id = 1), at INTEGER NOT NULL DEFAULT 0)');
+db.run('INSERT OR IGNORE INTO record_written (id) VALUES (1)');
+// The record's triggers are dropped and made again each time the server or the worker starts, so a change to a body
+// here reaches an existing database. One transaction that takes the write lock first (immediate): the server and the
+// worker start together, and neither writes between the drop and the create.
+db.transaction(() => {
+  // A changed value loses its mark unless the same change sets one. A trigger, so it holds for every writer, the
+  // LinkedIn and timeline answers too: those update `roles` directly and never touch `official`. A mark that is not
+  // JSON is left alone, so it can never stop a role being written.
+  db.run('DROP TRIGGER IF EXISTS roles_mark_cleared');
+  db.run(`CREATE TRIGGER roles_mark_cleared AFTER UPDATE OF company, title, start, end, location, standing, label ON roles
+    WHEN NEW.official = OLD.official AND NEW.official != '{}' AND json_valid(NEW.official)
+    BEGIN
+      UPDATE roles SET official = json_remove(NEW.official,
+        CASE WHEN NEW.company IS NOT OLD.company THEN '$.company' ELSE '$.none' END,
+        CASE WHEN NEW.title IS NOT OLD.title THEN '$.title' ELSE '$.none' END,
+        CASE WHEN NEW.start IS NOT OLD.start THEN '$.start' ELSE '$.none' END,
+        CASE WHEN NEW.end IS NOT OLD.end THEN '$.end' ELSE '$.none' END,
+        CASE WHEN NEW.location IS NOT OLD.location THEN '$.location' ELSE '$.none' END,
+        CASE WHEN NEW.standing IS NOT OLD.standing OR NEW.label IS NOT OLD.label THEN '$.type' ELSE '$.none' END)
+      WHERE id = NEW.id;
+    END`);
+  for (const table of ['roles', 'facts']) {
+    db.run(`DROP TRIGGER IF EXISTS ${table}_id_floor`);
+    db.run(`CREATE TRIGGER ${table}_id_floor AFTER DELETE ON ${table}
+      BEGIN
+        INSERT OR REPLACE INTO id_floor (name, high) VALUES ('${table}', max(OLD.id, coalesce((SELECT high FROM id_floor WHERE name = '${table}'), 0)));
+      END`);
+  }
+  // One writer of roles cannot be changed here (the LinkedIn answer in lib/linkedin.ts inserts a role with no id). A
+  // role that lands at or under the floor that way is moved above it at once; nothing has read its id yet.
+  db.run('DROP TRIGGER IF EXISTS roles_id_above_floor');
+  db.run(`CREATE TRIGGER roles_id_above_floor AFTER INSERT ON roles
+    WHEN NEW.id <= coalesce((SELECT high FROM id_floor WHERE name = 'roles'), 0)
+    BEGIN
+      UPDATE roles SET id = max((SELECT max(id) FROM roles), (SELECT high FROM id_floor WHERE name = 'roles')) + 1 WHERE id = NEW.id;
+    END`);
+}).immediate();
+// The id the next row of a table takes, as an SQL expression to put in the INSERT itself, so the id is worked out
+// under the write lock: above every id in the table and every id ever deleted from it.
+// Every INSERT into roles or facts must use it (lib/record.test.ts reads the sources and fails on one that does not).
+// Without it a role may land under the floor; the trigger above then moves it, so the `lastInsertRowid` or
+// `RETURNING id` the writer got back names no row, or the wrong one. Facts have no such trigger, so a fact inserted
+// without it would take a deleted fact's reference number.
+export const nextId = (table: 'roles' | 'facts') =>
+  `(SELECT max(coalesce((SELECT max(id) FROM ${table}), 0), coalesce((SELECT high FROM id_floor WHERE name = '${table}'), 0)) + 1)`;
+
 // The profile: one document written from the whole bank (lib/profile.ts). status is
 // none | queued | running | done | failed; signature is the bank's when it was written.
 db.run(`CREATE TABLE IF NOT EXISTS profile (
@@ -191,7 +266,7 @@ export function applyExtraction(sourceId: number, x: Extraction, now: number): n
           location = CASE WHEN location = '' THEN ? ELSE location END, summary = CASE WHEN summary = '' THEN ? ELSE summary END WHERE id = ?`)
           .run(r.start ?? '', r.end ?? '', r.location ?? '', r.summary ?? '', same.id);
       } else {
-        const made = db.query('INSERT INTO roles (company, title, start, end, location, summary) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
+        const made = db.query(`INSERT INTO roles (id, company, title, start, end, location, summary) VALUES (${nextId('roles')}, ?, ?, ?, ?, ?, ?) RETURNING id`)
           .get(r.company.trim(), (r.title ?? '').trim(), r.start ?? '', r.end ?? '', r.location ?? '', r.summary ?? '') as { id: number };
         byKey.set(r.key, made.id);
         existing.push({ id: made.id, company: r.company, title: r.title ?? '', start: '', end: '', location: '', summary: '' });
@@ -216,7 +291,7 @@ export function applyExtraction(sourceId: number, x: Extraction, now: number): n
         }
         continue;
       }
-      db.query('INSERT INTO facts (role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(byKey.get(f.roleKey) ?? null, kind, text, (f.detail ?? '').trim(), (f.metric ?? '').trim(), (f.skills ?? []).join(', '), (f.evidence ?? '').trim(), sourceId, 'proposed', now);
       n++;
     }

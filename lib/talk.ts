@@ -3,7 +3,7 @@
 // could not give) or raise anything themselves. What they say about their work is written into
 // the bank as facts, in their name: said by them, so taken as true, with no review step.
 // The server only stores messages. The worker writes each reply (lib/llm.ts), beside its other work.
-import { answeredQuestions, db, KINDS, type RoleRow } from './db.ts';
+import { answeredQuestions, db, KINDS, nextId, type RoleRow } from './db.ts';
 import { direction } from './direction.ts';
 import { ask } from './llm.ts';
 import { SIGNAL, WRITING } from './writing.ts';
@@ -123,9 +123,10 @@ Reply to the person's last message.` });
       // What the person says is their own account, so it is kept as theirs: a later re-read of a source will not replace it.
       // The story alone is kept when the correction gives none: the model is not shown the old story, so an empty one means "not retold", not "erase it".
       // A correction stands whole: its metric, filing, category and skills take the old ones' place, so nothing stale is left on the new sentence.
-      if (old) db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = ?, role_id = coalesce(?, role_id), kind = ?, skills = ?, evidence = evidence || ' ' || ?, status = 'confirmed' WHERE id = ?")
-        .run(text, f.detail.trim(), f.detail.trim(), f.metric.trim(), roleId, kind, skills, evidence, old.id);
-      else db.query("INSERT INTO facts (role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?)")
+      // A fact moved to another role leaves the project it was filed in, which belongs to the old role.
+      if (old) db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = ?, role_id = coalesce(?, role_id), project_id = CASE WHEN coalesce(?, role_id) IS NOT role_id THEN NULL ELSE project_id END, kind = ?, skills = ?, evidence = evidence || ' ' || ?, status = 'confirmed' WHERE id = ?")
+        .run(text, f.detail.trim(), f.detail.trim(), f.metric.trim(), roleId, roleId, kind, skills, evidence, old.id);
+      else db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?)`)
         .run(roleId, kind, text, f.detail.trim(), f.metric.trim(), skills, evidence, now);
       // The person is shown which facts are new and which were rewritten.
       added.push(old ? `Updated: ${text}` : text);

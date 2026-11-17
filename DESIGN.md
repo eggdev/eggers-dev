@@ -125,3 +125,66 @@ One word, in `text` size, in grey unless it needs the owner. The whole list:
 
 A board with columns for the job search; chat as the main screen; a blueprint or terminal look; keyboard
 commands as the main way to act (a command box may exist as a laptop shortcut).
+
+## 8. Experience
+
+The Experience screen shows the record as one tree with three levels: **Role → Project → Fact**. Side projects
+stand beside the roles. Facts that belong to no role stand in a group named General, after the side projects.
+
+Where each kind of information lives:
+
+- **Role.** The official record of a job: employer, title, start, end, employment type and location. Each field
+  carries where it comes from: "As HR records it", "From memory", or "Source not marked". A role also holds how far
+  its work reached users. Stored in `roles`; the marks are `roles.official`.
+- **Project.** A piece of work with a name, dates and four parts: Result, Situation, What I did, What I learned. A
+  side project also says where it lives. A project in a role is a row of `projects`. A repository's project group, a
+  side project and a repository nobody has placed are rows of `roles` that the resume pipeline already reads, and
+  their project points at them (`projects.via_role`).
+- **Fact.** One true sentence, with its number, story and evidence. A fact in a role but in no project of it is in
+  that role's **Day to day**. Day to day is not a row: it is the role's facts with no project.
+- **Not placed yet.** A repository the studio could not place is shown as not placed. Code never puts it in a role;
+  the owner places it.
+
+The arrangement the owner chose in the lab (`lab/experience.html`, saved as `lab/experience-keeper.json`):
+
+- Roles first, then side projects, then General.
+- An item opens beside the list on a window 1040px wide or more (list and detail columns). On a narrower window it
+  opens under its own row. The open item is in the address, so a reload lands on it.
+- Only the top level is open at the start. The items above an open, just added or found item open to show it.
+- Every level has the same closed line: reference, name, when, and one line of what it holds. Each level steps in
+  1.5rem. References stand in the gutter.
+- A group shows 6 facts, then "Show all".
+- A new thing is added with a short form in place. Only the first line is needed; every other field says
+  "(optional)". A form saves only on Add or Save, and has Cancel. A child is added from inside its parent. A new
+  item opens at once and is marked "Just added" until the next action, even when a search or the view would hide it.
+- "Read as" gives three views of the same data: Roles (the tree), Projects and Facts (sorted).
+- An open role shows all six fields of its official record, each with its mark. An open project shows all four parts.
+- No note line at the top, and no drafts of what the studio could write.
+- The values the screen uses (the first view, facts before "Show all", the step per level, the width for two
+  columns) are `experienceLook()` in `look.contract`.
+
+What was rejected, and why:
+
+- A list of stories as the only unit: it hid the job structure, and dropped facts that belong to no story.
+- Opening in place with everything open: readers lose their place in nested lists.
+- A blank line as the only way to add: it captures a headline and nothing else.
+- Naming every missing part on the closed line: it reads as a form to fill in.
+- A completeness meter: it measures quantity, not quality.
+
+What makes the studio write unsent resumes again (each changes what a resume is written from):
+
+- Adding or deleting a role.
+- Adding a side project.
+- Renaming, re-dating or deleting a project that is a side project or comes from a repository.
+- Moving a fact to another role.
+- Placing a repository.
+- Changing a role's title, employer, dates, employment type or whether its work reached users.
+- Adding, editing or deleting a fact (its words, story, number or category).
+
+What does not: adding a project to a role, filing a fact in a project of its own role, editing a project's four
+parts, changing a role's location, setting where a field comes from, and a Save that changes nothing. The studio
+waits 15 minutes after the last change by hand (as after the last answer to a question), so one sitting of edits
+causes one rewrite.
+
+Two known behaviours: a source read again gives its facts new reference numbers; a project deleted that came from a
+repository comes back, empty, when that repository is read again.

@@ -3,7 +3,7 @@
 // It has no sign-in: reach it only over the tailnet. `test` and `verify` run it on an empty database.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { bankSignature, db, deleteFact, KINDS, type RoleRow, type SourceRow } from './lib/db.ts';
+import { bankSignature, db, type RoleRow, type SourceRow } from './lib/db.ts';
 import { direction, payFloor, saveDirection } from './lib/direction.ts';
 import { FIELDS, person, savePerson, withHeader } from './lib/person.ts';
 import { forget, messages, openQuestions, put, say } from './lib/talk.ts';
@@ -20,6 +20,8 @@ import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills }
 import { type AtsCheck } from './lib/pdf.ts';
 import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
 import { activity, dismiss, failedRow, markSeen, stubStep, type Kind } from './lib/activity.ts';
+import { syncProjects } from './lib/projects.ts';
+import { addFact, addProject, addRole, deleteProject, deleteRole, fullFact, patchFact, patchProject, patchRole, readTree, removeFact, type Done } from './lib/record.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -38,7 +40,10 @@ const curly = <T extends Record<string, unknown>>(o: T, keys: string[]): T => ({
 const STUB = process.argv.includes('--stub-github');
 // After a change to a role, a skill or an answer: the questions code raises and the flags that read them are taken
 // again. A failure here is logged and never fails the request that made the change.
-const follow = () => { try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); } };
+const follow = () => { try { syncProjects(); syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); } };
+// A write by hand to the record (lib/record.ts) as the answer the app reads: what was made or changed, with its
+// reference, or the refusal in words.
+const done = (d: Done, made = 200) => (d.ok ? send({ ok: true, kind: d.kind, id: String(d.id), ref: d.ref, wrote: d.wrote, ...(d.madeRole ? { madeRole: String(d.madeRole) } : {}) }, made) : send({ error: d.error, ...(d.split ? { split: true } : {}) }, d.status));
 
 const DAY = 86_400_000;
 // What the job's record line needs beside its row: when it was sent, whether it has gone quiet (the same rule as
@@ -186,6 +191,8 @@ const hostname = process.env.HOST ?? here.hostname, port = Number(process.env.PO
 Bun.serve({ hostname, port, routes: {
   '/health': () => new Response('ok'),
   '/bank': { OPTIONS: preflight, GET: () => send(bank()) },
+  // The record as one tree (lib/record.ts): roles, projects and facts with their references, and no story or evidence.
+  '/tree': { OPTIONS: preflight, GET: () => send(readTree()) },
   '/profile': {
     OPTIONS: preflight,
     GET: () => {
@@ -521,39 +528,29 @@ Bun.serve({ hostname, port, routes: {
   '/inbox': { OPTIONS: preflight, GET: () => send({ folder: INBOX, files: inbox() }) },
   '/roles': {
     OPTIONS: preflight,
-    POST: async (req) => {
-      const b = await req.json().catch(() => ({}));
-      if (!str(b.company)) return send({ error: 'Enter a company.' }, 400);
-      const made = db.query('INSERT INTO roles (company, title, start, end) VALUES (?, ?, ?, ?) RETURNING id').get(str(b.company), str(b.title), str(b.start), str(b.end)) as { id: number };
-      return send({ ok: true, id: made.id }, 201);
-    },
+    // {title, company} or {line: "title at employer"}, with start and end or when, employment and location if given.
+    POST: async (req) => { const d = addRole(await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d, 201); },
   },
   // What kind of work a role or project was: the person's own word, used to weigh it as evidence. And what the
   // person says so the role's dates read true on a resume: an end date, a one-line context note, a label.
   // standing, reach and partOf go together, as before. end, note and label are each optional and may be sent alone.
   '/roles/:id': {
     OPTIONS: preflight,
-    PATCH: async (req) => {
-      const b = await req.json().catch(() => ({})), id = Number(req.params.id);
-      const role = db.query('SELECT start FROM roles WHERE id = ?').get(id) as { start: string } | null;
-      if (!role) return send({ error: 'That role is no longer in your record.' }, 404);
-      const kind = b.standing !== undefined || b.reach !== undefined || b.partOf !== undefined, dates = b.end !== undefined || b.note !== undefined || b.label !== undefined;
-      if ((kind || !dates) && (!['', 'employer', 'own', 'contract', 'personal'].includes(b.standing) || !['', 'live', 'retired', 'never'].includes(b.reach))) return send({ error: 'Choose one of the listed kinds.' }, 400);
-      const parent = str(b.partOf) === '' ? null : Number(b.partOf);
-      if (parent !== null && (parent === id || !db.query("SELECT id FROM roles WHERE id = ? AND title != ''").get(parent))) return send({ error: 'Choose one of your employers.' }, 400);
-      const end = str(b.end), note = str(b.note), label = str(b.label);
-      if (b.end !== undefined && end !== '' && !/^\d{4}(-(0[1-9]|1[0-2]))?$/.test(end)) return send({ error: 'Give the end date as a year and a month, like 2023-06. Leave it empty for a job you hold now.' }, 400);
-      if (b.end !== undefined && end !== '' && role.start !== '' && end < role.start.slice(0, end.length)) return send({ error: 'That end date is before the job’s start date.' }, 400);
-      if (b.note !== undefined && (note.length > 200 || note.includes('\n'))) return send({ error: 'Keep the note to one line of at most 200 characters.' }, 400);
-      if (b.label !== undefined && !['', 'Contract', 'Part-time'].includes(label)) return send({ error: 'Choose Contract, Part-time or no label.' }, 400);
-      if (kind || !dates) db.query('UPDATE roles SET standing = ?, reach = ?, part_of = ? WHERE id = ?').run(b.standing, b.reach, parent, id);
-      if (b.end !== undefined) db.query('UPDATE roles SET end = ? WHERE id = ?').run(end, id);
-      if (b.note !== undefined) db.query('UPDATE roles SET note = ? WHERE id = ?').run(note, id);
-      if (b.label !== undefined) db.query('UPDATE roles SET label = ? WHERE id = ?').run(label, id);
-      // A changed role can settle a question about the timeline, or raise one, and changes the flags that read it.
-      follow();
-      return send({ ok: true });
-    },
+    // A changed role can settle a question about the timeline, or raise one, and changes the flags that read it.
+    PATCH: async (req) => { const d = patchRole(Number(req.params.id), await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d); },
+    // Its own projects and its facts go with it; a repository's project group filed under it stays, not placed.
+    DELETE: (req) => { const d = deleteRole(Number(req.params.id)); if (d.ok && d.wrote) follow(); return done(d); },
+  },
+  // Projects (lib/record.ts): {title, roleId | side | newRole, when or start and end, and the parts}.
+  '/projects': {
+    OPTIONS: preflight,
+    POST: async (req) => { const d = addProject(await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d, 201); },
+  },
+  '/projects/:id': {
+    OPTIONS: preflight,
+    PATCH: async (req) => { const d = patchProject(Number(req.params.id), await req.json().catch(() => ({}))); if (d.ok && d.wrote) follow(); return done(d); },
+    // ?facts=keep (the default) keeps its facts, back in Day to day (or General); ?facts=delete deletes them too.
+    DELETE: (req) => { const d = deleteProject(Number(req.params.id), new URL(req.url).searchParams.get('facts') === 'delete' ? 'delete' : 'keep'); if (d.ok && d.wrote) follow(); return done(d); },
   },
   // The skills list (lib/skills.ts): each skill the bank names, what kind of thing it is, and the person's mark.
   // Only a tool, language or platform the person stands behind goes on a resume.
@@ -656,34 +653,18 @@ Bun.serve({ hostname, port, routes: {
   } } } : {}),
   '/facts': {
     OPTIONS: preflight,
-    // A fact written by hand (or by a test) is the person's own word: confirmed unless it says otherwise.
-    POST: async (req) => {
-      const b = await req.json().catch(() => ({}));
-      if (!str(b.text)) return send({ error: 'Enter the fact.' }, 400);
-      const kind = (KINDS as readonly string[]).includes(b.kind) ? b.kind : 'accomplishment';
-      db.query('INSERT INTO facts (role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(typeof b.roleId === 'number' ? b.roleId : null, kind, str(b.text), str(b.detail), str(b.metric), str(b.skills), str(b.evidence), null, b.proposed === true ? 'proposed' : 'confirmed', Date.now());
-      return send({ ok: true }, 201);
-    },
+    // A fact written by hand (or by a test) is the person's own word: confirmed unless it says otherwise. It goes in a
+    // project ({projectId}), a role's Day to day ({roleId}), a role made on the spot ({newRole}), or General.
+    POST: async (req) => done(addFact(await req.json().catch(() => ({}))), 201),
   },
   '/facts/:id': {
     OPTIONS: preflight,
-    // The person's own wording for a fact: a later re-read of its source leaves it alone.
-    PATCH: async (req) => {
-      const b = await req.json().catch(() => ({})), id = Number(req.params.id);
-      if (!db.query('SELECT id FROM facts WHERE id = ?').get(id)) return send({ error: 'That fact is no longer in your record.' }, 404);
-      if (b.text !== undefined && !str(b.text)) return send({ error: 'Enter the fact.' }, 400);
-      // Where a fact is filed and what kind it is can be corrected too: a reading sometimes files one under the wrong role.
-      const role = typeof b.roleId !== 'string' || b.roleId === '' || b.roleId === '0' ? null : Number(b.roleId);
-      if (role !== null && !db.query('SELECT id FROM roles WHERE id = ?').get(role)) return send({ error: 'That role is no longer in your record.' }, 409);
-      if (typeof b.roleId === 'string') db.query('UPDATE facts SET role_id = ? WHERE id = ?').run(role, id);
-      if (typeof b.kind === 'string' && (KINDS as readonly string[]).includes(b.kind)) db.query('UPDATE facts SET kind = ? WHERE id = ?').run(b.kind, id);
-      // The wording is saved last, after anything that can refuse, so a refusal means nothing was changed.
-      if (b.text !== undefined) db.query('UPDATE facts SET text = ?, detail = ?, metric = ? WHERE id = ?').run(str(b.text), str(b.detail), str(b.metric), id);
-      db.query("UPDATE facts SET status = 'confirmed' WHERE id = ?").run(id);
-      return send({ ok: true });
-    },
-    DELETE: (req) => { deleteFact(Number(req.params.id), Date.now()); return send({ ok: true }); },
+    // One fact whole: its story, evidence and where it came from.
+    GET: (req) => { const f = fullFact(Number(req.params.id)); return f ? send(f) : send({ error: 'That fact is no longer in your record.' }, 404); },
+    // The person's own wording for a fact, and where it is filed: a later re-read of its source leaves it alone.
+    // text, detail and metric are each their own field: one sent alone changes only itself.
+    PATCH: async (req) => done(patchFact(Number(req.params.id), await req.json().catch(() => ({})))),
+    DELETE: (req) => done(removeFact(Number(req.params.id))),
   },
   '/sources': {
     OPTIONS: preflight,

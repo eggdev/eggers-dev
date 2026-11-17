@@ -1,0 +1,2300 @@
+<title>Experience Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a lab page. The screen (the studio's Experience screen, drawn from one config) takes most of the
+   width inside a thin outline; a quiet control panel sits beside it on a wide window and under it on a phone.
+   Inside the screen: a reference gutter, a main column, hairline rules, two sizes, two weights (DESIGN.md). */
+:root {
+  /* The studio's tokens: one ink, one paper, two greys; red only for a destructive action. */
+  --ink: #111111;
+  --paper: #ffffff;
+  --grey: #5c5c5c;
+  --line: #d9d9d9;
+  --red: #d70015;
+  /* The lab's own chrome: neutral, quieter than the screen. */
+  --lab-bg: #f1f1f0;
+  --lab-ink: #262626;
+  --lab-dim: #5f5f5f;
+  --lab-line: #cbcbc9;
+  --lab-field: #ffffff;
+  --lab-strong: #111111;
+  --lab-on-strong: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #ededed; --paper: #111111; --grey: #a6a6a6; --line: #333333; --red: #ff6961;
+    --lab-bg: #090909; --lab-ink: #d9d9d9; --lab-dim: #9c9c9c; --lab-line: #363636; --lab-field: #161616;
+    --lab-strong: #ededed; --lab-on-strong: #111111;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #ededed; --paper: #111111; --grey: #a6a6a6; --line: #333333; --red: #ff6961;
+  --lab-bg: #090909; --lab-ink: #d9d9d9; --lab-dim: #9c9c9c; --lab-line: #363636; --lab-field: #161616;
+  --lab-strong: #ededed; --lab-on-strong: #111111;
+  color-scheme: dark;
+}
+/* The screen's Light / Dark preview pins the studio tokens on the frame only. */
+.frame[data-scheme="light"] { --ink: #111111; --paper: #ffffff; --grey: #5c5c5c; --line: #d9d9d9; --red: #d70015; color-scheme: light; }
+.frame[data-scheme="dark"] { --ink: #ededed; --paper: #111111; --grey: #a6a6a6; --line: #333333; --red: #ff6961; color-scheme: dark; }
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--lab-bg); color: var(--lab-ink); }
+
+/* ================= The lab ================= */
+.lab {
+  padding-block: 20px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.lab-top { max-width: 72rem; display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+.lab-h { margin: 0; font-size: 15px; font-weight: 600; color: var(--lab-ink); }
+.lab-help { margin: 0; color: var(--lab-dim); max-width: 62em; text-wrap: pretty; }
+.lab-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (min-width: 1040px) {
+  .lab-grid { grid-template-columns: minmax(0, 1fr) 312px; }
+  .panel { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto; }
+}
+.lab-main { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.lab-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.lab-bar button, .panel button { font: inherit; color: var(--lab-ink); }
+.lab-new {
+  font-size: 16px !important; font-weight: 600; padding: 11px 22px; min-height: 44px;
+  background: var(--lab-strong); color: var(--lab-on-strong) !important; border: 1px solid var(--lab-strong); border-radius: 6px; cursor: pointer;
+}
+.lab-new:active { transform: scale(0.97); }
+.lab-btn {
+  padding: 6px 12px; min-height: 32px; background: var(--lab-field); border: 1px solid var(--lab-line); border-radius: 6px; cursor: pointer;
+}
+.lab-btn:active { transform: scale(0.97); }
+.lab-btn:disabled { color: var(--lab-dim); cursor: default; transform: none; }
+.lab-link { background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 0.2em; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.lab-link.red { color: var(--red) !important; }
+.lab-bar :focus-visible, .panel :focus-visible { outline: 2px solid var(--lab-strong); outline-offset: 2px; }
+.seed { display: inline-flex; align-items: center; gap: 6px; color: var(--lab-dim); }
+.seed input { width: 7em; font-size: 16px; padding: 4px 6px; border: 1px solid var(--lab-line); border-radius: 4px; background: var(--lab-field); color: var(--lab-ink); font-variant-numeric: tabular-nums; }
+.seednote { color: var(--lab-dim); }
+.previews { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-left: auto; }
+.seg { display: inline-flex; align-items: center; gap: 2px; border: 0; padding: 0; margin: 0; }
+.seg legend { float: left; color: var(--lab-dim); margin-right: 6px; padding: 0; }
+.seg label { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; cursor: pointer; }
+.lab-label { margin: 6px 0 0; color: var(--lab-dim); }
+.frame { border: 1px solid var(--lab-line); background: var(--paper); min-width: 0; width: 100%; }
+.frame[data-width="phone"] { max-width: 390px; }
+#screen { container: scr / inline-size; }
+.lab-caption { margin: 0; color: var(--lab-dim); max-width: 72em; text-wrap: pretty; }
+
+.panel { min-width: 0; display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 24px 0; }
+.pg { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--lab-line); padding-top: 10px; }
+.pg > h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--lab-ink); }
+.ctl { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: baseline; }
+.ctl legend, .ctl > .cl { padding: 0; grid-column: 1; color: var(--lab-ink); }
+.ctl legend { float: left; width: 100%; }
+.ctl code, .key { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--lab-dim); }
+.ctl .lock { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; gap: 4px; color: var(--lab-dim); cursor: pointer; }
+.ctl .opts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0 10px; }
+.ctl .opts label { display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; cursor: pointer; }
+.ctl .rng { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 4.5em; gap: 8px; align-items: center; }
+.ctl input[type="range"] { width: 100%; accent-color: var(--lab-strong); }
+.ctl output { font-variant-numeric: tabular-nums; color: var(--lab-ink); }
+.ctl[data-locked="true"] legend, .ctl[data-locked="true"] > .cl { font-weight: 600; }
+.panel textarea { width: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; padding: 6px 8px; border: 1px solid var(--lab-line); border-radius: 4px; background: var(--lab-field); color: var(--lab-ink); resize: vertical; }
+@media (min-width: 640px) and (pointer: fine) { .panel textarea { font-size: 12px; } }
+.note { margin: 0; color: var(--lab-dim); min-height: 1.45em; }
+.rail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rail li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+.rail .apply { text-align: left; overflow-wrap: anywhere; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+@media (max-width: 640px) {
+  .seg label, .ctl .opts label, .ctl .lock, .lab-btn, .lab-link { min-height: 44px; }
+  .lab-link { display: inline-flex; align-items: center; }
+  .previews { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .lab *, .lab *::before, .lab *::after { transition: none !important; } .lab-new:active, .lab-btn:active { transform: none; } }
+
+/* ================= The screen (DESIGN.md) ================= */
+.scr {
+  --row: 12px; --sec: 48px; --ind: 1.5rem; --indx: var(--ind); --gw: 5.25em; --g1: 1em; --measure: 38rem;
+  font-family: "Geist", system-ui, sans-serif; font-size: 1rem; line-height: 1.5; font-weight: 400;
+  color: var(--ink); background: var(--paper); text-align: left;
+  padding: 24px 32px 56px; font-synthesis: none; font-kerning: normal;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  display: flex; flex-direction: column; gap: var(--sec);
+}
+.scr[data-refs="inline"], .scr[data-refs="hidden"] { --gw: 0px; --g1: 0px; }
+.scr :where(h1, h2, h3, p, ul, ol, li, dl, dt, dd, fieldset, legend, table, form, nav) { margin: 0; padding: 0; font-size: inherit; font-weight: inherit; border: 0; }
+.scr :where(ul, ol) { list-style: none; }
+.scr :where(button, input, select, textarea, label) { font: inherit; font-size: 1rem; color: inherit; touch-action: manipulation; }
+.scr button { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left; -webkit-tap-highlight-color: transparent; }
+.scr :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.scr [tabindex="-1"]:focus { outline: none; }
+.scr ::placeholder { color: var(--grey); opacity: 1; }
+.scr ::selection { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+
+.scr .t { font-size: 1.75rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.018em; text-wrap: balance; overflow-wrap: anywhere; }
+.scr .b { font-weight: 600; }
+.scr .gr { color: var(--grey); }
+.scr .ink { color: var(--ink); }
+.scr .tn { font-variant-numeric: tabular-nums; }
+.scr .vh { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* One row: reference gutter, then the body, stepped in by level. */
+.scr .rw { display: grid; grid-template-columns: var(--gw) minmax(0, 1fr); column-gap: var(--g1); align-items: first baseline; }
+.scr .rf { color: var(--grey); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; min-width: 0; }
+.scr .bd { min-width: 0; padding-left: calc(var(--lvl, 0) * var(--indx)); }
+.scr .bd > :where(p, form, .fld, .kv, .acts, .stk, .ln-wrap) { max-width: var(--measure); }
+.scr .blk { display: flex; flex-direction: column; gap: calc(var(--row) * 2); }
+.scr .stk { display: flex; flex-direction: column; gap: calc(var(--row) / 2 + 2px); }
+
+/* Navigation of the app, drawn as in the earlier prototype. */
+.scr .nav { border-bottom: 1px solid var(--line); padding-bottom: var(--row); }
+.scr .nav + .nav { margin-top: var(--row); }
+.scr .navl { display: flex; flex-wrap: wrap; column-gap: 1.75em; color: var(--grey); }
+.scr .navl .on { color: var(--ink); font-weight: 600; }
+.scr .navl .sys { margin-left: auto; }
+.scr .navs { display: flex; flex-direction: column; }
+
+/* Lists. A hairline separates top-level items; nested items are told apart by step and weight. */
+.scr .ls { display: flex; flex-direction: column; gap: var(--row); }
+.scr .nd { display: flex; flex-direction: column; gap: var(--row); }
+.scr .top > li + li { border-top: 1px solid var(--line); padding-top: var(--row); }
+.scr .sh { font-weight: 600; border-top: 1px solid var(--line); padding-top: var(--row); }
+
+/* The closed line of an item: name, then when and what it holds. */
+.scr .nm { display: block; width: 100%; color: var(--ink); }
+.scr .nm .nt { display: block; overflow-wrap: anywhere; }
+.scr .nm.w6 .nt { font-weight: 600; }
+.scr .nm.grp .nt { color: var(--grey); }
+.scr .act.gr { color: var(--grey); }
+.scr .nm .sb { display: block; color: var(--grey); overflow-wrap: anywhere; }
+.scr .nm .rfi { color: var(--grey); font-weight: 400; font-variant-numeric: tabular-nums; margin-right: 0.6em; }
+.scr .nm .tx { text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 0.24em; text-decoration-color: transparent; transition: text-decoration-color 150ms ease-out; }
+@media (hover: hover) and (pointer: fine) { .scr .nm:hover .tx { text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); } }
+.scr .nm:focus-visible .tx { text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.scr .nm[aria-current="true"] .tx { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
+/* Where an open project sits, kept in view while its content scrolls. */
+.scr .where { position: sticky; top: 0; z-index: 1; background: var(--paper); color: var(--grey); padding-block: 2px; }
+
+/* Actions: plain underlined text; the main one heavy; a destructive one red. */
+.scr .act {
+  color: var(--ink); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 0.24em;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); transition: text-decoration-color 150ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) { .scr .act:hover { text-decoration-color: currentColor; } }
+.scr .act.b { font-weight: 600; }
+.scr .act.red { color: var(--red); }
+.scr .act[aria-pressed="true"] { font-weight: 600; text-decoration-line: none; cursor: default; }
+.scr .act[data-label] { display: inline-flex; flex-direction: column; align-items: flex-start; }
+.scr .act[data-label]::after { content: attr(data-label); font-weight: 600; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.scr .acts { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 1.5em; row-gap: 4px; }
+.scr .acts .lb { color: var(--grey); margin-right: -0.5em; }
+.scr .crumbs { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.5em; color: var(--grey); }
+.scr .crumb { color: var(--grey); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 0.24em; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+
+/* Fields: native controls keep their own shape. */
+.scr form { display: flex; flex-direction: column; gap: var(--row); }
+.scr .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 34rem; }
+.scr .fld > label, .scr .fld > .lb { color: var(--grey); }
+.scr .fld input:not([type="checkbox"]), .scr .fld select, .scr .fld textarea { width: 100%; max-width: 100%; }
+.scr textarea { resize: vertical; line-height: 1.5; }
+.scr .ln-wrap { display: flex; flex-direction: column; gap: 4px; }
+.scr .ln { width: 100%; max-width: 34rem; }
+.scr .ln-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; max-width: 34rem; }
+.scr .ln-row .ln { flex: 1 1 14rem; min-width: 0; }
+.scr .ln-row .chooser { display: inline-flex; align-items: center; gap: 6px; color: var(--grey); min-width: 0; max-width: 100%; }
+.scr .ln-row .chooser select { max-width: 16rem; min-width: 0; }
+.scr .chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.scr .opt { color: var(--grey); }
+.scr .err { color: var(--red); }
+.scr .kv { display: grid; grid-template-columns: 10em minmax(0, 1fr); column-gap: 1em; row-gap: 2px; }
+.scr .kv dt { color: var(--grey); }
+.scr .kv dd { min-width: 0; overflow-wrap: anywhere; }
+.scr .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--row); max-width: 34rem; }
+
+/* Two columns: the list, and the opened item beside it. */
+.scr .bes { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); column-gap: 2.5rem; align-items: start; }
+.scr .bl { min-width: 0; display: flex; flex-direction: column; gap: calc(var(--row) * 2); }
+.scr .pane {
+  min-width: 0; position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto;
+  border-left: 1px solid var(--line); padding: 2px 6px 24px 1.5rem; display: flex; flex-direction: column; gap: var(--row);
+}
+.scr .pagev { display: flex; flex-direction: column; gap: var(--row); }
+
+/* The Facts reading: one sortable table. */
+.scr .tw { overflow-x: auto; max-width: 100%; }
+.scr .ft { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.scr .ft th, .scr .ft td { text-align: left; vertical-align: baseline; padding: calc(var(--row) / 2) 1em calc(var(--row) / 2) 0; border-bottom: 1px solid var(--line); font-weight: 400; }
+.scr .ft th:last-child, .scr .ft td:last-child { padding-right: 0; }
+.scr .ft thead th { color: var(--grey); white-space: nowrap; vertical-align: bottom; }
+.scr .ft thead th[aria-sort="ascending"], .scr .ft thead th[aria-sort="descending"] { color: var(--ink); }
+.scr .ft .sortb { color: inherit; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .scr .ft .sortb:hover { text-decoration: underline; text-underline-offset: 0.24em; text-decoration-thickness: 1px; } }
+.scr .ft td.c-f { min-width: 15em; }
+.scr .ft td.c-f .nm { width: auto; }
+.scr .ft .c-ref { color: var(--grey); white-space: nowrap; }
+.scr .ft .c-nw { white-space: nowrap; }
+.scr .ft tr.has-det td { border-bottom: 0; }
+.scr .ft tr.det td { padding-top: 0; padding-bottom: calc(var(--row) * 1.5); }
+.scr .ft tr.det .rw { --gw: 0px; --g1: 0px; }
+/* Restacked table: one block per fact (beside the detail column, and on a phone). */
+.scr .ft.stackd, .scr .ft.stackd tbody { display: block; }
+.scr .ft.stackd thead { display: none; }
+.scr .ft.stackd tr { display: block; padding: calc(var(--row) / 2) 0; border-bottom: 1px solid var(--line); }
+.scr .ft.stackd tr.has-det { border-bottom: 0; }
+.scr .ft.stackd td { display: inline; border: 0; padding: 0; }
+.scr .ft.stackd td.c-ref, .scr .ft.stackd td.c-f { display: block; }
+.scr .ft.stackd td.c-f { min-width: 0; }
+.scr .ft.stackd td.c-m { color: var(--grey); }
+.scr .ft.stackd td.c-m ~ td.c-m::before { content: " · "; color: var(--grey); }
+.scr .ft.stackd td.c-x { display: none; }
+.scr .ft.stackd tr.det td { display: block; }
+.scr .sortl { display: none; }
+.scr .stackd-wrap .sortl { display: flex; }
+
+/* Derived lines and questions. */
+.scr .dv { display: flex; flex-direction: column; gap: var(--row); }
+
+@container scr (max-width: 639px) {
+  .scr { padding: 16px 16px 40px; --gw: 4.6em; --g1: 0.6em; --indx: min(var(--ind), 1rem); }
+  .scr[data-refs="inline"], .scr[data-refs="hidden"] { --gw: 0px; --g1: 0px; }
+  .scr .act, .scr .crumb, .scr .sortb { min-height: 44px; display: inline-flex; align-items: center; }
+  .scr .act[data-label] { flex-direction: column; justify-content: center; }
+  .scr .nm { min-height: 44px; }
+  .scr input:not([type="checkbox"]):not([type="radio"]), .scr select { min-height: 44px; }
+  .scr .chk { min-height: 44px; }
+  .scr .acts { row-gap: 0; }
+  .scr .kv { grid-template-columns: minmax(0, 1fr); }
+  .scr .kv dd + dt { margin-top: 6px; }
+  .scr .pair { grid-template-columns: minmax(0, 1fr); }
+  .scr .navl { column-gap: 1.1em; }
+  .scr .nav .rw { grid-template-columns: minmax(0, 1fr); }
+  .scr .nav .rf { display: none; }
+  .scr .bes { grid-template-columns: minmax(0, 1fr); }
+  .scr .ft, .scr .ft tbody { display: block; }
+  .scr .ft thead { display: none; }
+  .scr .ft tr { display: block; padding: calc(var(--row) / 2) 0; border-bottom: 1px solid var(--line); }
+  .scr .ft tr.has-det { border-bottom: 0; }
+  .scr .ft td { display: inline; border: 0; padding: 0; }
+  .scr .ft td.c-ref, .scr .ft td.c-f { display: block; }
+  .scr .ft td.c-f { min-width: 0; }
+  .scr .ft td.c-m { color: var(--grey); }
+  .scr .ft td.c-m ~ td.c-m::before { content: " · "; color: var(--grey); }
+  .scr .ft td.c-x { display: none; }
+  .scr .ft tr.det td { display: block; }
+  .scr .sortl { display: flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scr *, .scr *::before, .scr *::after { transition: none !important; animation: none !important; }
+}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+
+<div class="lab">
+  <header class="lab-top">
+    <h1 class="lab-h">Experience Lab</h1>
+    <p class="lab-help">Press New variation until one feels right. Add a role, a project and a fact in it to test how adding feels. Lock what you like, move a control to change one thing, then Save and send me the JSON.</p>
+  </header>
+  <div class="lab-grid">
+    <section class="lab-main" aria-label="The screen and its variation">
+      <div class="lab-bar">
+        <button type="button" class="lab-new" id="lab-new">New variation</button>
+        <button type="button" class="lab-btn" id="lab-prev" disabled>Previous</button>
+        <span class="seed"><label for="lab-seed">Seed</label><input id="lab-seed" type="number" inputmode="numeric" step="1" min="0" autocomplete="off"></span>
+        <span class="seednote" id="lab-seednote" aria-live="polite"></span>
+        <div class="previews">
+          <fieldset class="seg"><legend>Screen</legend>
+            <label><input type="radio" name="pv-scheme" id="pv-scheme-match" value="match" checked> Match</label>
+            <label><input type="radio" name="pv-scheme" id="pv-scheme-light" value="light"> Light</label>
+            <label><input type="radio" name="pv-scheme" id="pv-scheme-dark" value="dark"> Dark</label>
+          </fieldset>
+          <fieldset class="seg"><legend>Width</legend>
+            <label><input type="radio" name="pv-width" id="pv-width-wide" value="wide" checked> Wide</label>
+            <label><input type="radio" name="pv-width" id="pv-width-phone" value="phone"> Phone</label>
+          </fieldset>
+        </div>
+      </div>
+      <p class="lab-label" id="lab-screen-label">The screen. It works: add things. Press N for a new variation.</p>
+      <div class="frame" id="frame" data-scheme="match" data-width="wide"><div id="screen" aria-labelledby="lab-screen-label"></div></div>
+      <p class="lab-caption" id="lab-caption" aria-live="polite"></p>
+    </section>
+    <aside class="panel" id="panel" aria-label="Controls">
+      <div id="ctl-groups"></div>
+      <section class="pg" aria-labelledby="h-save">
+        <h2 id="h-save">Save</h2>
+        <div class="row"><button type="button" class="lab-btn" id="lab-save"><b>Save this variation</b></button></div>
+        <p class="note" id="lab-save-note" role="status"></p>
+        <label for="lab-json" class="key">The saved JSON</label>
+        <textarea id="lab-json" rows="9" readonly spellcheck="false"></textarea>
+        <h2 id="h-rail" style="margin-top:6px">Saved variations</h2>
+        <ul class="rail" id="lab-rail" aria-labelledby="h-rail"></ul>
+        <p class="note" id="lab-rail-empty">None yet. Save one and it shows here.</p>
+      </section>
+      <section class="pg" aria-labelledby="h-load">
+        <h2 id="h-load">Load</h2>
+        <label for="lab-load" class="key">Paste a saved JSON</label>
+        <textarea id="lab-load" rows="4" spellcheck="false" autocomplete="off"></textarea>
+        <div class="row"><button type="button" class="lab-btn" id="lab-load-go">Apply it</button></div>
+        <p class="note" id="lab-load-note" role="status"></p>
+      </section>
+      <section class="pg" aria-labelledby="h-data">
+        <h2 id="h-data">The data</h2>
+        <p class="note">What you add lives in this page until you reload it, and stays across variations.</p>
+        <div class="row" id="lab-reset-row"><button type="button" class="lab-btn" id="lab-reset">Reset the data</button></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   The invented career. Every name, employer and number here is made up.
+   ===================================================================== */
+const SEED_TODAY = '2026-11-17';
+const NOW_YM = '2026-11';
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SOURCES = {
+  rev15: ['the 2015 performance review', '2016-01-22'], rev19: ['the 2019 performance review', '2020-01-30'],
+  rev22: ['the 2022 performance review', '2023-02-20'], rev24: ['the 2024 performance review', '2025-03-14'],
+  callD: ['a call with Dana Okafor, former VP Engineering at Harborlight', '2026-02-11'],
+  callP: ['a call with Priya Halvorsen, former COO of Corvane', '2026-04-02'],
+  callM: ['a call with Marcus Bell, former CTO of Tamarack', '2026-04-09'],
+  ans: ['your own answer', '2026-09-08'], ans2: ['your own answer', '2026-10-21'], li: ['the LinkedIn export', '2026-02-02'],
+  repoT: ['the tidewater code repository', '2026-05-19'], repoL: ['the lindqvist-tools code repository', '2026-10-30'],
+};
+const FIELDS = ['employer', 'title', 'start', 'end', 'type', 'location'];
+
+function seedData() {
+  const roles = [];
+  const R = (id, title, employer, start, end, type, location, hr, status) => {
+    const marks = {}; FIELDS.forEach(k => { marks[k] = hr === 'all' || hr.includes(k) ? 'hr' : 'memory'; });
+    roles.push({ id, title, employer, start, end, type, location, marks, status });
+  };
+  R('R-01', 'Teaching Assistant', 'Northshore Community College', '2009-09', '2010-05', 'Part-time', 'Duluth, MN', ['employer', 'title', 'start', 'end'], 'Confirmed');
+  R('R-02', 'Support Lead', 'Superior Outfitters', '2010-06', '2012-05', 'Full-time', 'Duluth, MN', ['employer'], 'Confirmed');
+  R('R-03', 'Junior Developer', 'Lakehead Mapping', '2012-06', '2013-12', 'Full-time', 'Duluth, MN', ['employer', 'title', 'start', 'end'], 'Confirmed');
+  R('R-04', 'Software Engineer', 'Lakehead Mapping', '2014-01', '2016-03', 'Full-time', 'Duluth, MN', ['employer', 'title', 'start', 'end', 'type'], 'Confirmed');
+  R('R-05', 'Software Engineer II', 'Pinecrest Payments', '2016-04', '2017-02', 'Full-time', 'Minneapolis, MN', ['employer'], 'Unsure');
+  R('R-06', 'Staff Software Engineer', 'Brightwater Health', '2017-03', '2017-12', 'Full-time', 'Minneapolis, MN', 'all', 'Confirmed');
+  R('R-07', 'Platform Architect', 'Tamarack Analytics', '2018-01', '2018-07', 'Contract', 'Remote', ['employer', 'start', 'end', 'type'], 'Confirmed');
+  R('R-08', 'Senior Director of Platform Engineering and Developer Experience, Americas and EMEA', 'Corvane Logistics', '2018-08', '2020-07', 'Full-time', 'Chicago, IL, and remote', ['employer', 'start', 'end', 'type', 'location'], 'Unsure');
+  R('R-09', 'Engineering Manager', 'Harborlight Systems', '2021-01', '2023-02', 'Full-time', 'Duluth, MN', 'all', 'Confirmed');
+  R('R-10', 'Director of Engineering', 'Harborlight Systems', '2023-03', null, 'Full-time', 'Duluth, MN', 'all', 'Confirmed');
+  R('R-11', 'Founder', 'Lindqvist Tools', '2023-06', null, 'Own company', 'Duluth, MN', ['employer'], 'Confirmed');
+
+  const projects = [];
+  const P = (id, role, title, start, end, sit, did, res, learn, letters, where) =>
+    projects.push({ id, role, title, start, end, sit, did, res, learn, letters: letters || 0, where: where || null });
+  P('P-001', 'R-10', 'Merged three deploy systems into one', '2023-04', '2024-09',
+    'Harborlight ran three deploy systems after two acquisitions. A deploy took 47 minutes, and each team knew only its own system.',
+    'I wrote a migration plan, chose the newest system as the base, and moved teams one at a time over two quarters.',
+    'One pipeline for all 42 engineers. Median deploy time fell to 9 minutes.',
+    'Move one team at a time, and move the team with the worst system first. Their win sells the rest.', 1);
+  P('P-002', 'R-10', 'Cut cloud spend by a third', '2024-01', '2024-12',
+    'Cloud spend grew 60% in a year while usage grew 20%. Finance asked for a cut without a hiring freeze.',
+    'I set per-team budgets with a weekly report, moved batch jobs to spot capacity and deleted idle environments.',
+    'Spend fell 31%, $1.4M a year, and the change caused no outage.',
+    'A weekly number per team did more than any rule.', 2);
+  P('P-003', 'R-10', 'Reorganised 42 engineers into five product teams', '2023-03', '2023-12',
+    'Three functional groups handed work to each other; one feature crossed four queues.',
+    'I drew five product teams with their leads, wrote a charter with each, and hired 5 managers.', null, null);
+  P('P-004', 'R-10', 'Moved search to a new index without downtime', '2025-02', '2025-08',
+    'The search cluster was two major versions behind and out of support.',
+    'I designed a dual-write cutover and ran both clusters side by side for six weeks.', null,
+    'Run both systems side by side and move one team at a time.');
+  P('P-005', 'R-10', 'Brought paging down after the March 2024 outage', '2024-03', '2024-10',
+    'A three-hour outage reached 22% of customers, and engineers were paged 31 times a week.',
+    'I set up the incident review, made each team own its alerts, and introduced service level objectives.',
+    'Pages fell from 31 to 6 a week.', null);
+  P('P-006', 'R-09', 'Turned around a team losing 40% of its people a year', '2021-01', '2022-07',
+    'I took over a team of 9 that had lost 4 people in the year before.',
+    'I wrote career paths, kept one day a week free of meetings, and hired 7 engineers.',
+    'Attrition fell to 8% in 18 months.', 'People left over unclear promotion, not over pay.');
+  P('P-007', 'R-09', 'Rewrote customer billing', '2021-06', '2022-11',
+    'Billing ran on a 2014 monolith, and checkout p99 latency was 2.1 seconds.',
+    'I moved invoice generation off the request path and planned the rewrite against a fixed date.',
+    'Shipped on the date set a year earlier. p99 checkout latency fell to 380 ms.',
+    'A date set a year ahead held because the scope was cut every month.', 2);
+  P('P-008', 'R-08', 'Built Corvane’s platform group from 18 to 60 engineers', '2018-09', '2020-03', null,
+    'I hired across four countries, set up on-call in EMEA and introduced written design reviews.',
+    '60 engineers, and deploy lead time fell from 9 days to 1 day.',
+    'Hire the managers first, then let them hire one team at a time.');
+  P('P-009', 'R-08', 'Rolled out the route planner across the depots', '2019-01', '2019-09',
+    'Depots planned routes by hand on paper each morning.',
+    'We ran the rollout depot by depot, with two weeks of shadow planning at each.', null, null);
+  P('P-010', 'R-08', 'Lost the vote on the data-centre move', '2019-10', '2020-06',
+    'The board wanted both data centres moved in one quarter.',
+    'I argued for a staged move with a written risk review, and lost the vote.',
+    'The move ran 8 months late. The staged plan was used for the second site.',
+    'Take the risk review to the COO before the board meeting, not to it.', 1);
+  P('P-011', 'R-07', 'Replaced the log vendor at Tamarack', '2018-02', '2018-07', null,
+    'I ran a vendor bake-off and moved logs to self-hosted storage with 30-day retention.',
+    'Licence costs fell by $210,000 a year.', null);
+  P('P-012', 'R-06', 'Built Brightwater’s audit log', '2017-04', '2017-10',
+    'A HIPAA review found no record of who read patient files.',
+    'I designed append-only audit tables with signed daily digests.', null, null);
+  P('P-013', 'R-02', 'Ran support through the holiday peak', '2010-11', '2011-01',
+    'Holiday orders tripled the inbox, and replies took two days.',
+    'I built a shift rota and a shared reply library, and triaged the inbox twice a day.',
+    'Replies went out within 5 hours through the peak.', 'A shared reply library is a training tool.');
+  P('P-014', 'R-11', 'Launched Shiftnote with no outside money', '2023-06', null, null,
+    'I built the product alone in TypeScript and sold it to clinics I knew.',
+    '1,100 paying users and $18,000 a month.', 'Clinics buy from people they already trust.');
+  P('P-015', null, 'Built tidewater, an open-source tide-table library', '2015-02', '2019-10',
+    'Tide tables for the Great Lakes ports were only published as PDF files.',
+    'I published clean tide data for 3,000 stations, reviewed every pull request, and handed maintenance over in 2019.',
+    '1,400 public repositories use it.', 'Hand it over early, and the project outlives your interest.', 0, 'A code repository');
+  P('P-016', null, 'Taught a weekly coding night at the public library', '2021-09', '2023-05',
+    'The library had laptops and a room, and nobody to teach.',
+    'I wrote a ten-week course and ran it every Thursday evening with volunteers.',
+    '140 people wrote their first program.', null, 0, 'Duluth Public Library');
+  P('P-017', null, 'Wrote a field guide to running on-call', '2024-02', '2024-11', null,
+    'I wrote down what worked for paging, handovers and incident reviews in small teams, and published it free.',
+    'Downloaded 3,200 times in its first year.', null, 0, 'A free online guide');
+
+  const facts = [];
+  const F = (n, role, project, year, text, kind, num, src, unsure, used, letters) => {
+    const s = SOURCES[src];
+    facts.push({ id: 'F-0' + n, role, project, year, text, kind: kind || null, num: num || null,
+      src: { label: s[0], date: s[1] }, status: unsure ? 'Unsure' : 'Confirmed', used: used || 0, letters: letters || 0, added: s[1] });
+  };
+  F(101, 'R-02', 'P-013', 2011, 'Led a support team of 6 through the holiday peak.', 'Team size', '6 people', 'li', 0, 1);
+  F(102, 'R-02', 'P-013', 2011, 'Wrote the reply library the whole store used.', null, null, 'ans', 0, 0);
+  F(103, 'R-02', 'P-013', 2011, 'Cut average email reply time from 2 days to 5 hours.', 'Time saved', '2 days to 5 hours', 'ans', 0, 2);
+  F(104, 'R-03', null, 2012, 'Built the first internal tool for support tickets.', null, null, 'ans', 0, 0);
+  F(105, 'R-03', null, 2013, 'Moved map tile rendering to a nightly batch, saving 9 hours of manual work a week.', 'Time saved', '9 hours a week', 'li', 0, 3);
+  F(106, 'R-04', null, 2015, 'Rewrote the tile server in Go; p95 latency fell from 840 ms to 120 ms.', 'Latency', '840 ms to 120 ms', 'rev15', 0, 5);
+  F(107, 'R-04', null, 2014, 'Owned the Postgres upgrade from 9.1 to 9.4.', null, null, 'li', 0, 1);
+  F(108, 'R-04', null, 2015, 'Mentored the two developers hired after me.', null, null, 'ans', 0, 0);
+  F(109, null, 'P-015', 2017, 'Created tidewater, an open-source tide-table library now used by 1,400 public repositories.', 'Adoption', '1,400 repositories', 'repoT', 0, 6);
+  F(110, null, 'P-015', 2018, 'Reviewed and merged 310 pull requests from 85 outside contributors.', 'Adoption', '85 contributors', 'repoT', 0, 2);
+  F(111, null, 'P-015', 2019, 'Handed maintenance to two co-maintainers.', null, null, 'repoT', 0, 0);
+  F(112, 'R-06', 'P-012', 2017, 'Designed the audit log for patient record access.', null, null, 'ans', 0, 1);
+  F(113, 'R-06', 'P-012', 2017, 'Cut the nightly claims export from 6 hours to 40 minutes.', 'Time saved', '6 hours to 40 minutes', 'ans', 1, 2);
+  F(114, 'R-06', null, 2017, 'Left after 10 months when the platform team was dissolved.', null, null, 'ans', 0, 0);
+  F(115, 'R-07', 'P-011', 2018, 'Delivered a Kubernetes migration plan for 40 services in 7 months.', 'Adoption', '40 services', 'li', 0, 1);
+  F(116, 'R-07', 'P-011', 2018, 'Ran the vendor bake-off that picked the observability stack.', null, null, 'ans', 0, 0);
+  F(117, 'R-07', 'P-011', 2018, 'Saved $210,000 a year in licence costs by replacing the log vendor.', 'Cost', '$210,000 a year', 'callM', 0, 3);
+  F(118, 'R-08', 'P-009', 2019, 'Rolled out the new route planner to 11 depots in two quarters.', 'Adoption', '11 depots', 'rev19', 0, 4);
+  F(119, 'R-08', 'P-009', 2019, 'Led the depot migration across 12 depots.', 'Adoption', '12 depots', 'li', 1, 2);
+  F(120, 'R-08', 'P-008', 2019, 'Grew platform and developer experience from 18 to 60 engineers across four countries.', 'Team size', '18 to 60 engineers', 'rev19', 0, 6);
+  F(121, 'R-08', 'P-008', 2019, 'Cut deploy lead time from 9 days to 1 day.', 'Time saved', '9 days to 1 day', 'rev19', 0, 6, 1);
+  F(122, 'R-08', 'P-008', 2019, 'Set up the first on-call rotation in EMEA.', null, null, 'ans', 0, 0);
+  F(123, 'R-08', 'P-010', 2020, 'The board wanted to move both data centres in one quarter. I argued for a staged move and lost the vote. The move ran 8 months late, and the staged plan was used for the second site.', null, null, 'callP', 0, 1);
+  F(124, 'R-08', 'P-008', 2019, 'Introduced written design reviews for all platform changes.', null, null, 'ans', 0, 0);
+  F(125, 'R-09', 'P-006', 2022, 'Took over a team of 9 with 40% yearly attrition; attrition fell to 8% in 18 months.', 'Team size', '40% to 8% attrition', 'rev22', 0, 6, 1);
+  F(126, 'R-09', 'P-006', 2022, 'Hired 7 engineers in 12 months.', 'Team size', '7 hires', 'rev22', 0, 3);
+  F(127, 'R-09', 'P-007', 2022, 'Shipped the customer billing rewrite on the date set a year earlier.', null, null, 'rev22', 0, 4);
+  F(128, 'R-09', 'P-007', 2022, 'Cut p99 checkout latency from 2.1 s to 380 ms.', 'Latency', '2.1 s to 380 ms', 'rev22', 0, 5);
+  F(129, 'R-09', null, 2021, 'Ran the weekly incident review.', null, null, 'ans', 0, 0);
+  F(130, 'R-09', 'P-007', 2022, 'The billing rewrite added $2.3M in annual recurring revenue through usage pricing.', 'Revenue', '$2.3M a year', 'callD', 1, 2);
+  F(131, 'R-09', null, 2021, 'Paired with product on the first quarterly roadmap.', null, null, 'ans', 0, 0);
+  F(132, 'R-09', 'P-007', 2021, 'Moved the team from monthly to daily deploys.', 'Time saved', 'monthly to daily', 'li', 0, 1);
+  F(133, 'R-10', 'P-001', 2024, 'Merged three deploy systems into one pipeline used by all 42 engineers.', 'Adoption', '42 engineers', 'rev24', 0, 6);
+  F(134, 'R-10', 'P-001', 2024, 'Cut median deploy time from 47 minutes to 9 minutes.', 'Time saved', '47 to 9 minutes', 'rev24', 0, 6, 1);
+  F(135, 'R-10', 'P-001', 2023, 'Wrote the migration plan and ran it team by team over two quarters.', null, null, 'ans', 0, 2);
+  F(136, 'R-10', 'P-001', 2024, 'Retired 2 of the 3 old deploy systems by Q3 2024.', null, null, 'li', 0, 1);
+  F(137, 'R-10', 'P-002', 2024, 'Cut cloud spend by 31%, $1.4M a year.', 'Cost', '31%, $1.4M a year', 'rev24', 0, 6, 2);
+  F(138, 'R-10', 'P-002', 2024, 'Set per-team cost budgets with a weekly report.', null, null, 'ans', 0, 3);
+  F(139, 'R-10', 'P-002', 2024, 'Found $380,000 a year of unused reserved instances.', 'Cost', '$380,000 a year', 'callD', 0, 2);
+  F(140, 'R-10', 'P-002', 2024, 'Negotiated a 3-year cloud commit with a 22% discount.', 'Cost', '22% discount', 'ans', 0, 1);
+  F(141, 'R-10', 'P-003', 2023, 'Reorganised 42 engineers from 3 functional groups into 5 product teams.', 'Team size', '42 engineers, 5 teams', 'rev24', 0, 4);
+  F(142, 'R-10', 'P-003', 2023, 'Wrote the team charters with each product lead.', null, null, 'ans', 0, 0);
+  F(143, 'R-10', 'P-003', 2024, 'Promoted 4 engineers to senior and 1 to staff.', 'Team size', '5 promotions', 'rev24', 0, 3);
+  F(144, 'R-10', 'P-003', 2023, 'Hired 5 engineering managers in 2023.', 'Team size', '5 managers', 'li', 0, 2);
+  F(145, 'R-10', 'P-004', 2025, 'Moved search from Elasticsearch to OpenSearch with no downtime.', null, null, 'ans', 0, 1);
+  F(146, 'R-10', 'P-004', 2025, 'Search p95 latency fell from 900 ms to 210 ms after the move.', 'Latency', '900 ms to 210 ms', 'ans', 1, 0);
+  F(147, 'R-10', 'P-004', 2025, 'Designed the dual-write cutover used for the search move.', null, null, 'ans', 0, 0);
+  F(148, 'R-10', null, 2024, 'Grew weekly active users of the scheduling product from 1.1M to 1.9M.', 'Users', '1.1M to 1.9M weekly', 'rev24', 0, 5);
+  F(149, 'R-10', null, 2024, 'Launched the public API; 260 customer integrations in the first year.', 'Adoption', '260 integrations', 'li', 0, 4);
+  F(150, 'R-10', null, 2023, 'Ran quarterly planning for engineering.', null, null, 'ans', 0, 1);
+  F(151, 'R-10', null, 2023, 'Reported to the CTO and sat on the product leadership group.', null, null, 'li', 0, 2);
+  F(152, 'R-10', null, 2024, 'Owned uptime for 14 production services.', null, null, 'ans', 0, 1);
+  F(153, 'R-10', 'P-005', 2024, 'Brought paging load down from 31 to 6 pages a week.', 'Time saved', '31 to 6 pages a week', 'rev24', 0, 3);
+  F(154, 'R-10', null, 2025, 'Started the internal tech talk series; 38 talks in 2 years.', 'Adoption', '38 talks', 'ans2', 0, 0);
+  F(155, 'R-10', null, 2024, 'Wrote the engineering levels guide used in all promotions.', null, null, 'rev24', 0, 2);
+  F(156, 'R-10', 'P-005', 2024, 'Set up the incident review process after the March 2024 outage.', null, null, 'ans', 0, 1);
+  F(157, 'R-10', 'P-005', 2024, 'The March 2024 outage lasted 3 hours and reached 22% of customers.', 'Users', '22% of customers', 'callD', 0, 0);
+  F(158, 'R-10', null, 2024, 'Cut onboarding time for new engineers from 6 weeks to 2.', 'Time saved', '6 weeks to 2', 'rev24', 0, 4);
+  F(159, 'R-10', null, 2025, 'Ran the vendor review that dropped 4 tools, saving $95,000 a year.', 'Cost', '$95,000 a year', 'ans2', 0, 1);
+  F(160, 'R-10', null, 2025, 'Coached 5 managers through their first year.', null, null, 'ans', 0, 0);
+  F(161, 'R-10', null, 2025, 'Joined sales on 3 enterprise deals over $500,000 each.', 'Revenue', '3 deals over $500,000', 'ans2', 0, 0);
+  F(162, 'R-10', 'P-005', 2024, 'Introduced service level objectives for every customer-facing service.', null, null, 'rev24', 0, 2);
+  F(163, 'R-10', 'P-003', 2024, 'Kept 94% of engineers through the 2024 reorganisation.', 'Team size', '94% kept', 'callD', 0, 1);
+  F(164, 'R-10', null, 2025, 'Presented the platform roadmap to the board twice a year.', null, null, 'li', 0, 1);
+  F(165, 'R-10', 'P-001', 2025, 'Moved 60% of services to the shared platform.', 'Adoption', '60% of services', 'rev24', 0, 2);
+  F(166, 'R-10', null, 2025, 'Built the hiring loop now used for every engineering role.', null, null, 'ans2', 0, 0);
+  F(167, 'R-11', 'P-014', 2024, 'Built and launched Shiftnote, a rota tool for small clinics.', null, null, 'repoL', 0, 0);
+  F(168, 'R-11', 'P-014', 2025, 'Reached 1,100 paying users in 14 months.', 'Users', '1,100 paying users', 'ans2', 0, 0);
+  F(169, 'R-11', 'P-014', 2026, 'Grew revenue to $18,000 a month with no outside funding.', 'Revenue', '$18,000 a month', 'ans2', 0, 0);
+  F(170, 'R-11', 'P-014', 2025, 'Wrote the billing and sync code alone in TypeScript.', null, null, 'repoL', 0, 0);
+  F(171, 'R-01', null, 2010, 'Ran the Tuesday lab for 30 first-year students.', 'Users', '30 students', 'ans', 0, 0);
+  F(172, null, 'P-016', 2022, 'Taught 140 people to write their first program over 20 months.', 'Users', '140 people', 'ans2', 0, 0);
+  F(173, null, 'P-016', 2021, 'Recruited 6 volunteer teachers from local companies.', 'Team size', '6 volunteers', 'ans2', 0, 0);
+  F(174, null, 'P-017', 2024, 'Wrote a 90-page field guide to running on-call for small teams.', null, '90 pages', 'ans2', 0, 0);
+  F(175, null, 'P-017', 2025, 'The guide was downloaded 3,200 times in its first year.', 'Adoption', '3,200 downloads', 'ans2', 0, 0);
+
+  return {
+    roles, projects, facts,
+    conflicts: [{ a: 'F-0118', b: 'F-0119', what: '11 depots or 12 depots' }],
+    verdicts: {},
+    next: { R: 12, P: 18, F: 176 },
+  };
+}
+
+/* =====================================================================
+   Small helpers (pure)
+   ===================================================================== */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad2 = n => String(n).padStart(2, '0');
+function ymNum(s, isEnd) {
+  if (!s) return null;
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(s);
+  if (!m) return null;
+  return +m[1] * 12 + (m[2] ? +m[2] - 1 : (isEnd ? 11 : 0));
+}
+function ymFromNum(n) { return Math.floor(n / 12) + '-' + pad2(n % 12 + 1); }
+function fmtYM(s) {
+  if (!s) return '';
+  const m = /^(\d{4})(?:-(\d{2}))?$/.exec(s);
+  if (!m) return s;
+  return m[2] ? MON[+m[2] - 1] + ' ' + m[1] : m[1];
+}
+function fmtDay(s) { const [y, m, d] = s.split('-').map(Number); return d + ' ' + MON[m - 1] + ' ' + y; }
+function roleWhen(r) { if (!r.start) return ''; return fmtYM(r.start) + '–' + (r.end ? fmtYM(r.end) : 'Present'); }
+function projWhen(p) {
+  if (!p.start) return '';
+  const a = p.start.slice(0, 4);
+  if (!p.end) return a + '–Present';
+  const b = p.end.slice(0, 4);
+  return a === b ? a : a + '–' + b;
+}
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
+const firstSentence = t => { const m = /^(.+?[.!?])(\s|$)/.exec(String(t || '').trim()); return m ? m[1] : String(t || '').trim(); };
+const stripDot = t => String(t || '').trim().replace(/[.!?;:,]+$/, '');
+const lowerFirst = t => { const s = String(t || ''); if (/^[A-Z][a-z]/.test(s) && !/^(I|I’m|I'm)\b/.test(s)) return s[0].toLowerCase() + s.slice(1); return s; };
+const upperFirst = t => { const s = String(t || ''); return s ? s[0].toUpperCase() + s.slice(1) : s; };
+function daysBetween(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+
+/* =====================================================================
+   The config: every undecided choice. Seed 0 is the defaults.
+   ===================================================================== */
+const MODES = {
+  spine: { opts: ['time', 'jobs-then-side', 'projects'], labels: ['By time', 'Roles, then side projects', 'Every project'], def: 'time', label: 'Top level', group: 'order' },
+  views: { opts: ['tree', 'three'], labels: ['The tree only', 'Read as Roles, Projects or Facts'], def: 'tree', label: 'Ways to read it', group: 'order' },
+  refs: { opts: ['gutter', 'inline', 'hidden'], labels: ['In the gutter', 'Inline', 'Hidden'], def: 'gutter', label: 'References', group: 'order' },
+  open: { opts: ['in-place', 'beside', 'page'], labels: ['In place', 'Beside the list', 'As a page'], def: 'in-place', label: 'Opening an item', group: 'open' },
+  depth: { opts: ['roles', 'projects', 'facts'], labels: ['Top level only', 'Roles open to projects', 'Everything open'], def: 'roles', label: 'Open at the start', group: 'open' },
+  official: { opts: ['hidden', 'line', 'full'], labels: ['Behind an action', 'One line', 'All six fields'], def: 'line', label: 'Official record of a role', group: 'open' },
+  add: { opts: ['line', 'form', 'tell'], labels: ['A blank line', 'A short form', 'Tell it in your words'], def: 'line', label: 'Entering a new thing', group: 'add' },
+  capture: { opts: ['off', 'on'], labels: ['Off', 'On'], def: 'off', label: 'A note line at the top', group: 'add' },
+  uses: { opts: ['none', 'counts', 'drafts'], labels: ['Nothing', 'Counts', 'Drafts'], def: 'none', label: 'Where it is used', group: 'tell' },
+  missing: { opts: ['quiet', 'named', 'asked'], labels: ['Quiet', 'Named', 'Asked as questions'], def: 'named', label: 'Missing parts', group: 'tell' },
+  derived: { opts: ['off', 'on'], labels: ['Off', 'On'], def: 'off', label: 'How you work', group: 'tell' },
+};
+const KNOBS = {
+  parts: { min: 1, max: 4, step: 1, def: 4, label: 'Parts shown when a project opens', unit: 'of 4', group: 'open' },
+  factsShown: { min: 3, max: 12, step: 1, def: 5, label: 'Facts before “Show all”', unit: '', group: 'open' },
+  derivedLines: { min: 1, max: 5, step: 1, def: 3, label: 'Lines in How you work', unit: '', group: 'tell' },
+  indent: { min: 0, max: 3, step: 0.5, def: 1.5, label: 'Step in per level', unit: 'rem', group: 'space' },
+  rowGap: { min: 6, max: 20, step: 1, def: 12, label: 'Space between rows', unit: 'px', group: 'space' },
+  sectionGap: { min: 28, max: 72, step: 1, def: 48, label: 'Space between sections', unit: 'px', group: 'space' },
+};
+const GROUPS = [['order', 'How it is ordered'], ['open', 'Opening things'], ['add', 'Adding things'], ['tell', 'What it tells you'], ['space', 'Spacing']];
+const ORDER = ['spine', 'open', 'depth', 'add', 'views', 'uses', 'missing', 'derived', 'official', 'refs', 'capture', 'factsShown', 'indent', 'parts', 'derivedLines', 'rowGap', 'sectionGap'];
+const SAVE_ORDER = ['spine', 'open', 'depth', 'add', 'views', 'uses', 'missing', 'derived', 'official', 'refs', 'capture', 'factsShown', 'indent', 'parts', 'derivedLines', 'rowGap', 'sectionGap', 'seed'];
+const defOf = k => (MODES[k] ? MODES[k].def : KNOBS[k].def);
+function defaults() { const c = {}; ORDER.forEach(k => { c[k] = defOf(k); }); c.seed = 0; return c; }
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function snapKnob(k, v) {
+  const K = KNOBS[k];
+  let n = Number(v);
+  if (!Number.isFinite(n)) n = K.def;
+  n = Math.min(K.max, Math.max(K.min, n));
+  n = K.min + Math.round((n - K.min) / K.step) * K.step;
+  return +n.toFixed(2);
+}
+/* A variation: every unlocked control drawn from the seed. One draw per control, locked or not, so a seed
+   gives the same values to the unlocked controls whatever is locked. */
+function generate(seed, locks, cur) {
+  const out = {};
+  const rng = mulberry32(seed >>> 0);
+  for (const k of ORDER) {
+    const r = rng();
+    if (locks[k]) { out[k] = cur[k]; continue; }
+    if (seed === 0) { out[k] = defOf(k); continue; }
+    if (MODES[k]) out[k] = MODES[k].opts[Math.floor(r * MODES[k].opts.length)];
+    else { const K = KNOBS[k]; const n = Math.round((K.max - K.min) / K.step) + 1; out[k] = +(K.min + Math.floor(r * n) * K.step).toFixed(2); }
+  }
+  out.seed = seed;
+  return out;
+}
+/* Load: ignore unknown keys, keep known values, clamp numbers. */
+function sanitize(obj, base) {
+  const out = Object.assign({}, base), ignored = [];
+  Object.keys(obj || {}).forEach(k => {
+    if (MODES[k]) { if (MODES[k].opts.includes(obj[k])) out[k] = obj[k]; else ignored.push(k + ' (unknown value)'); }
+    else if (KNOBS[k]) out[k] = snapKnob(k, obj[k]);
+    else if (k === 'seed') { const n = Math.trunc(Number(obj[k])); out.seed = Number.isFinite(n) ? Math.abs(n) : 0; }
+    else ignored.push(k);
+  });
+  return { config: out, ignored };
+}
+
+/* =====================================================================
+   Reading the tree (pure)
+   ===================================================================== */
+function index(data) {
+  const R = new Map(data.roles.map(r => [r.id, r]));
+  const P = new Map(data.projects.map(p => [p.id, p]));
+  const F = new Map(data.facts.map(f => [f.id, f]));
+  const projOf = new Map(), factsOfP = new Map(), dayOf = new Map(), inbox = [];
+  data.roles.forEach(r => { projOf.set(r.id, []); dayOf.set(r.id, []); });
+  data.projects.forEach(p => { factsOfP.set(p.id, []); if (p.role && projOf.has(p.role)) projOf.get(p.role).push(p); });
+  data.facts.forEach(f => {
+    if (f.project && factsOfP.has(f.project)) factsOfP.get(f.project).push(f);
+    else if (f.role && dayOf.has(f.role)) dayOf.get(f.role).push(f);
+    else inbox.push(f);
+  });
+  // Projects inside a role: newest first; a project with no dates yet goes last, beside its add line.
+  projOf.forEach(list => list.sort((a, b) => (ymNum(b.start) ?? -1) - (ymNum(a.start) ?? -1) || a.id.localeCompare(b.id)));
+  const sides = data.projects.filter(p => !p.role);
+  const conf = new Map();
+  (data.conflicts || []).forEach(c => { if (F.has(c.a) && F.has(c.b)) { conf.set(c.a, { other: c.b, what: c.what }); conf.set(c.b, { other: c.a, what: c.what }); } });
+  return { R, P, F, projOf, factsOfP, dayOf, inbox, sides, conf };
+}
+function node(X, id) {
+  if (!id) return null;
+  if (id === 'INBOX') return { kind: 'inbox', o: null };
+  if (id.startsWith('D-')) { const r = X.R.get(id.slice(2)); return r ? { kind: 'group', o: r } : null; }
+  if (X.R.has(id)) return { kind: 'role', o: X.R.get(id) };
+  if (X.P.has(id)) { const p = X.P.get(id); return { kind: p.role ? 'proj' : 'side', o: p }; }
+  if (X.F.has(id)) return { kind: 'fact', o: X.F.get(id) };
+  return null;
+}
+/* Every item has exactly one parent: a role, a project, Day to day, Not filed yet, or the top level. */
+function parentOf(X, id) {
+  const n = node(X, id);
+  if (!n) return null;
+  if (n.kind === 'role' || n.kind === 'side' || n.kind === 'inbox') return null;
+  if (n.kind === 'proj') return n.o.role;
+  if (n.kind === 'group') return n.o.id;
+  const f = n.o;
+  if (f.project && X.P.has(f.project)) return f.project;
+  if (f.role && X.R.has(f.role)) return 'D-' + f.role;
+  return 'INBOX';
+}
+function childrenOf(X, id) {
+  const n = node(X, id);
+  if (!n) return [];
+  if (n.kind === 'role') return X.projOf.get(id).map(p => p.id).concat(['D-' + id]);
+  if (n.kind === 'proj' || n.kind === 'side') return X.factsOfP.get(id).map(f => f.id);
+  if (n.kind === 'group') return X.dayOf.get(n.o.id).map(f => f.id);
+  if (n.kind === 'inbox') return X.inbox.map(f => f.id);
+  return [];
+}
+function roleFacts(X, rid) { let n = X.dayOf.get(rid).length; X.projOf.get(rid).forEach(p => { n += X.factsOfP.get(p.id).length; }); return n; }
+function roleOfNode(X, id) {
+  let cur = id;
+  while (cur) { const n = node(X, cur); if (!n) return null; if (n.kind === 'role') return n.o; if (n.kind === 'side') return null; cur = parentOf(X, cur); }
+  return null;
+}
+const isSideFact = (X, f) => !!(f.project && X.P.has(f.project) && !X.P.get(f.project).role);
+
+const THEME_WORD = { speed: 'speed', cost: 'cost', revenue: 'revenue', reach: 'reach', people: 'people', other: 'other things' };
+function theme(f) {
+  const k = f.kind;
+  if (k === 'Time saved' || k === 'Latency') return 'speed';
+  if (k === 'Cost') return 'cost';
+  if (k === 'Revenue') return 'revenue';
+  if (k === 'Users' || k === 'Adoption') return 'reach';
+  if (k === 'Team size') return 'people';
+  const t = (f.text + ' ' + (f.num || '')).toLowerCase();
+  if (/\b(ms|seconds?|minutes?|hours?|days?|weeks?|faster|latency)\b/.test(t)) return 'speed';
+  if (/\b(cost|spend|saved|saving)\b/.test(t)) return 'cost';
+  if (/\b(revenue|sales|deals?)\b/.test(t)) return 'revenue';
+  if (/\b(users?|customers?|downloads?|repositories|integrations)\b/.test(t)) return 'reach';
+  if (/\b(engineers|people|team|hires?|managers)\b/.test(t)) return 'people';
+  return 'other';
+}
+
+/* "How you work": worked out by counting. Each line names its source and the items behind it. */
+const STOP = new Set('a an the and or of to in on at for with by from it its is was be i my me we our you your that this then than not but so as if into over more most any each every'.split(' '));
+function derivedAll(C) {
+  const { data, X } = C, out = [];
+  const withNum = data.facts.filter(f => f.num);
+  const byT = {};
+  withNum.forEach(f => { const t = theme(f); (byT[t] = byT[t] || []).push(f); });
+  const ranked = Object.entries(byT).filter(e => e[0] !== 'other').sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  if (ranked.length >= 2) {
+    const top = ranked.slice(0, 2), fs = top[0][1].concat(top[1][1]);
+    out.push({ key: 'themes', text: 'Most of your results are about ' + THEME_WORD[top[0][0]] + ' and ' + THEME_WORD[top[1][0]] + ': ' + fs.length + ' of ' + withNum.length + ' numbers.',
+      src: 'Counted from the ' + withNum.length + ' facts that hold a number.', facts: new Set(fs.map(f => f.id)), projects: new Set(), noun: 'fact' });
+  }
+  const LED = /\b(led|managed|team of|hired|coached|mentored|took over a team|promoted|recruited)\b/i;
+  const ledF = data.facts.filter(f => { const r = roleOfNode(X, f.id); return r && (LED.test(f.text) || f.kind === 'Team size'); });
+  const ledRoles = new Set(ledF.map(f => roleOfNode(X, f.id).id));
+  out.push({ key: 'led', text: 'You have led, hired or grown a team in ' + ledRoles.size + ' of ' + plural(data.roles.length, 'role') + '.',
+    src: 'Counted from ' + plural(ledF.length, 'fact') + ' about leading, hiring or team size.', facts: new Set(ledF.map(f => f.id)), projects: new Set(), noun: 'fact' });
+  const withL = data.projects.filter(p => p.learn);
+  const grams = new Map();
+  withL.forEach(p => {
+    const w = p.learn.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+    for (let n = 2; n <= 5; n++) for (let i = 0; i + n <= w.length; i++) {
+      const g = w.slice(i, i + n);
+      if (STOP.has(g[0]) || STOP.has(g[n - 1])) continue;
+      const key = g.join(' ');
+      if (!grams.has(key)) grams.set(key, { n, ids: new Set() });
+      grams.get(key).ids.add(p.id);
+    }
+  });
+  let best = null;
+  grams.forEach((v, k) => { if (v.ids.size < 2) return; if (!best || v.ids.size > best.ids.size || (v.ids.size === best.ids.size && v.n > best.n)) best = { k, n: v.n, ids: v.ids }; });
+  if (best) out.push({ key: 'learned', text: 'What you say you learned most often: “' + best.k + '” (' + plural(best.ids.size, 'project') + ').',
+    src: 'Read from What I learned on ' + withL.length + ' of ' + plural(data.projects.length, 'project') + '.', facts: new Set(), projects: best.ids, noun: 'project' });
+  else out.push({ key: 'learned', text: 'You wrote down what you learned on ' + withL.length + ' of ' + plural(data.projects.length, 'project') + '.',
+    src: 'Read from What I learned.', facts: new Set(), projects: new Set(withL.map(p => p.id)), noun: 'project' });
+  const inc = data.projects.filter(p => !(p.sit && p.did && p.res));
+  out.push({ key: 'incomplete', text: inc.length + ' of ' + plural(data.projects.length, 'project') + ' lack a Situation, What I did or a Result, so the studio cannot yet tell them in full.',
+    src: 'Counted from the parts of each project.', facts: new Set(), projects: new Set(inc.map(p => p.id)), noun: 'project' });
+  const uns = data.facts.filter(f => f.status === 'Unsure');
+  const cf = data.facts.filter(f => X.conf.has(f.id));
+  const both = new Set(uns.concat(cf).map(f => f.id));
+  out.push({ key: 'unsure', text: plural(uns.length, 'fact') + ' ' + (uns.length === 1 ? 'is' : 'are') + ' marked Unsure, and ' + cf.length + ' disagree with each other.',
+    src: 'Counted from the status of every fact.', facts: both, projects: new Set(), noun: 'fact' });
+  return out;
+}
+function derivedShown(C) {
+  const v = C.data.verdicts || {};
+  return derivedAll(C).filter(d => v[d.key] !== 'rejected').slice(0, C.cfg.derivedLines);
+}
+
+/* The studio's questions: each missing part that the studio would ask about. */
+const PART_Q = { res: 'What came of it?', sit: 'What was going on before you started?', did: 'What did you do yourself?', learn: 'What would you do again, or differently?' };
+const PART_NAME = { res: 'Result', sit: 'Situation', did: 'What I did', learn: 'What I learned' };
+const PART_NONE = { res: 'No result yet', did: 'No “What I did” yet', sit: 'No situation yet', learn: 'No “What I learned” yet' };
+const PART_ADD = { res: 'Add the result', did: 'Add what you did', sit: 'Add the situation', learn: 'Add what you learned' };
+const MISS_ORDER = ['res', 'did', 'sit', 'learn'];
+/* The number is already in the sentence when every figure of it appears there. */
+function numInText(f) {
+  if (!f.num) return true;
+  const t = f.text.toLowerCase().replace(/,/g, '');
+  if (t.includes(String(f.num).toLowerCase().replace(/,/g, ''))) return true;
+  const ds = String(f.num).match(/\d[\d,.]*/g);
+  return !!ds && ds.every(d => t.includes(d.replace(/,/g, '').replace(/\.$/, '')));
+}
+function questions(C) {
+  const { data, X } = C, out = [];
+  data.roles.forEach(r => {
+    if (!X.projOf.get(r.id).length && !X.dayOf.get(r.id).length) out.push({ text: 'What did you do as ' + r.title + (r.employer ? ' at ' + r.employer : '') + '? This role has nothing in it yet.', target: r.id });
+    if (!r.employer) out.push({ text: 'Where did you work as ' + r.title + '?', target: r.id, field: 'employer' });
+    if (!r.start) out.push({ text: 'When were you ' + r.title + (r.employer ? ' at ' + r.employer : '') + '?', target: r.id, field: 'start' });
+  });
+  data.projects.forEach(p => { if (!p.res) out.push({ text: 'What came of “' + p.title + '”? It has no result yet.', target: p.id, field: 'res' }); });
+  const seen = new Set();
+  X.conf.forEach((c, id) => {
+    if (seen.has(id)) return; seen.add(id); seen.add(c.other);
+    out.push({ text: id + ' and ' + c.other + ' disagree: ' + c.what + '. Which is right?', target: id });
+  });
+  data.facts.forEach(f => { if (f.status === 'Unsure' && !X.conf.has(f.id)) out.push({ text: 'Is this right? “' + stripDot(f.text) + '.” It is marked Unsure.', target: f.id }); });
+  return out;
+}
+
+/* Search and the "How you work" filter: which items to show, and which to hold open. */
+function matcher(C) {
+  const { ui, X, data } = C;
+  const q = (ui.q || '').trim().toLowerCase();
+  const filt = ui.filter ? derivedAll(C).find(d => d.key === ui.filter) : null;
+  if (!q && !filt) return null;
+  const vis = new Set(), full = new Set(), force = new Set();
+  const up = id => { let cur = parentOf(X, id); while (cur) { vis.add(cur); force.add(cur); cur = parentOf(X, cur); } };
+  const hayF = f => (f.text + ' ' + (f.num || '')).toLowerCase();
+  const hayP = p => [p.title, p.sit, p.did, p.res, p.learn, p.where].join(' ').toLowerCase();
+  const hayR = r => [r.title, r.employer, r.location, r.type].join(' ').toLowerCase();
+  let n = 0;
+  data.facts.forEach(f => { if ((!filt || filt.facts.has(f.id)) && (!q || hayF(f).includes(q))) { vis.add(f.id); up(f.id); n++; } });
+  data.projects.forEach(p => {
+    const m = filt ? (filt.projects.has(p.id) && (!q || hayP(p).includes(q))) : hayP(p).includes(q);
+    if (m) { vis.add(p.id); full.add(p.id); up(p.id); n++; }
+  });
+  if (!filt) data.roles.forEach(r => { if (hayR(r).includes(q)) { vis.add(r.id); full.add(r.id); n++; } });
+  return {
+    q, filt, n, force,
+    visible(id) {
+      if (vis.has(id)) return true;
+      let cur = parentOf(X, id);
+      while (cur) { if (full.has(cur)) return true; cur = parentOf(X, cur); }
+      return false;
+    },
+  };
+}
+
+/* =====================================================================
+   Drafts: what the studio can write from one project or fact. Plain templates.
+   ===================================================================== */
+const PAST = /^(Led|Built|Cut|Wrote|Ran|Moved|Rewrote|Owned|Mentored|Created|Reviewed|Handed|Designed|Left|Delivered|Saved|Rolled|Grew|Set|Introduced|Took|Hired|Shipped|Paired|Merged|Retired|Found|Negotiated|Reorganised|Promoted|Launched|Reported|Brought|Started|Coached|Joined|Kept|Presented|Reached|Taught|Recruited|Started|Planned|Made|Gave|Won|Lost|Helped|Taught|Trained|Published|Shipped|Raised|Reduced|Increased|Improved|Added)\b/;
+const THEME_RANK = { speed: 0, cost: 1, revenue: 2, reach: 3, people: 4, other: 5 };
+function bestFact(X, pid) {
+  const fs = X.factsOfP.get(pid).filter(f => f.num);
+  fs.sort((a, b) => THEME_RANK[theme(a)] - THEME_RANK[theme(b)] || b.used - a.used || a.id.localeCompare(b.id));
+  return fs[0] || null;
+}
+function draftsProject(C, p) {
+  const X = C.X, r = p.role ? X.R.get(p.role) : null, best = bestFact(X, p.id);
+  const at = r ? (r.employer ? 'At ' + r.employer : null) : 'In my own time';
+  const out = [];
+  if (!p.res && !best) out.push({ label: 'Resume bullet', need: 'This draft needs a Result, or a fact with a number in it.' });
+  else out.push({ label: 'Resume bullet', text: stripDot(p.title) + '; ' + (best ? lowerFirst(stripDot(best.text)) : lowerFirst(stripDot(firstSentence(p.res)))) + '.' });
+  if (!p.did) out.push({ label: 'Cover letter', need: 'This draft needs What I did.' });
+  else if (!p.res) out.push({ label: 'Cover letter', need: 'This draft needs a Result.' });
+  else if (!at) out.push({ label: 'Cover letter', need: 'This draft needs the employer of the role.' });
+  else out.push({ label: 'Cover letter', text: at + ', ' + lowerFirst(stripDot(firstSentence(p.did))) + ': ' + lowerFirst(stripDot(firstSentence(p.res))) + '.' });
+  if (!p.learn) out.push({ label: 'Note to another person', need: 'This draft needs What I learned.' });
+  else {
+    const where = r ? (r.employer ? ' at ' + r.employer : '') : ' in my own time';
+    const year = p.start ? ' in ' + p.start.slice(0, 4) : '';
+    out.push({ label: 'Note to another person', text: 'I ' + lowerFirst(stripDot(p.title)).replace(/^i /, '') + where + year + '. What I took from it: ' + lowerFirst(stripDot(p.learn)) + '.' });
+  }
+  return out;
+}
+function draftsFact(C, f) {
+  const X = C.X, r = roleOfNode(X, f.id), p = f.project ? X.P.get(f.project) : null;
+  const side = !r && p;
+  const at = r ? (r.employer ? 'At ' + r.employer : null) : (side ? 'In my own time' : null);
+  const out = [];
+  out.push({ label: 'Resume bullet', text: stripDot(f.text) + '.', note: f.num ? null : 'This fact holds no number. A bullet reads stronger with one.' });
+  if (!at) out.push({ label: 'Cover letter', need: r ? 'This draft needs the employer of the role.' : 'This draft needs a role or a project. File the fact first.' });
+  else out.push({ label: 'Cover letter', text: PAST.test(f.text) ? at + ', I ' + lowerFirst(stripDot(f.text)) + '.' : at + ': ' + lowerFirst(stripDot(f.text)) + '.' });
+  if (!at) out.push({ label: 'Note to another person', need: 'This draft needs a role or a project.' });
+  else {
+    const one = (r ? 'One thing from my time at ' + (r.employer || 'that job') : 'One thing from my own time') + ': ' + lowerFirst(stripDot(f.text)) + '.';
+    const two = p ? ' It came out of the time I ' + lowerFirst(stripDot(p.title)) + '.' : ' Happy to tell you how it went.';
+    out.push({ label: 'Note to another person', text: one + two });
+  }
+  return out;
+}
+
+/* =====================================================================
+   Render: a pure function of (config, data, ui). No randomness here.
+   ===================================================================== */
+function render(cfg, data, ui) {
+  const X = index(data);
+  const openMode = cfg.open === 'beside' && ui.narrow ? 'in-place' : cfg.open;
+  const roleSpine = cfg.spine === 'projects' ? 'time' : cfg.spine;
+  const defReading = cfg.spine === 'projects' ? 'projects' : 'roles';
+  const reading = cfg.views === 'three' ? (ui.readAs || defReading) : defReading;
+  const C = { cfg, data, ui, X, openMode, reading, roleSpine, forceOpen: new Set() };
+  C.focus = ui.focus && node(X, ui.focus) && (ui.focus !== 'INBOX' || X.inbox.length) ? ui.focus : null;
+  C.M = matcher(C);
+  C.just = new Set([...(ui.just || [])].filter(id => node(X, id)));
+  C.just.forEach(id => { let cur = parentOf(X, id); while (cur) { C.forceOpen.add(cur); cur = parentOf(X, cur); } if (ui.justOpen) C.forceOpen.add(id); });
+  if (reading === 'projects' && ui.roleFilter && ui.roleFilter !== 'all' && ui.roleFilter !== 'side' && X.R.has(ui.roleFilter)) C.forceOpen.add(ui.roleFilter);
+
+  const style = '--row:' + cfg.rowGap + 'px;--sec:' + cfg.sectionGap + 'px;--ind:' + cfg.indent + 'rem';
+  const attrs = ' data-refs="' + cfg.refs + '" data-open="' + openMode + '" data-reading="' + reading + '" data-add="' + cfg.add + '"';
+  let body = navHTML();
+  if (openMode === 'page' && C.focus) body += '<div class="pagev">' + paneHTML(C, C.focus, true) + '</div>';
+  else body += headHTML(C) + (cfg.derived === 'on' ? derivedHTML(C) : '') + mainHTML(C);
+  return '<div class="scr"' + attrs + ' style="' + style + '">' + body + '</div>';
+}
+
+function navHTML() {
+  return '<div class="navs"><nav class="nav" aria-label="Studio"><div class="rw"><span class="rf"></span><div class="bd"><div class="navl"><span>Home</span><span class="on" aria-current="page">Record</span><span>Jobs</span><span>Talk</span><span class="sys">System</span></div></div></div></nav>' +
+    '<nav class="nav" aria-label="Record"><div class="rw"><span class="rf"></span><div class="bd"><div class="navl"><span class="on" aria-current="page">Experience</span><span>Profile</span><span>Direction</span><span>Details</span><span>Sources</span></div></div></div></nav></div>';
+}
+function wrapRow(inner, level, ref) {
+  return '<div class="rw" style="--lvl:' + (level || 0) + '"><span class="rf">' + (ref || '') + '</span><div class="bd">' + inner + '</div></div>';
+}
+
+function headHTML(C) {
+  const { data, X, cfg } = C;
+  const nRole = data.roles.length, nSide = X.sides.length, nProj = data.projects.length - nSide, nFact = data.facts.length;
+  let h = wrapRow('<h1 class="t">Experience</h1>') +
+    wrapRow('<p class="gr tn">' + plural(nRole, 'role') + ' · ' + plural(nProj, 'project') + ' · ' + plural(nSide, 'side project') + ' · ' + plural(nFact, 'fact') + '</p>');
+  if (cfg.missing === 'asked') {
+    const qs = questions(C);
+    if (qs.length) {
+      h += wrapRow('<p>The studio has ' + plural(qs.length, 'question') + ' about this record. <button type="button" class="act" id="qs-toggle" data-act="qs" aria-expanded="' + !!C.ui.qsOpen + '" aria-controls="qs-list">' + (C.ui.qsOpen ? 'Hide them' : 'Show them') + '</button></p>');
+      if (C.ui.qsOpen) {
+        h += '<ul class="ls" id="qs-list">' + qs.map((q, i) => '<li>' + wrapRow('<p>' + esc(q.text) + ' <button type="button" class="act" id="qs-go-' + i + '" data-act="qgo" data-id="' + q.target + '"' + (q.field ? ' data-field="' + q.field + '"' : '') + '>' + (q.field ? 'Answer it' : 'Go to ' + esc(q.target)) + '</button></p>', 0, C.cfg.refs === 'gutter' ? q.target : '') + '</li>').join('') + '</ul>';
+      }
+    } else h += wrapRow('<p class="gr">The studio has no questions about this record.</p>');
+  }
+  return (cfg.capture === 'on' ? '<div class="stk">' + captureHTML(C) + '</div>' : '') + '<div class="blk"><div class="stk">' + h + '</div></div>';
+}
+
+function captureHTML(C) {
+  const id = 'cap-in', v = C.ui.drafts[id] || '';
+  const st = C.ui.status && C.ui.status.ctx === 'cap' ? '<p class="gr" role="status">' + esc(C.ui.status.text) + '</p>' : '';
+  return wrapRow('<div class="ln-wrap"><label for="' + id + '" class="b">Note something you did</label><input type="text" class="ln" id="' + id + '" data-line="cap" value="' + esc(v) + '" placeholder="One sentence. Enter keeps it; you can file it later." autocomplete="off" enterkeyhint="done" spellcheck="true">' + st + '</div>');
+}
+
+function derivedHTML(C) {
+  const lines = derivedShown(C), v = C.data.verdicts || {};
+  let h = wrapRow('<h2 class="sh">How you work, from ' + plural(C.data.facts.length, 'fact') + '</h2>') +
+    wrapRow('<p class="gr">Worked out from your record, not written by you.</p>');
+  if (!lines.length) h += wrapRow('<p class="gr">Nothing left to show. You marked every line Not true.</p>');
+  h += '<ul class="ls">' + lines.map(d => {
+    const items = d.facts.size + d.projects.size, noun = d.noun === 'project' ? 'project' : 'fact';
+    const on = C.ui.filter === d.key;
+    const show = on ? '<button type="button" class="act b" id="dv-clear-' + d.key + '" data-act="dclear">Show everything</button>'
+      : '<button type="button" class="act" id="dv-show-' + d.key + '" data-act="dshow" data-key="' + d.key + '">Show the ' + plural(items, noun) + '</button>';
+    const verdict = v[d.key] === 'kept' ? '<span class="gr">Kept by you</span>'
+      : '<button type="button" class="act" id="dv-keep-' + d.key + '" data-act="dkeep" data-key="' + d.key + '">Keep</button><button type="button" class="act" id="dv-no-' + d.key + '" data-act="dno" data-key="' + d.key + '">Not true</button>';
+    return '<li>' + wrapRow('<p' + (on ? ' aria-current="true"' : '') + '>' + esc(d.text) + '</p><p class="gr">' + esc(d.src) + '</p><div class="acts">' + show + verdict + '</div>') + '</li>';
+  }).join('') + '</ul>';
+  if (C.ui.status && C.ui.status.ctx === 'derived') h += wrapRow('<p role="status">' + esc(C.ui.status.text) + ' <button type="button" class="act" id="dv-undo" data-act="dundo" data-key="' + esc(C.ui.status.key) + '">Undo</button></p>');
+  return '<section class="dv" aria-label="How you work">' + h + '</section>';
+}
+
+function mainHTML(C) {
+  const { cfg, ui } = C;
+  let top = '';
+  if (cfg.views === 'three') {
+    const opt = [['roles', 'Roles'], ['projects', 'Projects'], ['facts', 'Facts']];
+    top += wrapRow('<div class="acts" role="group" aria-label="Read as"><span class="lb">Read as</span>' + opt.map(([k, l]) => '<button type="button" class="act" id="ra-' + k + '" data-act="readas" data-val="' + k + '" aria-pressed="' + (C.reading === k) + '" data-label="' + l + '">' + l + '</button>').join('') + '</div>');
+  }
+  top += wrapRow('<div class="fld"><label for="scr-q">Search the record</label><input type="search" id="scr-q" data-search="1" value="' + esc(ui.q || '') + '" autocomplete="off" spellcheck="false" enterkeyhint="search"></div>');
+  if (C.M && C.M.filt) top += wrapRow('<p>Showing the items behind “' + esc(C.M.filt.text) + '” <button type="button" class="act" id="flt-clear" data-act="dclear">Show everything</button></p>');
+  let list;
+  if (C.reading === 'facts') list = factsReading(C);
+  else if (C.reading === 'projects') list = projectsReading(C);
+  else list = rolesReading(C);
+  if (C.M && C.M.n === 0 && !C.just.size) {
+    list = wrapRow(C.M.q ? '<p>Nothing matches “' + esc(C.M.q) + '”. <button type="button" class="act" id="scr-clear" data-act="clearq">Clear the search</button></p>'
+      : '<p>Nothing left to show. <button type="button" class="act" id="scr-clear" data-act="dclear">Show everything</button></p>') + list;
+  }
+  const body = '<div class="blk">' + '<div class="stk">' + top + '</div>' + list + '</div>';
+  if (C.openMode === 'beside') {
+    const pane = C.focus ? paneHTML(C, C.focus, false) : wrapRow('<p class="gr">Open a role, a project or a fact on the left. It opens here, and the list stays.</p>');
+    return '<div class="bes"><div class="bl">' + body + '</div><div class="pane" id="pane" aria-label="The opened item">' + pane + '</div></div>';
+  }
+  return body;
+}
+
+/* ---------- Readings ---------- */
+function inboxHTML(C) {
+  const X = C.X;
+  if (!X.inbox.length) return '';
+  if (C.M && !X.inbox.some(f => vis(C, f.id))) return '';
+  return '<ul class="ls top">' + nodeHTML(C, 'INBOX', 0, 'l') + '</ul>';
+}
+function gapsOf(C) {
+  const rs = C.data.roles.filter(r => r.start);
+  if (!rs.length) return [];
+  const cover = rs.map(r => [ymNum(r.start), r.end ? ymNum(r.end, true) : ymNum(NOW_YM)]);
+  const lo = Math.min(...cover.map(c => c[0])), hi = ymNum(NOW_YM);
+  const gaps = [];
+  let run = null;
+  for (let m = lo; m <= hi; m++) {
+    const covered = cover.some(c => m >= c[0] && m <= c[1]);
+    if (!covered) { if (!run) run = [m, m]; else run[1] = m; } else if (run) { gaps.push(run); run = null; }
+  }
+  if (run) gaps.push(run);
+  return gaps;
+}
+function gapHTML(g) {
+  const n = g[1] - g[0] + 1;
+  const a = fmtYM(ymFromNum(g[0])), b = fmtYM(ymFromNum(g[1]));
+  return '<li class="gap">' + wrapRow('<p class="gr">' + (a === b ? a : a + '–' + b) + ' · ' + plural(n, 'month') + ' with no role</p>') + '</li>';
+}
+function timeSorted(list) {
+  return list.slice().sort((a, b) => {
+    const x = ymNum(a.start), y = ymNum(b.start);
+    if (x == null && y == null) return b.id.localeCompare(a.id);
+    if (x == null) return -1;
+    if (y == null) return 1;
+    return y - x || b.id.localeCompare(a.id);
+  });
+}
+function listWithGaps(C, items, withGaps) {
+  const gaps = withGaps && !C.M ? gapsOf(C) : [];
+  let h = '';
+  const used = new Set();
+  items.forEach(it => {
+    const s = ymNum(it.start);
+    gaps.forEach((g, i) => { if (!used.has(i) && s != null && s < g[0]) { used.add(i); h += gapHTML(g); } });
+    h += nodeHTML(C, it.id, 0, 'l');
+  });
+  return h;
+}
+function rolesReading(C) {
+  const { X, data } = C;
+  if (C.roleSpine === 'jobs-then-side') {
+    const roles = timeSorted(data.roles), sides = timeSorted(X.sides);
+    return inboxHTML(C) +
+      '<section class="stk">' + wrapRow('<h2 class="sh">Roles</h2>') + addHTML(C, 'top-role', 0, 'l') + '<ul class="ls top">' + listWithGaps(C, roles, true) + '</ul>' + (data.roles.length ? '' : wrapRow('<p class="gr">No role yet. Add a role.</p>')) + '</section>' +
+      '<section class="stk">' + wrapRow('<h2 class="sh">Side projects</h2>') + addHTML(C, 'top-side', 0, 'l') + '<ul class="ls top">' + listWithGaps(C, sides, false) + '</ul>' + (X.sides.length ? '' : wrapRow('<p class="gr">No side project yet. Add a side project.</p>')) + '</section>';
+  }
+  const all = timeSorted(data.roles.concat(X.sides));
+  return inboxHTML(C) + '<div class="stk">' + addHTML(C, 'top-role', 0, 'l') + addHTML(C, 'top-side', 0, 'l') + '</div>' +
+    '<ul class="ls top">' + listWithGaps(C, all, true) + '</ul>';
+}
+function projectsReading(C) {
+  const { X, data, ui } = C;
+  const rf = ui.roleFilter && (ui.roleFilter === 'all' || ui.roleFilter === 'side' || X.R.has(ui.roleFilter)) ? ui.roleFilter : 'all';
+  const roles = timeSorted(data.roles);
+  const entries = [['all', 'All']].concat(roles.map(r => [r.id, roleChipLabel(roles, r)]), [['side', 'Side projects']]);
+  const chip = (val, label) => '<button type="button" class="act" id="rfl-' + val + '" data-act="rolefilter" data-val="' + val + '" aria-pressed="' + (rf === val) + '" data-label="' + esc(label) + '">' + esc(label) + '</button>';
+  const line = ui.narrow
+    ? wrapRow('<div class="fld"><label for="rfl-select">Show the projects of</label><select id="rfl-select" data-rolefilter="1">' + entries.map(([v, l]) => '<option value="' + v + '"' + (rf === v ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></div>')
+    : wrapRow('<div class="acts" role="group" aria-label="Show the projects of"><span class="lb">Roles</span>' + entries.map(([v, l]) => chip(v, l)).join('') + '</div>');
+  let body;
+  if (rf !== 'all' && rf !== 'side') {
+    body = '<div class="stk">' + addHTML(C, 'top-role', 0, 'l') + '</div><ul class="ls top">' + nodeHTML(C, rf, 0, 'l') + '</ul>';
+  } else {
+    const ps = timeSorted(rf === 'side' ? X.sides : data.projects);
+    body = '<div class="stk">' + (rf === 'side' ? addHTML(C, 'top-side', 0, 'l') : addHTML(C, 'top-role', 0, 'l') + addHTML(C, 'all-proj', 0, 'l')) + '</div>' +
+      '<ul class="ls top">' + ps.map(p => nodeHTML(C, p.id, 0, 'l')).join('') + '</ul>' + (ps.length ? '' : wrapRow('<p class="gr">No project yet. Add a project.</p>'));
+  }
+  return inboxHTML(C) + '<div class="stk">' + line + '</div>' + body;
+}
+
+/* A role in the filter line: employer and years; two roles at one employer are told apart by title. */
+function shortTitle(t) { const s = String(t || ''); if (/\sof\s/i.test(s)) return s.split(/\s+of\s+/i)[0]; const w = s.split(/[\s,]+/).filter(Boolean); return w[w.length - 1] || s; }
+function roleChipLabel(roles, r) {
+  const a = r.start ? r.start.slice(0, 4) : '', b = r.end ? r.end.slice(0, 4) : (r.start ? 'Present' : '');
+  const yrs = a ? (a === b ? a : a + '–' + b) : '';
+  const shared = r.employer && roles.filter(o => o.employer === r.employer).length > 1;
+  const name = shared ? r.employer.split(/\s+/)[0] + ', ' + shortTitle(r.title) : (r.employer || r.title);
+  return name + (yrs ? ' ' + yrs : '');
+}
+function factsReading(C) {
+  const { X, data, ui, cfg } = C;
+  const compact = C.openMode === 'beside';
+  const showRef = cfg.refs !== 'hidden';
+  const rows = data.facts.filter(f => vis(C, f.id));
+  const roleName = f => { const r = roleOfNode(X, f.id); if (r) return r.employer || r.title; return isSideFact(X, f) ? 'Side project' : ''; };
+  const projName = f => f.project && X.P.has(f.project) ? f.project : (f.role && X.R.has(f.role) ? 'Day to day' : 'Not filed yet');
+  const s = ui.sort || { k: 'ref', d: 1 };
+  const val = {
+    ref: f => f.id, fact: f => f.text.toLowerCase(), num: f => (f.num ? 0 : 1) + (f.num || '').toLowerCase(), year: f => f.year || 0,
+    role: f => roleName(f).toLowerCase(), project: f => projName(f), status: f => f.status,
+  };
+  rows.sort((a, b) => { const x = val[s.k](a), y = val[s.k](b); return (x < y ? -1 : x > y ? 1 : a.id.localeCompare(b.id)) * s.d; });
+  const cols = [['ref', 'Ref'], ['fact', 'Fact'], ['num', 'Number'], ['year', 'When'], ['role', 'Role'], ['project', 'Project'], ['status', 'Status']].filter(c => showRef || c[0] !== 'ref');
+  const th = cols.map(([k, l]) => '<th scope="col"' + (s.k === k ? ' aria-sort="' + (s.d === 1 ? 'ascending' : 'descending') + '"' : '') + '><button type="button" class="sortb" id="sort-' + k + '" data-act="sort" data-k="' + k + '">' + l + (s.k === k ? (s.d === 1 ? ' ↑' : ' ↓') : '') + '</button></th>').join('');
+  const inplace = C.openMode === 'in-place';
+  const body = rows.map(f => {
+    const open = inplace && (isOpen(C, f.id));
+    const st = f.status === 'Unsure' ? '<span class="ink">Unsure</span>' : '<span class="gr">' + f.status + '</span>';
+    const just = C.just.has(f.id) ? ' · <span class="ink">Just added</span>' : '';
+    const c = (cls, v) => '<td class="' + (v ? cls : 'c-x') + '">' + (v || '') + '</td>';
+    const btn = '<button type="button" class="nm" id="l-nm-' + f.id + '" data-act="' + (inplace ? 'toggle' : 'focus') + '" data-id="' + f.id + '"' + (inplace ? ' aria-expanded="' + open + '"' : '') + (!inplace && C.focus === f.id ? ' aria-current="true"' : '') + '><span class="nt"><span class="tx">' + esc(f.text) + '</span></span></button>';
+    let tr = '<tr class="' + (open ? 'has-det' : '') + '" data-node="' + f.id + '">' + (showRef ? '<td class="c-ref tn">' + f.id + '</td>' : '') + '<td class="c-f">' + btn + '</td>' +
+      c('c-m c-nw', esc(f.num || '')) + c('c-m tn', f.year ? String(f.year) : '') + c('c-m', esc(roleName(f))) + c('c-m c-nw', esc(projName(f))) + '<td class="c-m c-nw">' + st + just + '</td></tr>';
+    if (open) tr += '<tr class="det"><td colspan="' + cols.length + '">' + factDetails(C, f, 0, 'l') + '</td></tr>';
+    return tr;
+  }).join('');
+  const sortLine = '<div class="sortl acts" role="group" aria-label="Sort facts by"><span class="lb">Sort by</span>' + cols.map(([k, l]) => '<button type="button" class="act" id="sorts-' + k + '" data-act="sort" data-k="' + k + '" aria-pressed="' + (s.k === k) + '" data-label="' + l + '">' + l + '</button>').join('') + '</div>';
+  return inboxHTML(C) + '<div class="stk">' + addHTML(C, 'facts', 0, 'l') + '</div>' +
+    '<div class="stk' + (compact ? ' stackd-wrap' : '') + '">' + wrapRow(sortLine) + '<div class="tw"><table class="ft' + (compact ? ' stackd' : '') + '"><caption class="vh">Every fact, ' + rows.length + ' shown</caption><thead><tr>' + th + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+}
+
+/* ---------- One item ---------- */
+function vis(C, id) {
+  if (C.just.has(id)) return true;
+  for (const j of C.just) { let cur = parentOf(C.X, j); while (cur) { if (cur === id) return true; cur = parentOf(C.X, cur); } }
+  return !C.M || C.M.visible(id);
+}
+function isOpen(C, id) {
+  if (C.forceOpen.has(id)) return true;
+  if (C.M && C.M.force.has(id)) return true;
+  return C.ui.open.has(id);
+}
+function kindWeight(kind) { return kind === 'fact' ? 'w4' : kind === 'group' ? 'w4 grp' : 'w6'; }
+function nameOf(n) {
+  if (n.kind === 'group') return 'Day to day at ' + (n.o.employer || n.o.title);
+  if (n.kind === 'inbox') return 'Not filed yet';
+  if (n.kind === 'fact') return n.o.text;
+  return n.o.title || 'Untitled';
+}
+function ageText(C, list) {
+  let oldest = null;
+  list.forEach(f => { if (f.added && (!oldest || f.added < oldest)) oldest = f.added; });
+  if (!oldest) return '';
+  const d = Math.max(0, daysBetween(oldest, C.ui.today));
+  return d === 0 ? 'the oldest from today' : d === 1 ? 'the oldest from yesterday' : 'the oldest from ' + d + ' days ago';
+}
+function subParts(C, id, compact) {
+  const { X, cfg } = C, n = node(X, id), parts = [], miss = cfg.missing;
+  const ink = t => '<span class="ink">' + esc(t) + '</span>';
+  if (compact && n.kind === 'role') {
+    // Beside the detail column the list is narrow: employer and dates only.
+    if (n.o.employer) parts.push(esc(n.o.employer));
+    if (n.o.start) parts.push(esc(roleWhen(n.o)));
+  } else if (compact && (n.kind === 'proj' || n.kind === 'side')) {
+    if (n.kind === 'side') parts.push('Side project');
+    if (n.o.start) parts.push(esc(projWhen(n.o)));
+  } else if (n.kind === 'role') {
+    const r = n.o, np = X.projOf.get(r.id).length, nf = roleFacts(X, r.id);
+    if (r.employer) parts.push(esc(r.employer)); else if (miss === 'named') parts.push(ink('No employer yet'));
+    if (r.start) parts.push(esc(roleWhen(r))); else if (miss === 'named') parts.push(ink('No dates yet'));
+    if (np || nf) parts.push((np ? plural(np, 'project') + ' · ' : '') + plural(nf, 'fact'));
+    else if (miss === 'named') parts.push(ink('Nothing here yet'));
+    const others = C.data.roles.filter(o => o.id !== r.id && overlaps(r, o));
+    if (others.length) parts.push('Overlaps ' + others.map(o => o.id).join(', '));
+    if (r.status === 'Unsure') parts.push(ink('Unsure'));
+  } else if (n.kind === 'proj' || n.kind === 'side') {
+    const p = n.o, nf = X.factsOfP.get(p.id).length;
+    if (n.kind === 'side') { parts.push('Side project'); if (p.where) parts.push(esc(p.where)); }
+    else if (C.reading === 'projects' && (!C.ui.roleFilter || C.ui.roleFilter === 'all')) { const r = X.R.get(p.role); if (r) parts.push(esc(r.employer || r.title)); }
+    if (p.start) parts.push(esc(projWhen(p)));
+    if (p.res) parts.push(esc(stripDot(firstSentence(p.res))));
+    // Named: at most one missing part, the most important first. A just-added project says only "No result yet".
+    // On a closed line only a missing result is named: the other parts show when the project is open.
+    if (miss === 'named' && !p.res) parts.push(ink(PART_NONE.res));
+    if (!p.res && nf && !C.just.has(id)) parts.push(plural(nf, 'fact'));
+  } else if (n.kind === 'group') {
+    const nf = X.dayOf.get(n.o.id).length;
+    if (nf) parts.push(plural(nf, 'fact'));
+    else if (miss === 'named') parts.push('No fact yet');
+  } else if (n.kind === 'inbox') {
+    const nf = X.inbox.length;
+    parts.push(ink(plural(nf, 'fact') + ' not filed') + ', ' + ageText(C, X.inbox));
+  } else {
+    const f = n.o;
+    if (f.year) parts.push(String(f.year));
+    if (f.num && !numInText(f)) parts.push(esc(f.num));
+    if (f.status === 'Unsure') parts.push(ink('Unsure'));
+    const c = X.conf.get(f.id);
+    if (c && miss === 'named') parts.push(ink('Disagrees with ' + c.other));
+  }
+  if (C.just.has(id)) parts.push(ink('Just added'));
+  return parts.join(' · ');
+}
+function overlaps(a, b) {
+  if (!a.start || !b.start) return false;
+  const a0 = ymNum(a.start), a1 = a.end ? ymNum(a.end, true) : ymNum(NOW_YM), b0 = ymNum(b.start), b1 = b.end ? ymNum(b.end, true) : ymNum(NOW_YM);
+  return a0 <= b1 && b0 <= a1;
+}
+function lineRow(C, id, level, region, open) {
+  const n = node(C.X, id), refs = C.cfg.refs;
+  const ref = n.kind === 'group' || n.kind === 'inbox' ? '' : id;
+  const inplace = C.openMode === 'in-place';
+  const act = inplace ? 'toggle' : 'focus';
+  const compact = C.openMode === 'beside' && region === 'l';
+  let sub = subParts(C, id, compact);
+  let tail = '';
+  if (n.kind === 'group') { tail = sub ? ' · ' + sub : ''; sub = ''; }
+  const attrs = (inplace ? ' aria-expanded="' + open + '"' : '') + (!inplace && C.focus === id ? ' aria-current="true"' : '');
+  const inl = refs === 'inline' && ref ? '<span class="rfi">' + ref + '</span>' : '';
+  const btn = '<button type="button" class="nm ' + kindWeight(n.kind) + '" id="' + region + '-nm-' + id + '" data-act="' + act + '" data-id="' + id + '"' + attrs + '>' +
+    '<span class="nt">' + inl + '<span class="tx">' + esc(nameOf(n)) + '</span>' + tail + '</span>' + (sub ? '<span class="sb">' + sub + '</span>' : '') + '</button>';
+  return wrapRow(btn, level, refs === 'gutter' ? ref : '');
+}
+/* In place, an open project or Day to day inside an open role keeps one grey line that says where it is. */
+function whereLine(C, id, level) {
+  if (C.openMode !== 'in-place' || level < 1) return '';
+  const r = roleOfNode(C.X, id);
+  if (!r) return '';
+  return '<div class="where">' + wrapRow(esc((r.employer ? r.employer + ' › ' : '') + r.title), level) + '</div>';
+}
+function nodeHTML(C, id, level, region) {
+  if (!vis(C, id)) return '';
+  const n = node(C.X, id);
+  if (!n) return '';
+  const open = isOpen(C, id);
+  const inplace = C.openMode === 'in-place';
+  let h = '';
+  if (open && inplace && (n.kind === 'proj' || n.kind === 'group')) h += whereLine(C, id, level);
+  if (n.kind === 'inbox') h += wrapRow('<h2 class="b">Not filed yet</h2><p class="gr">' + subParts(C, id) + '</p>', level);
+  else h += lineRow(C, id, level, region, open);
+  if (n.kind === 'inbox') {
+    h += kidsList(C, id, level + 1, region, false);
+  } else if (open) {
+    if (inplace) h += details(C, id, level, region, level + 1);
+    else if (n.kind !== 'fact') h += kidsList(C, id, level + 1, region, false);
+  }
+  return '<li class="nd k-' + n.kind + '" data-node="' + id + '">' + h + '</li>';
+}
+function kidsList(C, id, level, region, withAdd) {
+  const { X, cfg, ui } = C, n = node(X, id);
+  if (n.kind === 'role') {
+    const ps = X.projOf.get(id).filter(p => vis(C, p.id));
+    let h = ps.map(p => nodeHTML(C, p.id, level, region)).join('');
+    if (withAdd && !X.projOf.get(id).length) h += '<li>' + wrapRow('<p class="gr">No project yet. Add a project.</p>', level) + '</li>';
+    if (withAdd) h += '<li class="add">' + addHTML(C, id, level, region) + '</li>';
+    h += nodeHTML(C, 'D-' + id, level, region);
+    return h ? '<ul class="ls">' + h + '</ul>' : '';
+  }
+  const all = childrenOf(X, id).filter(f => vis(C, f));
+  const showAll = ui.showAll.has(id) || !!C.M || n.kind === 'inbox';
+  let shown = all;
+  if (!showAll && all.length > cfg.factsShown) {
+    shown = all.slice(0, cfg.factsShown);
+    C.just.forEach(j => { if (all.includes(j) && !shown.includes(j)) shown.push(j); });
+  }
+  let h = shown.map(f => nodeHTML(C, f, level, region) + (n.kind === 'inbox' ? fileRow(C, f, level, region) : '')).join('');
+  if (all.length > cfg.factsShown && !C.M && n.kind !== 'inbox') {
+    h += '<li class="more">' + wrapRow(showAll
+      ? '<button type="button" class="act" id="' + region + '-sa-' + id + '" data-act="showfewer" data-id="' + id + '">Show fewer</button>'
+      : '<button type="button" class="act" id="' + region + '-sa-' + id + '" data-act="showall" data-id="' + id + '">Show all ' + all.length + '</button>', level) + '</li>';
+  }
+  if (withAdd && !childrenOf(X, id).length) h += '<li>' + wrapRow('<p class="gr">No fact yet. Add a fact.</p>', level) + '</li>';
+  if (withAdd) h += '<li class="add">' + addHTML(C, id === 'INBOX' ? 'cap' : id, level, region) + '</li>';
+  return h ? '<ul class="ls">' + h + '</ul>' : '';
+}
+
+/* ---------- Details of an opened item ---------- */
+function details(C, id, level, region, kidLevel) {
+  const n = node(C.X, id);
+  if (n.kind === 'fact') return factDetails(C, n.o, level, region);
+  if (n.kind === 'group' || n.kind === 'inbox') return kidsList(C, id, kidLevel, region, n.kind === 'group');
+  if (n.kind === 'role') return roleDetails(C, n.o, level, region) + kidsList(C, id, kidLevel, region, true);
+  return projDetails(C, n.o, level, region, n.kind === 'side') + kidsList(C, id, kidLevel, region, true);
+}
+function usesLine(C, used, letters, never) {
+  if (C.cfg.uses !== 'counts') return '';
+  if (!used && !letters) return '<p class="gr">' + (never || 'Not used yet') + '</p>';
+  return '<p class="gr">' + (used ? 'Used in ' + plural(used, 'resume') : 'Never in a resume') + ' · ' + (letters ? 'in ' + plural(letters, 'letter') : 'never in a letter') + '</p>';
+}
+function delBlock(C, id, what) {
+  if (C.ui.del !== id) return '';
+  return '<p class="ink" role="alert">Delete ' + esc(what) + '? This cannot be undone.</p><div class="acts"><button type="button" class="act red b" id="dely-' + id + '" data-act="delyes" data-id="' + id + '">Delete ' + id + '</button><button type="button" class="act" id="deln-' + id + '" data-act="delno" data-id="' + id + '">Keep it</button></div>';
+}
+function draftsBlock(list) {
+  return '<div class="stk"><h3 class="b">What the studio can write from this</h3>' + list.map(d =>
+    '<div class="stk" style="gap:2px"><p class="gr">' + d.label + '</p>' + (d.text ? '<p>' + esc(d.text) + '</p>' : '<p class="ink">' + esc(d.need) + '</p>') + (d.note ? '<p class="gr">' + esc(d.note) + '</p>' : '') + '</div>').join('') + '</div>';
+}
+function fv(C, id) { const v = C.ui.drafts[id]; return v == null ? '' : v; }
+function field(C, id, label, opt, kind, extra) {
+  const v = fv(C, id);
+  const lab = '<label for="' + id + '">' + esc(label) + (opt ? ' <span class="opt">(optional)</span>' : '') + '</label>';
+  if (kind === 'area') return '<div class="fld">' + lab + '<textarea id="' + id + '" data-d="1" rows="' + ((extra && extra.rows) || 3) + '"' + ((extra && extra.spell) === false ? ' spellcheck="false"' : '') + '>' + esc(v) + '</textarea></div>';
+  return '<div class="fld">' + lab + '<input type="text" id="' + id + '" data-d="1" value="' + esc(v) + '" autocomplete="off"' + ((extra && extra.spell) ? ' spellcheck="true"' : ' spellcheck="false"') + (extra && extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : '') + '></div>';
+}
+
+function roleDetails(C, r, level, region) {
+  const { cfg, ui, X } = C;
+  const blocks = [];
+  const editing = ui.editing && ui.editing.id === r.id;
+  if (editing) {
+    const f = k => 'ed-' + r.id + '-' + k;
+    const markSel = k => '<div class="fld"><label for="' + f('m-' + k) + '">Where it comes from</label><select id="' + f('m-' + k) + '" data-d="1">' +
+      [['hr', 'As HR records it'], ['memory', 'From memory']].map(([v, l]) => '<option value="' + v + '"' + (fv(C, f('m-' + k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>';
+    const pair = (k, label, ph) => '<div class="pair">' + field(C, f(k), label, k !== 'title', 'text', { ph }) + markSel(k) + '</div>';
+    blocks.push('<form data-form="editrole" data-id="' + r.id + '"><p class="b">Official record</p>' +
+      pair('title', 'Official title') + pair('employer', 'Employer') + pair('start', 'Start', 'Mar 2023') + pair('end', 'End', 'Leave blank if you still work here') + pair('type', 'Employment type', 'Full-time') + pair('location', 'Location') +
+      '<div class="acts"><button type="submit" class="act b" id="ed-' + r.id + '-save">Save</button><button type="button" class="act" id="ed-' + r.id + '-cancel" data-act="canceledit">Cancel</button></div></form>');
+  } else {
+    blocks.push(officialHTML(C, r));
+  }
+  const np = X.projOf.get(r.id).length, nf = roleFacts(X, r.id);
+  let maxUsed = 0, letters = 0;
+  X.dayOf.get(r.id).forEach(f => { maxUsed = Math.max(maxUsed, f.used); letters += f.letters; });
+  X.projOf.get(r.id).forEach(p => { letters += p.letters; X.factsOfP.get(p.id).forEach(f => { maxUsed = Math.max(maxUsed, f.used); }); });
+  blocks.push(usesLine(C, maxUsed, letters));
+  if (!editing) blocks.push('<div class="acts"><button type="button" class="act" id="ed-' + r.id + '" data-act="edit" data-id="' + r.id + '">Edit official record</button>' + (ui.del === r.id ? '' : '<button type="button" class="act red" id="del-' + r.id + '" data-act="delask" data-id="' + r.id + '">Delete role</button>') + '</div>');
+  blocks.push(delBlock(C, r.id, r.id + (np || nf ? ', its ' + plural(np, 'project') + ' and ' + plural(nf, 'fact') : '')));
+  return wrapRow('<div class="stk">' + blocks.join('') + '</div>', level);
+}
+function officialHTML(C, r) {
+  const mode = C.cfg.official;
+  const mk = k => r.marks[k] === 'hr' ? 'As HR records it' : 'From memory';
+  const val = k => (k === 'start' ? fmtYM(r.start) : k === 'end' ? (r.end ? fmtYM(r.end) : (r.start ? 'Present' : '')) : r[k]) || '';
+  if (mode === 'line') {
+    // Only what the closed line does not say: type, location, and one plain mark for what is from memory.
+    const bits = [];
+    if (r.type) bits.push(esc(r.type));
+    if (r.location) bits.push(esc(r.location));
+    const mem = [];
+    const m = k => r[k] && r.marks[k] === 'memory';
+    if (m('title')) mem.push('title');
+    if (m('employer')) mem.push('employer');
+    if ((r.start && r.marks.start === 'memory') || (r.end && r.marks.end === 'memory')) mem.push('dates');
+    if (m('type')) mem.push('employment type');
+    if (m('location')) mem.push('location');
+    const memText = mem.length ? upperFirst(mem.length === 1 ? mem[0] : mem.slice(0, -1).join(', ') + ' and ' + mem[mem.length - 1]) + ' from memory' : '';
+    if (!bits.length && !memText) return '';
+    return '<p>' + bits.join(' · ') + (memText ? (bits.length ? ' <span class="gr">· ' : '<span class="gr">') + memText + '</span>' : '') + '</p>';
+  }
+  const full = '<dl class="kv">' + [['employer', 'Employer'], ['title', 'Official title'], ['start', 'Start'], ['end', 'End'], ['type', 'Employment type'], ['location', 'Location']].map(([k, l]) => {
+    const v = val(k);
+    return '<dt>' + l + '</dt><dd>' + (v ? esc(v) + ' <span class="gr">· ' + mk(k) + '</span>' : '<span class="gr">Not recorded</span>') + '</dd>';
+  }).join('') + '</dl>';
+  if (mode === 'full') return full;
+  const on = C.ui.offOpen.has(r.id);
+  return '<p><button type="button" class="act" id="off-' + r.id + '" data-act="offtoggle" data-id="' + r.id + '" aria-expanded="' + on + '">' + (on ? 'Hide the official record' : 'Official record') + '</button></p>' + (on ? full : '');
+}
+
+function projDetails(C, p, level, region, side) {
+  const { cfg, ui, X } = C;
+  const blocks = [];
+  const editing = ui.editing && ui.editing.id === p.id;
+  const ORDERP = ['res', 'sit', 'did', 'learn'];
+  if (editing) {
+    const f = k => 'ed-' + p.id + '-' + k;
+    blocks.push('<form data-form="editproj" data-id="' + p.id + '">' +
+      field(C, f('title'), side ? 'Side project' : 'Project', false, 'text', { spell: true }) +
+      field(C, f('when'), 'When', true, 'text', { ph: '2023–2024' }) +
+      (side ? field(C, f('where'), 'Where it lives', true, 'text', { ph: 'A code repository' }) : '') +
+      ORDERP.map(k => field(C, f(k), PART_NAME[k], true, 'area', { rows: 2 })).join('') +
+      '<div class="acts"><button type="submit" class="act b" id="ed-' + p.id + '-save">Save</button><button type="button" class="act" id="ed-' + p.id + '-cancel" data-act="canceledit">Cancel</button></div></form>');
+  } else {
+    const more = ui.more.has(p.id);
+    const shown = more ? ORDERP : ORDERP.slice(0, cfg.parts);
+    const rest = ORDERP.filter(k => !shown.includes(k));
+    const partHTML = k => {
+      if (p[k]) return '<div class="stk" style="gap:2px"><p class="gr">' + PART_NAME[k] + '</p><p>' + esc(p[k]) + '</p></div>';
+      const say = cfg.missing === 'asked' ? PART_Q[k] : PART_ADD[k];
+      return '<p><button type="button" class="act gr" id="wr-' + p.id + '-' + k + '" data-act="edit" data-id="' + p.id + '" data-field="' + k + '">' + esc(say) + '</button></p>';
+    };
+    blocks.push(shown.map(partHTML).join(''));
+    if (rest.length) blocks.push('<p><button type="button" class="act" id="more-' + p.id + '" data-act="more" data-id="' + p.id + '" aria-expanded="false">More: ' + rest.map(k => PART_NAME[k]).join(', ') + '</button></p>');
+    else if (more && cfg.parts < 4) blocks.push('<p><button type="button" class="act" id="more-' + p.id + '" data-act="less" data-id="' + p.id + '" aria-expanded="true">Fewer parts</button></p>');
+  }
+  let maxUsed = 0;
+  X.factsOfP.get(p.id).forEach(f => { maxUsed = Math.max(maxUsed, f.used); });
+  blocks.push(usesLine(C, maxUsed, p.letters));
+  const nf = X.factsOfP.get(p.id).length;
+  if (!editing) blocks.push('<div class="acts"><button type="button" class="act" id="ed-' + p.id + '" data-act="edit" data-id="' + p.id + '">Edit the ' + (side ? 'side project' : 'project') + '</button>' + (ui.del === p.id ? '' : '<button type="button" class="act red" id="del-' + p.id + '" data-act="delask" data-id="' + p.id + '">Delete ' + (side ? 'side project' : 'project') + '</button>') + '</div>');
+  blocks.push(delBlock(C, p.id, p.id + (nf ? ' and its ' + plural(nf, 'fact') : '')));
+  if (cfg.uses === 'drafts' && !editing) blocks.push(draftsBlock(draftsProject(C, p)));
+  return wrapRow('<div class="stk">' + blocks.filter(Boolean).join('') + '</div>', level);
+}
+
+/* Where a fact can live: Day to day or a project of a role, a side project, Not filed yet, or a new role. */
+function homeOptions(C, sel, opts) {
+  const { X, data } = C;
+  let h = '';
+  timeSorted(data.roles).forEach(r => {
+    h += '<optgroup label="' + esc(r.title + (r.employer ? ', ' + r.employer : '')) + '">';
+    h += '<option value="D-' + r.id + '"' + (sel === 'D-' + r.id ? ' selected' : '') + '>' + esc('Day to day: ' + r.title) + '</option>';
+    X.projOf.get(r.id).forEach(p => { h += '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(p.id + ' ' + p.title) + '</option>'; });
+    h += '</optgroup>';
+  });
+  if (X.sides.length) h += '<optgroup label="Side projects">' + timeSorted(X.sides).map(p => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + esc(p.id + ' ' + p.title) + '</option>').join('') + '</optgroup>';
+  if (opts && opts.inbox) h += '<option value="INBOX"' + (sel === 'INBOX' ? ' selected' : '') + '>Not filed yet</option>';
+  if (!opts || opts.newRole !== false) h += '<option value="new"' + (sel === 'new' ? ' selected' : '') + '>A new role…</option>';
+  return h;
+}
+function roleOptions(C, sel) {
+  return timeSorted(C.data.roles).map(r => '<option value="' + r.id + '"' + (sel === r.id ? ' selected' : '') + '>' + esc(r.title + (r.employer ? ', ' + r.employer : '')) + '</option>').join('') +
+    '<option value="side"' + (sel === 'side' ? ' selected' : '') + '>Side project</option><option value="new"' + (sel === 'new' ? ' selected' : '') + '>A new role…</option>';
+}
+function newestRole(C) { const rs = timeSorted(C.data.roles).filter(r => r.start); return rs[0] || C.data.roles[0] || null; }
+function chooserHTML(C, base, kind, def, opts, inline) {
+  const id = base + '-home';
+  const sel = fv(C, id) || def;
+  const label = kind === 'project' ? 'Which role?' : 'Where it belongs';
+  const select = '<select id="' + id + '" data-d="1" data-rerender="1">' + (kind === 'project' ? roleOptions(C, sel) : homeOptions(C, sel, opts)) + '</select>';
+  let h = inline ? '<span class="chooser"><label for="' + id + '">' + label + '</label>' + select + '</span>' : '<div class="fld"><label for="' + id + '">' + label + '</label>' + select + '</div>';
+  if (sel === 'new') h += (inline ? '</div><div class="ln-row">' : '') + field(C, base + '-newrole', 'The new role: title at employer', false, 'text', { ph: 'Head of Platform at Fernway' });
+  return h;
+}
+
+function factDetails(C, f, level, region) {
+  const { X, cfg, ui } = C;
+  const blocks = [];
+  const editing = ui.editing && ui.editing.id === f.id;
+  blocks.push('<p class="gr">From ' + esc(f.src.label) + ', ' + fmtDay(f.src.date) + '.</p>');
+  const c = X.conf.get(f.id);
+  if (c) blocks.push('<p><span class="ink">' + (cfg.missing === 'asked' ? 'Which is right: ' + esc(c.what) + '?' : 'Disagrees with ' + c.other + ': ' + esc(c.what) + '.') + '</span> <button type="button" class="act" id="cf-' + f.id + '" data-act="goto" data-id="' + c.other + '">Go to ' + c.other + '</button></p>');
+  blocks.push(usesLine(C, f.used, f.letters));
+  if (editing) {
+    const e = k => 'ed-' + f.id + '-' + k;
+    blocks.push('<form data-form="editfact" data-id="' + f.id + '">' + field(C, e('text'), 'Fact', false, 'area', { rows: 2 }) +
+      '<div class="pair">' + field(C, e('num'), 'Number', true, 'text', { ph: '47 to 9 minutes' }) + field(C, e('year'), 'When', true, 'text', { ph: '2024' }) + '</div>' +
+      '<label class="chk"><input type="checkbox" id="' + e('unsure') + '" data-d="1"' + (fv(C, e('unsure')) ? ' checked' : '') + '> Unsure</label>' +
+      '<div class="acts"><button type="submit" class="act b" id="ed-' + f.id + '-save">Save</button><button type="button" class="act" id="ed-' + f.id + '-cancel" data-act="canceledit">Cancel</button></div></form>');
+  } else {
+    const home = parentOf(X, f.id);
+    if (home !== 'INBOX') {
+      const mvId = 'mv-' + f.id;
+      const sel = fv(C, mvId) || (home.startsWith('D-') || X.P.has(home) ? home : '');
+      blocks.push('<div class="ln-row"><span class="chooser"><label for="' + mvId + '">Belongs to</label><select id="' + mvId + '" data-d="1">' + homeOptions(C, sel, { newRole: false }) + '</select></span><button type="button" class="act" id="mvgo-' + f.id + '" data-act="move" data-id="' + f.id + '">Move it</button></div>');
+    }
+    blocks.push('<div class="acts"><button type="button" class="act" id="ed-' + f.id + '" data-act="edit" data-id="' + f.id + '">Edit the fact</button>' + (ui.del === f.id ? '' : '<button type="button" class="act red" id="del-' + f.id + '" data-act="delask" data-id="' + f.id + '">Delete fact</button>') + '</div>');
+  }
+  blocks.push(delBlock(C, f.id, f.id));
+  if (cfg.uses === 'drafts' && !editing) blocks.push(draftsBlock(draftsFact(C, f)));
+  return wrapRow('<div class="stk">' + blocks.filter(Boolean).join('') + '</div>', level);
+}
+/* Each fact in Not filed yet has "File it", with the same parent chooser. */
+function fileRow(C, fid, level, region) {
+  const ui = C.ui;
+  if (ui.filing === fid) {
+    const base = 'fl-' + fid;
+    const nr = newestRole(C);
+    return '<li class="add">' + wrapRow('<form data-form="file" data-id="' + fid + '">' + chooserHTML(C, base, 'fact', nr ? 'D-' + nr.id : 'new', { inbox: false }, false) +
+      '<div class="acts"><button type="submit" class="act b" id="' + base + '-go">File it</button><button type="button" class="act" id="' + base + '-cancel" data-act="filecancel">Cancel</button></div></form>', level) + '</li>';
+  }
+  return '<li class="add">' + wrapRow('<button type="button" class="act" id="fl-' + fid + '-open" data-act="fileopen" data-id="' + fid + '">File it</button>', level) + '</li>';
+}
+
+/* ---------- Adding things: a blank line, a short form, or your own words ---------- */
+function ctxInfo(C, ctx) {
+  const X = C.X;
+  if (ctx === 'top-role') return { what: 'role', ph: 'Add a role: title at employer…', btn: 'Add a role', tellBtn: 'Add a role, in your own words', first: 'Role: title at employer', save: 'Add role' };
+  if (ctx === 'top-side') return { what: 'side', ph: 'Add a side project…', btn: 'Add a side project', tellBtn: 'Add a side project, in your own words', first: 'Side project', save: 'Add side project' };
+  if (ctx === 'all-proj') return { what: 'project', chooser: 'project', ph: 'Add a project…', btn: 'Add a project', tellBtn: 'Add a project, in your own words', first: 'Project', save: 'Add project' };
+  if (ctx === 'facts') return { what: 'fact', chooser: 'fact', ph: 'Add a fact…', btn: 'Add a fact', tellBtn: 'Add facts, in your own words', first: 'Fact', save: 'Add fact' };
+  if (ctx === 'cap') return { what: 'fact', ph: 'Add a fact to Not filed yet…', btn: 'Add a fact', tellBtn: 'Add facts, in your own words', first: 'Fact', save: 'Add fact' };
+  if (ctx.startsWith('D-')) { const r = X.R.get(ctx.slice(2)); return { what: 'fact', ph: 'Add a fact to Day to day' + (r && r.employer ? ' at ' + r.employer : '') + '…', btn: 'Add a fact to Day to day', tellBtn: 'Add facts to Day to day, in your own words', first: 'Fact', save: 'Add fact' }; }
+  if (X.R.has(ctx)) { const r = X.R.get(ctx); return { what: 'project', ph: 'Add a project' + (r.employer ? ' at ' + r.employer : ' to this role') + '…', btn: 'Add a project', tellBtn: 'Add a project, in your own words', first: 'Project', save: 'Add project' }; }
+  const p = X.P.get(ctx);
+  const side = p && !p.role;
+  return { what: 'fact', ph: 'Add a fact to this ' + (side ? 'side project' : 'project') + '…', btn: 'Add a fact', tellBtn: 'Add facts, in your own words', first: 'Fact', save: 'Add fact' };
+}
+function chooserDefault(C, ctx, kind) {
+  const nr = newestRole(C);
+  if (kind === 'project') { const rf = C.ui.roleFilter; if (rf && C.X.R.has(rf)) return rf; return nr ? nr.id : 'new'; }
+  if (ctx.startsWith('D-') || C.X.P.has(ctx)) return ctx;
+  return nr ? 'D-' + nr.id : 'new';
+}
+function addHTML(C, ctx, level, region) {
+  const { cfg, ui } = C;
+  const info = ctxInfo(C, ctx);
+  const status = ui.status && ui.status.ctx === ctx ? '<p class="gr" role="status">' + esc(ui.status.text) + '</p>' : '';
+  const err = ui.addErr && ui.addErr.ctx === ctx ? '<p class="err" role="alert">' + esc(ui.addErr.text) + '</p>' : '';
+  if (cfg.add === 'line' && !(ui.adding && ui.adding.ctx === ctx)) {
+    const id = 'ln-' + ctx;
+    let row = '<input type="text" class="ln" id="' + id + '" data-line="' + ctx + '" value="' + esc(fv(C, id)) + '" placeholder="' + esc(info.ph) + '" aria-label="' + esc(info.ph.replace('…', '')) + '" autocomplete="off" enterkeyhint="done" spellcheck="' + (info.what === 'fact' ? 'true' : 'false') + '">';
+    if (info.chooser) row = '<div class="ln-row">' + row + chooserHTML(C, 'ln-' + ctx, info.chooser, chooserDefault(C, ctx, info.chooser), { inbox: cfg.capture === 'on' }, true) + '</div>';
+    return wrapRow('<div class="ln-wrap">' + row + err + status + '</div>', level);
+  }
+  const adding = ui.adding && ui.adding.ctx === ctx ? ui.adding : null;
+  if (!adding) {
+    const label = cfg.add === 'tell' ? info.tellBtn : info.btn;
+    return wrapRow('<div class="ln-wrap"><p><button type="button" class="act" id="ad-' + ctx + '" data-act="addopen" data-ctx="' + ctx + '">' + esc(label) + '</button></p>' + status + '</div>', level);
+  }
+  if (adding.kind === 'form') return wrapRow(addFormHTML(C, ctx, info, adding) + err, level);
+  return wrapRow(tellHTML(C, ctx, info, adding) + err, level);
+}
+function addFormHTML(C, ctx, info, adding) {
+  const b = 'fa-' + ctx, w = info.what;
+  let h = '<form data-form="add" data-ctx="' + ctx + '">';
+  h += field(C, b + '-first', info.first, false, 'text', { spell: w === 'fact', ph: w === 'role' ? 'Director of Engineering at Harborlight Systems' : '' });
+  if (info.chooser) h += chooserHTML(C, b, info.chooser, chooserDefault(C, ctx, info.chooser), { inbox: C.cfg.capture === 'on' }, false);
+  if (w === 'role') h += field(C, b + '-when', 'When', true, 'text', { ph: 'Mar 2023 – now' }) + field(C, b + '-type', 'Employment type', true, 'text', { ph: 'Full-time' });
+  else if (w === 'fact') h += '<div class="pair">' + field(C, b + '-num', 'Number', true, 'text', { ph: 'Found in the sentence if left blank' }) + field(C, b + '-when', 'When', true, 'text', { ph: '2024' }) + '</div>';
+  else h += field(C, b + '-when', 'When', true, 'text', { ph: '2023–2024' }) + field(C, b + '-res', 'Result: what came of it', true, 'area', { rows: 2 });
+  if (adding.more) {
+    if (w === 'role') h += field(C, b + '-location', 'Location', true, 'text');
+    else if (w === 'fact') h += '<label class="chk"><input type="checkbox" id="' + b + '-unsure" data-d="1"' + (fv(C, b + '-unsure') ? ' checked' : '') + '> Unsure</label>';
+    else h += (w === 'side' ? field(C, b + '-where', 'Where it lives', true, 'text', { ph: 'A code repository' }) : '') + field(C, b + '-sit', 'Situation', true, 'area', { rows: 2 }) + field(C, b + '-did', 'What I did', true, 'area', { rows: 2 }) + field(C, b + '-learn', 'What I learned', true, 'area', { rows: 2 });
+  } else {
+    const rest = w === 'role' ? 'Location' : w === 'fact' ? 'Unsure' : (w === 'side' ? 'Where it lives, ' : '') + 'Situation, What I did, What I learned';
+    h += '<p><button type="button" class="act" id="' + b + '-more" data-act="addmore">More: ' + rest + '</button></p>';
+  }
+  h += '<div class="acts"><button type="submit" class="act b" id="' + b + '-save">' + info.save + '</button><button type="button" class="act" id="' + b + '-cancel" data-act="addcancel">Cancel</button></div></form>';
+  return h;
+}
+function tellHTML(C, ctx, info, adding) {
+  const b = 'tl-' + ctx, w = info.what;
+  const sketch = '<p class="gr">A sketch of what the studio would do. Here the page splits your text by sentence with a simple rule; the studio would use a model.</p>';
+  if (adding.stage !== 'review') {
+    return '<form data-form="tell" data-ctx="' + ctx + '"><div class="fld"><label for="' + b + '-text">Tell it what you did, in your own words</label><textarea id="' + b + '-text" data-d="1" rows="5" spellcheck="true" placeholder="' + esc(w === 'role' ? 'I was Head of Platform at Fernway from 2019 to 2021. I ran a team of 8. We moved every service to one cloud.' : w === 'fact' ? 'One or more sentences. Each becomes a fact.' : 'Moved billing to a new provider. I planned the cutover. Failed payments fell from 4% to 1%. I learned to run both for a month.') + '"></textarea></div>' +
+      sketch + '<div class="acts"><button type="submit" class="act b" id="' + b + '-file">File it</button><button type="button" class="act" id="' + b + '-cancel" data-act="addcancel">Cancel</button></div></form>';
+  }
+  const P = adding.parsed;
+  let h = '<form data-form="tellkeep" data-ctx="' + ctx + '"><h3 class="b">Here is how I filed it</h3>' + sketch;
+  if (w === 'role') h += field(C, b + '-title', 'Role: official title', false, 'text') + field(C, b + '-employer', 'Employer', true, 'text') + field(C, b + '-when', 'When', true, 'text');
+  if (w === 'project' || w === 'side') {
+    h += field(C, b + '-title', w === 'side' ? 'Side project' : 'Project', false, 'text', { spell: true });
+    h += chooserHTML(C, b, 'project', w === 'side' ? 'side' : (C.X.R.has(ctx) ? ctx : chooserDefault(C, ctx, 'project')), null, false);
+    if (P.learn != null) h += field(C, b + '-learn', 'What I learned', true, 'area', { rows: 2 });
+  }
+  if (w === 'fact') h += chooserHTML(C, b, 'fact', ctx === 'cap' ? 'INBOX' : chooserDefault(C, ctx, 'fact'), { inbox: C.cfg.capture === 'on' || ctx === 'cap' }, false);
+  const head = w === 'role' ? 'Day to day' : 'Facts';
+  if (P.facts.length) {
+    h += '<p class="gr">' + head + '</p>' + P.facts.map((k, i) => '<div class="ln-row">' + '<input type="text" class="ln" id="' + b + '-f-' + k + '" data-d="1" value="' + esc(fv(C, b + '-f-' + k)) + '" aria-label="Fact ' + (i + 1) + '" spellcheck="true" autocomplete="off"><button type="button" class="act" id="' + b + '-x-' + k + '" data-act="tellout" data-k="' + k + '">Leave it out</button></div>').join('');
+  } else h += '<p class="gr">No fact in it yet. You can add facts after you keep it.</p>';
+  h += '<div class="acts"><button type="submit" class="act b" id="' + b + '-keep">Keep</button><button type="button" class="act" id="' + b + '-back" data-act="tellback">Start again</button><button type="button" class="act" id="' + b + '-cancel" data-act="addcancel">Cancel</button></div></form>';
+  return h;
+}
+
+/* ---------- The opened item on its own (beside the list, or as a page) ---------- */
+function paneHTML(C, id, page) {
+  const { X } = C;
+  const n = node(X, id);
+  const chain = [];
+  let cur = parentOf(X, id);
+  while (cur) { chain.unshift(cur); cur = parentOf(X, cur); }
+  const readName = C.reading === 'facts' ? 'Facts' : C.reading === 'projects' ? 'Projects' : 'Experience';
+  const crumbs = '<nav aria-label="Where this is"><p class="crumbs"><button type="button" class="crumb" id="cr-top" data-act="crumb" data-id="">' + readName + '</button>' +
+    chain.map(c => '<span aria-hidden="true">›</span><button type="button" class="crumb" id="cr-' + c + '" data-act="crumb" data-id="' + c + '">' + esc(shortName(node(X, c))) + '</button>').join('') +
+    '</p></nav>';
+  let h = '';
+  if (page) {
+    const parent = chain.length ? shortName(node(X, chain[chain.length - 1])) : readName;
+    h += wrapRow('<p><button type="button" class="act" id="pg-back" data-act="back">Back to ' + esc(parent) + '</button></p>');
+  }
+  h += wrapRow(crumbs);
+  const ref = n.kind === 'group' || n.kind === 'inbox' ? '' : id;
+  const sub = subParts(C, id);
+  h += wrapRow((ref && C.cfg.refs !== 'hidden' ? '<p class="gr tn">' + ref + '</p>' : '') +
+    '<h2 id="p-title" tabindex="-1" class="' + (n.kind === 'fact' ? 'b' : 't') + '">' + esc(nameOf(n)) + '</h2>' + (sub ? '<p class="gr">' + sub + '</p>' : ''));
+  if (!page) h += wrapRow('<p><button type="button" class="act" id="pn-close" data-act="close">Close</button></p>');
+  h += details(C, id, 0, 'p', 0);
+  return '<div class="stk">' + h + '</div>';
+}
+function shortName(n) {
+  if (!n) return '';
+  if (n.kind === 'group') return 'Day to day at ' + (n.o.employer || n.o.title);
+  if (n.kind === 'inbox') return 'Not filed yet';
+  if (n.kind === 'role') return n.o.title + (n.o.employer ? ', ' + n.o.employer : '');
+  if (n.kind === 'fact') return n.o.id;
+  const t = n.o.title || 'Untitled';
+  return t.length > 48 ? t.slice(0, 46).replace(/\s+\S*$/, '') + '…' : t;
+}
+
+/* =====================================================================
+   Parsing what the owner types (simple rules, honestly labelled)
+   ===================================================================== */
+function parseYM(tok) {
+  const t = String(tok || '').trim().replace(/\.$/, '');
+  let m;
+  if ((m = /^(\d{4})-(\d{1,2})$/.exec(t)) && +m[2] >= 1 && +m[2] <= 12) return m[1] + '-' + pad2(m[2]);
+  if ((m = /^(\d{1,2})\/(\d{4})$/.exec(t)) && +m[1] >= 1 && +m[1] <= 12) return m[2] + '-' + pad2(m[1]);
+  if ((m = /^([A-Za-z]{3,})\.?\s+(\d{4})$/.exec(t))) { const i = MON.findIndex(x => m[1].toLowerCase().startsWith(x.toLowerCase())); return i >= 0 ? m[2] + '-' + pad2(i + 1) : m[2]; }
+  if ((m = /^(\d{4})$/.exec(t))) return m[1];
+  return null;
+}
+function parseWhen(s, kind) {
+  let t = String(s || '').trim();
+  if (!t) return { start: null, end: null };
+  const NOWW = /^(now|present|today|current|ongoing|still)$/i;
+  t = t.replace(/(\d{4})\s*-\s*(?=\d{4}\b|[A-Za-z])/g, '$1 – ');
+  let m = /^(?:since|from)\s+(.+?)(?:\s+(?:to|until|–|—)\s+(.+))?$/i.exec(t);
+  let a, b, open = false;
+  if (m) { a = m[1]; b = m[2]; if (!b) open = true; }
+  else { const parts = t.split(/\s*(?:–|—|\s-\s|\bto\b|\buntil\b)\s*/i).filter(Boolean); a = parts[0]; b = parts[1]; }
+  if (b && NOWW.test(b.trim())) { open = true; b = null; }
+  const start = parseYM(a);
+  let end = b ? parseYM(b) : null;
+  if (!b && !open && start) end = kind === 'role' ? null : start;
+  return { start, end };
+}
+function parseRoleLine(s) {
+  const t = String(s || '').trim();
+  let m = /^(.*?)\s+at\s+(.+)$/i.exec(t);
+  if (m && m[1]) return { title: m[1].trim(), employer: m[2].trim() };
+  m = /^(.*?),\s+(.+)$/.exec(t);
+  if (m) return { title: m[1].trim(), employer: m[2].trim() };
+  return { title: t, employer: null };
+}
+const UNITS = 'ms|s|seconds?|minutes?|hours?|days?|weeks?|months?|years?|people|engineers|users|customers|teams?|services|depots|repositories|students|volunteers|hires|talks|pages|downloads|deals|integrations|clinics|countries|percent|managers|reports|products|stations|contributors|maintainers|offices|sites|cities|releases|incidents|apps|regions|points|stars|members|courses|workshops|articles|books|tools|libraries|endpoints|jobs|tickets|calls|meetings|lessons|nurses|doctors|stores|depots';
+function detectNum(text) {
+  const s = String(text || '');
+  const N = '\\$?\\d[\\d,]*(?:\\.\\d+)?(?:\\s?(?:%|[MK]\\b|million))?(?:\\s(?:' + UNITS + ')\\b)?';
+  let m = new RegExp('\\bfrom\\s+(' + N + ')\\s+to\\s+(' + N + ')', 'i').exec(s);
+  if (m) return m[1].trim() + ' to ' + m[2].trim();
+  const re = new RegExp('\\$?\\d[\\d,]*(?:\\.\\d+)?(?:\\s?(?:%|[MK]\\b|million|thousand))?(?:(?:\\s[a-z-]+)?\\s(?:' + UNITS + ')\\b)?', 'gi');
+  let x;
+  while ((x = re.exec(s))) { const v = x[0].trim().replace(/[.,]$/, ''); if (/^(19|20)\d\d$/.test(v)) continue; if (/^\d$/.test(v)) continue; return v; }
+  return null;
+}
+function splitSentences(t) {
+  return String(t || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+(?=[A-Z0-9“"$])/).map(s => s.trim()).filter(Boolean);
+}
+const LEARN_RE = /^(?:i\s+learn(?:ed|t)|what i learn(?:ed|t)(?:\s+was)?|lesson|the lesson(?:\s+was)?|next time)\b[:,]?\s*(?:that\s+|to\s+)?/i;
+function asFact(s) { return upperFirst(s.replace(/^I\s+(?=[a-z])/, '').trim()); }
+function parseTell(what, text) {
+  const ss = splitSentences(text);
+  if (!ss.length) return null;
+  if (what === 'fact') return { facts: ss.map(asFact) };
+  let learn = null;
+  const rest = [];
+  ss.forEach(s => { if (learn == null && LEARN_RE.test(s)) learn = upperFirst(s.replace(LEARN_RE, '')); else rest.push(s); });
+  if (what === 'role') {
+    const first = rest.shift() || '';
+    const m = /^(?:i\s+(?:was|am|worked as|joined\s+.+?\s+as)\s+)?(?:an?\s+|the\s+)?(.+?)\s+at\s+(.+?)(?:\s+(?:from|since|in|between)\s+(.+?))?[.!]?$/i.exec(first);
+    const out = m ? { title: upperFirst(m[1]), employer: m[2], when: m[3] ? m[3].replace(/\s+and\s+/i, ' to ') : '' } : { title: stripDot(first), employer: '', when: '' };
+    out.facts = rest.concat(learn ? [learn] : []).map(asFact);
+    return out;
+  }
+  const head = rest.shift() || '';
+  return { title: stripDot(asFact(head)), learn, facts: rest.map(asFact) };
+}
+
+/* =====================================================================
+   Changing the data (in memory)
+   ===================================================================== */
+let DATA = seedData();
+const nextId = k => { const n = DATA.next[k]++; return k === 'R' ? 'R-' + pad2(n) : k === 'P' ? 'P-' + String(n).padStart(3, '0') : 'F-' + String(n).padStart(4, '0'); };
+function addRole(o) {
+  const w = parseWhen(o.when || '', 'role');
+  const marks = {}; FIELDS.forEach(k => { marks[k] = 'memory'; });
+  const r = { id: nextId('R'), title: o.title || 'Untitled role', employer: o.employer || null, start: w.start, end: w.end, type: o.type || null, location: o.location || null, marks, status: 'Confirmed' };
+  DATA.roles.push(r);
+  return r.id;
+}
+function addProject(o) {
+  const w = parseWhen(o.when || '', 'project');
+  const p = { id: nextId('P'), role: o.role || null, title: o.title, start: w.start, end: w.end, sit: o.sit || null, did: o.did || null, res: o.res || null, learn: o.learn || null, letters: 0, where: o.where || null };
+  DATA.projects.push(p);
+  return p.id;
+}
+function addFact(o, today) {
+  const y = /(\d{4})/.exec(o.when || '');
+  const f = { id: nextId('F'), role: o.role || null, project: o.project || null, year: y ? +y[1] : null, text: o.text, kind: null,
+    num: o.num || detectNum(o.text), src: { label: 'what you typed here', date: today }, status: o.unsure ? 'Unsure' : 'Confirmed', used: 0, letters: 0, added: today };
+  DATA.facts.push(f);
+  return f.id;
+}
+/* Resolve a chosen home into a role or project. "A new role…" creates the role on the spot. */
+function resolveHome(kind, val, newRoleText) {
+  if (val === 'new') {
+    const pr = parseRoleLine(newRoleText || '');
+    if (!pr.title) return { err: 'Name the new role, or pick one from the list.' };
+    const rid = addRole(pr);
+    return kind === 'project' ? { role: rid, made: rid } : { role: rid, project: null, made: rid };
+  }
+  if (kind === 'project') return val === 'side' ? { role: null } : { role: DATA.roles.some(r => r.id === val) ? val : null };
+  if (val === 'INBOX') return { role: null, project: null };
+  if (val && val.startsWith('D-')) return { role: val.slice(2), project: null };
+  const p = DATA.projects.find(x => x.id === val);
+  if (p) return { role: p.role, project: p.id };
+  return { role: null, project: null };
+}
+function deleteNode(id) {
+  const X = index(DATA), n = node(X, id);
+  if (!n) return;
+  if (n.kind === 'role') {
+    const pids = new Set(X.projOf.get(id).map(p => p.id));
+    DATA.facts = DATA.facts.filter(f => f.role !== id && !pids.has(f.project));
+    DATA.projects = DATA.projects.filter(p => !pids.has(p.id));
+    DATA.roles = DATA.roles.filter(r => r.id !== id);
+  } else if (n.kind === 'proj' || n.kind === 'side') {
+    DATA.facts = DATA.facts.filter(f => f.project !== id);
+    DATA.projects = DATA.projects.filter(p => p.id !== id);
+  } else if (n.kind === 'fact') DATA.facts = DATA.facts.filter(f => f.id !== id);
+}
+function moveFact(fid, home) {
+  const f = DATA.facts.find(x => x.id === fid);
+  if (!f) return false;
+  const h = resolveHome('fact', home, '');
+  f.role = h.role; f.project = h.project;
+  return true;
+}
+
+/* =====================================================================
+   The lab: state, panel, events
+   ===================================================================== */
+const pad = n => String(n).padStart(2, '0');
+const realToday = (() => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); })();
+let config = defaults();
+let locks = {};
+const history = [];
+let byHand = false;
+const ui = {
+  open: new Set(), focus: null, showAll: new Set(), more: new Set(), offOpen: new Set(), editing: null, drafts: {},
+  adding: null, del: null, q: '', filter: null, qsOpen: false, readAs: null, roleFilter: 'all', sort: { k: 'ref', d: 1 },
+  narrow: false, status: null, addErr: null, just: new Set(), filing: null, today: realToday,
+};
+const $ = id => document.getElementById(id);
+const screenEl = $('screen');
+
+function depthOpen(cfg) {
+  const s = new Set();
+  if (cfg.depth === 'roles') return s;
+  DATA.roles.forEach(r => s.add(r.id));
+  if (cfg.depth === 'facts') {
+    DATA.projects.forEach(p => s.add(p.id));
+    DATA.roles.forEach(r => s.add('D-' + r.id));
+  }
+  return s;
+}
+let lastDepth = null;
+function syncDepth() { if (config.depth !== lastDepth) { ui.open = depthOpen(config); lastDepth = config.depth; } }
+
+let focusTo = null;
+let focusList = null;
+function draw() {
+  syncDepth();
+  const a = document.activeElement;
+  const inScreen = a && screenEl.contains(a) && a.id;
+  const keep = inScreen ? { id: a.id, s: a.selectionStart, e: a.selectionEnd } : null;
+  const y = window.scrollY;
+  screenEl.innerHTML = render(config, DATA, ui);
+  const target = focusTo ? $(focusTo) : null;
+  focusTo = null;
+  let done = false;
+  if (target) { target.focus({ preventScroll: false }); if (!isInView(target)) target.scrollIntoView({ block: 'center' }); done = true; }
+  else if (focusList) {
+    for (const id of focusList) { const el = id && $(id); if (el) { el.focus(); if (!isInView(el)) el.scrollIntoView({ block: 'center' }); done = true; break; } }
+  }
+  focusList = null;
+  if (!done && keep) {
+    const el = $(keep.id);
+    if (el) { el.focus({ preventScroll: true }); try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch (e) { /* not a text field */ } }
+    window.scrollTo(window.scrollX, y);
+  }
+  caption();
+}
+function isInView(el) { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= (window.innerHeight || 800); }
+
+/* ---------- Panel ---------- */
+function buildPanel() {
+  let h = '';
+  GROUPS.forEach(([g, title]) => {
+    h += '<section class="pg" aria-labelledby="g-' + g + '"><h2 id="g-' + g + '">' + title + '</h2>';
+    ORDER.filter(k => (MODES[k] || KNOBS[k]).group === g).forEach(k => {
+      if (MODES[k]) {
+        const M = MODES[k];
+        h += '<fieldset class="ctl" id="ctl-' + k + '"><legend>' + M.label + ' <code>' + k + '</code></legend>' +
+          '<label class="lock"><input type="checkbox" id="lock-' + k + '" data-lock="' + k + '"> Lock</label>' +
+          '<div class="opts">' + M.opts.map((o, i) => '<label><input type="radio" name="c-' + k + '" id="c-' + k + '-' + o + '" value="' + o + '" data-ctl="' + k + '"> ' + M.labels[i] + '</label>').join('') + '</div></fieldset>';
+      } else {
+        const K = KNOBS[k];
+        h += '<div class="ctl" id="ctl-' + k + '"><label class="cl" for="c-' + k + '">' + K.label + ' <code>' + k + '</code></label>' +
+          '<label class="lock"><input type="checkbox" id="lock-' + k + '" data-lock="' + k + '"> Lock</label>' +
+          '<div class="rng"><input type="range" id="c-' + k + '" min="' + K.min + '" max="' + K.max + '" step="' + K.step + '" data-ctl="' + k + '" aria-describedby="o-' + k + '"><output id="o-' + k + '" for="c-' + k + '"></output></div></div>';
+      }
+    });
+    h += '</section>';
+  });
+  $('ctl-groups').innerHTML = h;
+  $('ctl-groups').style.display = 'contents';
+}
+function knobText(k, v) { const K = KNOBS[k]; return v + (K.unit ? ' ' + K.unit : ''); }
+function syncPanel() {
+  ORDER.forEach(k => {
+    if (MODES[k]) MODES[k].opts.forEach(o => { $('c-' + k + '-' + o).checked = config[k] === o; });
+    else { $('c-' + k).value = config[k]; $('o-' + k).textContent = knobText(k, config[k]); }
+    $('lock-' + k).checked = !!locks[k];
+    $('ctl-' + k).dataset.locked = String(!!locks[k]);
+  });
+  $('lab-seed').value = config.seed;
+  $('lab-seednote').textContent = byHand ? 'Changed by hand since this seed.' : (config.seed === 0 ? 'Seed 0 is the defaults.' : '');
+  $('lab-prev').disabled = history.length === 0;
+}
+function describe(c) {
+  const t = [];
+  t.push({ time: 'Ordered by time.', 'jobs-then-side': 'Roles first, then side projects.', projects: 'Every project in one list, with roles as a filter.' }[c.spine]);
+  t.push({ 'in-place': 'Opens in place.', beside: 'Opens beside the list.', page: 'Opens as a page.' }[c.open]);
+  t.push({ roles: 'Starts closed.', projects: 'Starts with roles open to their projects.', facts: 'Starts with everything open.' }[c.depth]);
+  t.push({ line: 'Adds with a blank line.', form: 'Adds with a short form.', tell: 'Adds from your own words.' }[c.add]);
+  if (c.capture === 'on') t.push('Has a note line at the top.');
+  t.push({ tree: 'Reads as one tree.', three: 'Reads as Roles, Projects or Facts.' }[c.views]);
+  t.push({ none: 'Says nothing about use.', counts: 'Counts where things are used.', drafts: 'Shows what the studio can write.' }[c.uses]);
+  t.push({ quiet: 'Quiet about what is missing.', named: 'Says what is missing.', asked: 'Asks about what is missing.' }[c.missing]);
+  if (c.derived === 'on') t.push('Works out how you work, in ' + plural(c.derivedLines, 'line') + '.');
+  t.push({ hidden: 'Official record behind an action.', line: 'Official record on one line.', full: 'Official record in full.' }[c.official]);
+  t.push({ gutter: 'References in the gutter.', inline: 'References inline.', hidden: 'No references.' }[c.refs]);
+  t.push(c.parts + ' of 4 parts at first. ' + c.factsShown + ' facts before Show all. Steps in ' + c.indent + ' rem. Rows ' + c.rowGap + ' px and sections ' + c.sectionGap + ' px apart.');
+  return t.join(' ');
+}
+function caption() { $('lab-caption').textContent = describe(config); }
+
+function setHash() { try { history_replace('#seed-' + config.seed); } catch (e) { /* the host may refuse */ } }
+function history_replace(h) { if (window.history && window.history.replaceState) window.history.replaceState(null, '', h); }
+
+let lastWasHand = false;
+function applyConfig(next, opts) {
+  const hand = !!(opts && opts.byHand);
+  if (!(hand && lastWasHand)) { history.push(Object.assign({}, config)); if (history.length > 60) history.shift(); }
+  lastWasHand = hand;
+  config = Object.assign({}, next);
+  byHand = !!(opts && opts.byHand);
+  if (!byHand) setHash();
+  syncPanel();
+  draw();
+}
+function newVariation() {
+  let s;
+  do { s = 1 + Math.floor(Math.random() * 99999); } while (s === config.seed);
+  applyConfig(generate(s, locks, config));
+}
+function previous() {
+  if (!history.length) return;
+  config = history.pop();
+  byHand = false; lastWasHand = false;
+  setHash();
+  syncPanel();
+  draw();
+}
+function jsonOf(c) { const o = {}; SAVE_ORDER.forEach(k => { o[k] = c[k]; }); return JSON.stringify(o, null, 2); }
+
+/* Saved variations: kept in this browser when it allows; the page works without. */
+const RAIL_KEY = 'experience-lab.saved.v1';
+let rail = [];
+try { rail = JSON.parse(localStorage.getItem(RAIL_KEY) || '[]') || []; if (!Array.isArray(rail)) rail = []; } catch (e) { rail = []; }
+function saveRail() { try { localStorage.setItem(RAIL_KEY, JSON.stringify(rail)); } catch (e) { /* storage blocked */ } }
+function shortDesc(c) {
+  return 'Seed ' + c.seed + ' · ' + { time: 'by time', 'jobs-then-side': 'roles then side', projects: 'every project' }[c.spine] + ' · ' + { 'in-place': 'in place', beside: 'beside', page: 'page' }[c.open] + ' · ' + { line: 'blank line', form: 'form', tell: 'own words' }[c.add];
+}
+function drawRail() {
+  $('lab-rail').innerHTML = rail.map((r, i) => '<li><button type="button" class="lab-link apply" id="rail-apply-' + i + '" data-rail="' + i + '">' + esc(r.name) + '</button><button type="button" class="lab-link red" id="rail-del-' + i + '" data-raildel="' + i + '" aria-label="Remove ' + esc(r.name) + '">Remove</button></li>').join('');
+  $('lab-rail-empty').hidden = rail.length > 0;
+}
+
+/* ---------- Panel events ---------- */
+document.getElementById('panel').addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.ctl) {
+    const k = t.dataset.ctl;
+    const v = MODES[k] ? t.value : snapKnob(k, t.value);
+    if (config[k] === v) return;
+    const next = Object.assign({}, config, { [k]: v });
+    applyConfig(next, { byHand: true });
+  } else if (t.dataset.lock) {
+    locks[t.dataset.lock] = t.checked;
+    $('ctl-' + t.dataset.lock).dataset.locked = String(t.checked);
+  }
+});
+document.getElementById('panel').addEventListener('click', e => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.id === 'lab-save') {
+    const json = jsonOf(config);
+    const box = $('lab-json');
+    box.value = json;
+    rail.unshift({ name: shortDesc(config), config: JSON.parse(json), at: Date.now() });
+    if (rail.length > 30) rail.length = 30;
+    saveRail(); drawRail();
+    const fallback = () => { box.focus(); box.select(); $('lab-save-note').textContent = 'Saved. Copy did not work here, so the JSON below is selected: copy it from there.'; };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(() => { $('lab-save-note').textContent = 'Saved and copied. Send me the JSON.'; }, fallback);
+      else fallback();
+    } catch (err) { fallback(); }
+  } else if (t.dataset.rail != null) {
+    const r = rail[+t.dataset.rail];
+    if (r) { const s = sanitize(r.config, config); applyConfig(s.config); $('lab-save-note').textContent = 'Applied ' + r.name + '.'; }
+  } else if (t.dataset.raildel != null) {
+    rail.splice(+t.dataset.raildel, 1); saveRail(); drawRail();
+    const first = $('rail-apply-0'); if (first) first.focus(); else $('lab-save').focus();
+  } else if (t.id === 'lab-load-go') {
+    const raw = $('lab-load').value.trim();
+    if (!raw) { $('lab-load-note').textContent = 'Paste a saved JSON into the box first.'; return; }
+    let obj;
+    try { obj = JSON.parse(raw); } catch (err) { $('lab-load-note').textContent = 'The lab cannot read that as JSON: ' + err.message; return; }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) { $('lab-load-note').textContent = 'That JSON is not one saved variation.'; return; }
+    const s = sanitize(obj, config);
+    applyConfig(s.config);
+    $('lab-load-note').textContent = 'Applied.' + (s.ignored.length ? ' Ignored: ' + s.ignored.join(', ') + '.' : '');
+  } else if (t.id === 'lab-reset') {
+    $('lab-reset-row').innerHTML = '<span>This removes everything you added or changed.</span><button type="button" class="lab-btn" id="lab-reset-yes"><b>Reset the data</b></button><button type="button" class="lab-link" id="lab-reset-no">Keep my changes</button>';
+    $('lab-reset-no').focus();
+  } else if (t.id === 'lab-reset-yes' || t.id === 'lab-reset-no') {
+    if (t.id === 'lab-reset-yes') {
+      DATA = seedData();
+      Object.assign(ui, { focus: null, editing: null, adding: null, del: null, filter: null, status: null, addErr: null, filing: null, drafts: {} });
+      ui.just = new Set(); ui.showAll = new Set(); ui.more = new Set(); ui.offOpen = new Set();
+      lastDepth = null;
+      draw();
+    }
+    $('lab-reset-row').innerHTML = '<button type="button" class="lab-btn" id="lab-reset">Reset the data</button>' + (t.id === 'lab-reset-yes' ? ' <span role="status">The invented career is back.</span>' : '');
+    $('lab-reset').focus();
+  }
+});
+$('lab-new').addEventListener('click', newVariation);
+$('lab-prev').addEventListener('click', previous);
+$('lab-seed').addEventListener('change', e => {
+  const n = Math.abs(Math.trunc(Number(e.target.value)));
+  if (!Number.isFinite(n)) { e.target.value = config.seed; return; }
+  applyConfig(generate(n, locks, config));
+});
+document.querySelectorAll('input[name="pv-scheme"]').forEach(r => r.addEventListener('change', e => { $('frame').dataset.scheme = e.target.value; }));
+document.querySelectorAll('input[name="pv-width"]').forEach(r => r.addEventListener('change', e => { $('frame').dataset.width = e.target.value; }));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'n' && e.key !== 'N') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  e.preventDefault();
+  newVariation();
+});
+window.addEventListener('hashchange', () => {
+  const m = /^#seed-(\d+)$/.exec(location.hash);
+  if (m && +m[1] !== config.seed) applyConfig(generate(+m[1], locks, config));
+});
+if (window.ResizeObserver) {
+  new ResizeObserver(() => {
+    const narrow = screenEl.clientWidth < 640;
+    if (narrow !== ui.narrow) { ui.narrow = narrow; draw(); }
+  }).observe(screenEl);
+}
+
+/* ---------- Screen events ---------- */
+function clearJust(target) {
+  // The "Just added" mark lasts until the next action. A fact it held open stays open if the action is inside it.
+  if (!ui.just.size) return;
+  if (ui.justOpen) ui.just.forEach(id => {
+    if (target && target.closest && target.closest('[data-node="' + id + '"]') && target.dataset.id !== id) ui.open.add(id);
+  });
+  ui.just = new Set();
+  ui.justOpen = false;
+}
+/* A new item never vanishes: it is on screen and marked "Just added". From a form or your own words it also
+   opens. From a blank line it stays closed, so the next blank line waits right under it. */
+function markJust(ids, opts) {
+  ui.just = new Set(ids);
+  ui.justOpen = !!(opts && opts.open);
+  const X = index(DATA);
+  ids.forEach(id => {
+    const n = node(X, id);
+    if (n && n.kind !== 'fact' && ui.justOpen) ui.open.add(id);
+    let cur = parentOf(X, id);
+    while (cur) { ui.open.add(cur); cur = parentOf(X, cur); }
+    if (n && n.kind === 'fact') { const p = parentOf(X, id); if (p) ui.showAll.add(p); }
+  });
+  // Projects reading: a new item never vanishes behind the role filter. A new role becomes the filter.
+  const readingNow = config.views === 'three' ? (ui.readAs || (config.spine === 'projects' ? 'projects' : 'roles')) : (config.spine === 'projects' ? 'projects' : 'roles');
+  const firstNode = node(X, ids[0]);
+  if (readingNow === 'projects' && firstNode && firstNode.kind === 'role') ui.roleFilter = ids[0];
+  else if (ui.roleFilter && ui.roleFilter !== 'all') {
+    const first = ids[0], r = roleOfNode(X, first);
+    const okHere = (ui.roleFilter === 'side' && !r) || (r && r.id === ui.roleFilter);
+    if (!okHere) ui.roleFilter = 'all';
+  }
+  // Beside or as a page, a new item from a form or your own words opens in the detail column.
+  if (opts && opts.openDetail && config.open !== 'in-place') ui.focus = ids[0];
+}
+function requestFocus(list) { focusList = list; }
+
+function lineAdd(ctx, input) {
+  const text = input.value.trim();
+  if (!text) return;
+  ui.addErr = null;
+  let ids;
+  if (ctx === 'cap') {
+    ids = [addFact({ text, role: null, project: null }, ui.today)];
+    ui.status = { ctx: 'cap', text: 'Added ' + ids[0] + ' to Not filed yet.' };
+  } else {
+    const r = doAdd(ctx, { first: text, home: ui.drafts['ln-' + ctx + '-home'], newrole: ui.drafts['ln-' + ctx + '-newrole'] });
+    if (r.err) { ui.addErr = { ctx, text: r.err }; draw(); return; }
+    ids = r.ids;
+    ui.status = { ctx, text: 'Added ' + ids[0] + (r.where ? ' to ' + r.where : '') + '.' };
+    if (r.made) delete ui.drafts['ln-' + ctx + '-newrole'];
+  }
+  delete ui.drafts[input.id];
+  markJust(ids, { open: false });
+  focusTo = input.id;
+  draw();
+}
+/* One add for every mode: first line plus whatever else was filled in. */
+function doAdd(ctx, v) {
+  const X = index(DATA);
+  const info = ctxInfo({ X, ui, data: DATA }, ctx);
+  const w = info.what;
+  if (!v.first || !v.first.trim()) return { err: 'Write the first line. Everything else can wait.' };
+  if (w === 'role') {
+    const pr = parseRoleLine(v.first);
+    return { ids: [addRole({ title: pr.title, employer: pr.employer, when: v.when, type: v.type, location: v.location })] };
+  }
+  if (w === 'side') return { ids: [addProject({ role: null, title: v.first.trim(), when: v.when, res: v.res, sit: v.sit, did: v.did, learn: v.learn, where: v.where })], where: 'Side projects' };
+  if (w === 'project') {
+    let role = X.R.has(ctx) ? ctx : null, made = null;
+    if (ctx === 'all-proj') {
+      const h = resolveHome('project', v.home || chooserDefault({ X, ui, data: DATA }, ctx, 'project'), v.newrole);
+      if (h.err) return h;
+      role = h.role; made = h.made;
+    }
+    const id = addProject({ role, title: v.first.trim(), when: v.when, res: v.res, sit: v.sit, did: v.did, learn: v.learn, where: v.where });
+    return { ids: made ? [id, made] : [id], made, where: role ? (DATA.roles.find(r => r.id === role) || {}).employer : 'Side projects' };
+  }
+  let role = null, project = null, made = null, where = '';
+  if (ctx === 'facts') {
+    const h = resolveHome('fact', v.home || chooserDefault({ X, ui, data: DATA }, ctx, 'fact'), v.newrole);
+    if (h.err) return h;
+    role = h.role; project = h.project; made = h.made;
+  } else if (ctx === 'cap') { role = null; project = null; where = 'Not filed yet'; }
+  else if (ctx.startsWith('D-')) { role = ctx.slice(2); where = 'Day to day'; }
+  else { const p = X.P.get(ctx); role = p ? p.role : null; project = ctx; where = ctx; }
+  const id = addFact({ text: v.first.trim(), role, project, num: v.num, when: v.when, unsure: v.unsure }, ui.today);
+  return { ids: made ? [id, made] : [id], made, where };
+}
+function gather(prefix, keys) { const o = {}; keys.forEach(k => { o[k] = ui.drafts[prefix + '-' + k]; }); return o; }
+function clearDrafts(prefix) { Object.keys(ui.drafts).forEach(k => { if (k.startsWith(prefix)) delete ui.drafts[k]; }); }
+
+function startEdit(id, fieldKey) {
+  const X = index(DATA), n = node(X, id);
+  if (!n) return;
+  const d = ui.drafts, e = k => 'ed-' + id + '-' + k;
+  if (n.kind === 'role') {
+    const r = n.o;
+    FIELDS.forEach(k => { d[e(k)] = k === 'start' || k === 'end' ? fmtYM(r[k]) : (r[k] || ''); d[e('m-' + k)] = r.marks[k]; });
+  } else if (n.kind === 'proj' || n.kind === 'side') {
+    const p = n.o;
+    d[e('title')] = p.title || ''; d[e('when')] = p.start ? (p.end === p.start ? p.start.slice(0, 4) : projWhen(p)) : ''; d[e('where')] = p.where || '';
+    ['res', 'sit', 'did', 'learn'].forEach(k => { d[e(k)] = p[k] || ''; });
+  } else if (n.kind === 'fact') {
+    const f = n.o;
+    d[e('text')] = f.text; d[e('num')] = f.num || ''; d[e('year')] = f.year ? String(f.year) : ''; d[e('unsure')] = f.status === 'Unsure';
+  }
+  ui.editing = { id, field: fieldKey || null };
+  if (n.kind === 'proj' || n.kind === 'side') ui.open.add(id);
+  focusTo = fieldKey ? e(fieldKey) : (n.kind === 'role' ? e('title') : n.kind === 'fact' ? e('text') : e('title'));
+}
+function goTo(id, fieldKey) {
+  const X = index(DATA);
+  if (!node(X, id)) return;
+  ui.q = ''; ui.filter = null;
+  let cur = parentOf(X, id);
+  while (cur) { ui.open.add(cur); if (cur.startsWith('D-') || X.P.has(cur)) ui.showAll.add(cur); cur = parentOf(X, cur); }
+  ui.open.add(id);
+  if (ui.roleFilter !== 'all') ui.roleFilter = 'all';
+  const inplace = config.open === 'in-place' || (config.open === 'beside' && ui.narrow);
+  if (!inplace) ui.focus = id;
+  if (fieldKey) startEdit(id, fieldKey);
+  else requestFocus(inplace ? ['l-nm-' + id] : ['p-title']);
+}
+
+screenEl.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]');
+  if (!t || !screenEl.contains(t)) return;
+  const a = t.dataset.act, id = t.dataset.id;
+  clearJust(t);
+  if (a !== 'dno' && a !== 'dundo' && ui.status && ui.status.ctx === 'derived') ui.status = null;
+  if (ui.status && ui.status.ctx !== 'derived' && a !== 'addmore') ui.status = null;
+  ui.addErr = null;
+  switch (a) {
+    case 'toggle':
+      if (ui.open.has(id) || ui.just.has(id)) { ui.open.delete(id); if (ui.editing && ui.editing.id === id) ui.editing = null; }
+      else ui.open.add(id);
+      focusTo = t.id; break;
+    case 'focus': ui.focus = id; ui.editing = null; ui.del = null; requestFocus(['p-title']); break;
+    case 'crumb': ui.focus = id || null; ui.editing = null; requestFocus(id ? ['p-title'] : ['l-nm-' + (ui.lastFocus || '')]); break;
+    case 'back': {
+      const X = index(DATA); const prev = ui.focus; const p = prev ? parentOf(X, prev) : null;
+      ui.focus = p; ui.editing = null; ui.del = null;
+      requestFocus(p ? ['p-title'] : ['l-nm-' + prev, 'scr-q']); break;
+    }
+    case 'close': { const prev = ui.focus; ui.focus = null; ui.editing = null; requestFocus(['l-nm-' + prev, 'scr-q']); break; }
+    case 'showall': ui.showAll.add(id); focusTo = t.id; break;
+    case 'showfewer': ui.showAll.delete(id); focusTo = t.id; break;
+    case 'more': ui.more.add(id); focusTo = 'more-' + id; break;
+    case 'less': ui.more.delete(id); focusTo = 'more-' + id; break;
+    case 'offtoggle': if (ui.offOpen.has(id)) ui.offOpen.delete(id); else ui.offOpen.add(id); focusTo = t.id; break;
+    case 'edit': ui.del = null; startEdit(id, t.dataset.field); break;
+    case 'canceledit': { const eid = ui.editing && ui.editing.id; ui.editing = null; if (eid) clearDrafts('ed-' + eid + '-'); focusTo = 'ed-' + eid; break; }
+    case 'delask': ui.del = id; focusTo = 'deln-' + id; break;
+    case 'delno': ui.del = null; focusTo = 'del-' + id; break;
+    case 'delyes': {
+      const X = index(DATA), parent = parentOf(X, id);
+      deleteNode(id);
+      ui.del = null; ui.open.delete(id);
+      if (ui.focus === id) ui.focus = parent && node(index(DATA), parent) ? parent : null;
+      if (ui.editing && ui.editing.id === id) ui.editing = null;
+      ui.status = null;
+      requestFocus(parent ? ['l-nm-' + parent, 'p-title', 'p-nm-' + parent, 'scr-q'] : ['p-title', 'scr-q']);
+      if (!ui.focus && config.open === 'page') requestFocus(['scr-q']);
+      break;
+    }
+    case 'move': {
+      const sel = ui.drafts['mv-' + id] || ($('mv-' + id) && $('mv-' + id).value);
+      if (sel && moveFact(id, sel)) {
+        delete ui.drafts['mv-' + id];
+        markJust([id], { open: true });
+        ui.open.add(id);
+        const X = index(DATA); const p = parentOf(X, id);
+        ui.status = null;
+        if (config.open !== 'in-place' && !(config.open === 'beside' && ui.narrow)) ui.focus = id;
+        requestFocus(['l-nm-' + id, 'p-title', 'p-nm-' + id]);
+        void p;
+      }
+      break;
+    }
+    case 'addopen': {
+      const ctx = t.dataset.ctx;
+      ui.adding = { ctx, kind: config.add === 'tell' ? 'tell' : 'form', more: false, stage: 'write', parsed: null };
+      focusTo = config.add === 'tell' ? 'tl-' + ctx + '-text' : 'fa-' + ctx + '-first';
+      break;
+    }
+    case 'addmore': if (ui.adding) { ui.adding.more = true; } break;
+    case 'addcancel': { const ctx = ui.adding && ui.adding.ctx; ui.adding = null; if (ctx) { clearDrafts('fa-' + ctx + '-'); clearDrafts('tl-' + ctx + '-'); } focusTo = 'ad-' + ctx; break; }
+    case 'tellback': if (ui.adding) { ui.adding.stage = 'write'; focusTo = 'tl-' + ui.adding.ctx + '-text'; } break;
+    case 'tellout': if (ui.adding && ui.adding.parsed) {
+      const k = +t.dataset.k; const list = ui.adding.parsed.facts; const i = list.indexOf(k);
+      list.splice(i, 1); delete ui.drafts['tl-' + ui.adding.ctx + '-f-' + k];
+      const nk = list[Math.min(i, list.length - 1)];
+      focusTo = nk != null ? 'tl-' + ui.adding.ctx + '-f-' + nk : 'tl-' + ui.adding.ctx + '-keep';
+    } break;
+    case 'readas': ui.readAs = t.dataset.val; ui.focus = null; focusTo = t.id; break;
+    case 'rolefilter': ui.roleFilter = t.dataset.val; ui.focus = null; focusTo = t.id; break;
+    case 'sort': { const k = t.dataset.k; ui.sort = ui.sort.k === k ? { k, d: -ui.sort.d } : { k, d: 1 }; focusTo = t.id; break; }
+    case 'qs': ui.qsOpen = !ui.qsOpen; focusTo = 'qs-toggle'; break;
+    case 'qgo': goTo(id, t.dataset.field); break;
+    case 'goto': goTo(id); break;
+    case 'dshow': ui.filter = t.dataset.key; ui.q = ''; focusTo = 'dv-clear-' + t.dataset.key; break;
+    case 'dclear': { const k = ui.filter; ui.filter = null; focusTo = k ? 'dv-show-' + k : 'scr-q'; break; }
+    case 'dkeep': DATA.verdicts[t.dataset.key] = 'kept'; focusTo = 'dv-show-' + t.dataset.key; break;
+    case 'dno': DATA.verdicts[t.dataset.key] = 'rejected'; if (ui.filter === t.dataset.key) ui.filter = null; ui.status = { ctx: 'derived', text: 'Line removed.', key: t.dataset.key }; focusTo = 'dv-undo'; break;
+    case 'dundo': delete DATA.verdicts[t.dataset.key]; ui.status = null; focusTo = 'dv-keep-' + t.dataset.key; break;
+    case 'clearq': ui.q = ''; focusTo = 'scr-q'; break;
+    case 'fileopen': ui.filing = id; focusTo = 'fl-' + id + '-home'; break;
+    case 'filecancel': { const f = ui.filing; ui.filing = null; clearDrafts('fl-' + f); focusTo = 'fl-' + f + '-open'; break; }
+    default: return;
+  }
+  if (a === 'focus') ui.lastFocus = id;
+  draw();
+});
+
+screenEl.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.search) { ui.q = t.value; ui.filter = ui.filter; draw(); return; }
+  if (t.dataset.d || t.dataset.line) ui.drafts[t.id] = t.type === 'checkbox' ? t.checked : t.value;
+});
+screenEl.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.d) ui.drafts[t.id] = t.type === 'checkbox' ? t.checked : t.value;
+  if (t.dataset.rolefilter) { ui.roleFilter = t.value; ui.focus = null; focusTo = t.id; draw(); return; }
+  if (t.dataset.rerender) { focusTo = t.value === 'new' ? t.id.replace(/-home$/, '-newrole') : t.id; draw(); }
+});
+screenEl.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.key === 'Enter' && t.dataset.line && !e.isComposing) { e.preventDefault(); clearJust(t); lineAdd(t.dataset.line, t); return; }
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && t.tagName === 'TEXTAREA') { const f = t.closest('form'); if (f) { e.preventDefault(); f.requestSubmit(); } return; }
+  if (e.key === 'Enter' && t.tagName === 'INPUT' && t.type === 'text' && t.closest('.ln-row') && t.closest('form[data-form="tellkeep"]')) { e.preventDefault(); t.closest('form').requestSubmit(); return; }
+  if (e.key !== 'Escape') return;
+  if (t.dataset.search) { if (ui.q) { ui.q = ''; focusTo = 'scr-q'; draw(); } return; }
+  if (t.dataset.line) { if (t.value) { t.value = ''; delete ui.drafts[t.id]; } else t.blur(); ui.status = null; return; }
+  if (ui.adding) { const ctx = ui.adding.ctx; ui.adding = null; clearDrafts('fa-' + ctx + '-'); clearDrafts('tl-' + ctx + '-'); focusTo = 'ad-' + ctx; draw(); return; }
+  if (ui.editing) { const id = ui.editing.id; ui.editing = null; clearDrafts('ed-' + id + '-'); focusTo = 'ed-' + id; draw(); return; }
+  if (ui.filing) { const f = ui.filing; ui.filing = null; focusTo = 'fl-' + f + '-open'; draw(); return; }
+  if (ui.del) { const id = ui.del; ui.del = null; focusTo = 'del-' + id; draw(); }
+});
+screenEl.addEventListener('submit', e => {
+  e.preventDefault();
+  const f = e.target, kind = f.dataset.form;
+  clearJust(f);
+  ui.addErr = null;
+  if (kind === 'add') {
+    const ctx = f.dataset.ctx, b = 'fa-' + ctx;
+    const v = gather(b, ['first', 'when', 'type', 'location', 'num', 'unsure', 'res', 'sit', 'did', 'learn', 'where', 'home', 'newrole']);
+    const r = doAdd(ctx, v);
+    if (r.err) { ui.addErr = { ctx, text: r.err }; focusTo = r.err.startsWith('Name') ? b + '-newrole' : b + '-first'; draw(); return; }
+    clearDrafts(b + '-');
+    ui.adding = null;
+    ui.status = { ctx, text: 'Added ' + r.ids[0] + '.' };
+    markJust(r.ids, { openDetail: true, open: true });
+    requestFocus(['p-title', 'l-nm-' + r.ids[0], 'p-nm-' + r.ids[0]]);
+    if (config.open === 'in-place' || ui.narrow) requestFocus(['l-nm-' + r.ids[0]]);
+    draw();
+  } else if (kind === 'tell') {
+    const ctx = f.dataset.ctx, b = 'tl-' + ctx;
+    const info = ctxInfo({ X: index(DATA), ui, data: DATA }, ctx);
+    const parsed = parseTell(info.what === 'side' ? 'project' : info.what, ui.drafts[b + '-text'] || '');
+    if (!parsed) { ui.addErr = { ctx, text: 'Write a sentence or two first.' }; focusTo = b + '-text'; draw(); return; }
+    const keys = parsed.facts.map((_, i) => i);
+    keys.forEach(k => { ui.drafts[b + '-f-' + k] = parsed.facts[k]; });
+    if (parsed.title != null) ui.drafts[b + '-title'] = parsed.title;
+    if (parsed.employer != null) ui.drafts[b + '-employer'] = parsed.employer;
+    if (parsed.when != null) ui.drafts[b + '-when'] = parsed.when;
+    ui.drafts[b + '-learn'] = parsed.learn || '';
+    ui.adding = { ctx, kind: 'tell', stage: 'review', parsed: { facts: keys, learn: parsed.learn } };
+    focusTo = parsed.title != null ? b + '-title' : (keys.length ? b + '-f-0' : b + '-keep');
+    draw();
+  } else if (kind === 'tellkeep') {
+    const ctx = f.dataset.ctx, b = 'tl-' + ctx;
+    const X = index(DATA);
+    const info = ctxInfo({ X, ui, data: DATA }, ctx);
+    const factTexts = ui.adding.parsed.facts.map(k => (ui.drafts[b + '-f-' + k] || '').trim()).filter(Boolean);
+    let ids = [], err = null;
+    if (info.what === 'role') {
+      const title = (ui.drafts[b + '-title'] || '').trim();
+      if (!title) err = 'Write the official title. Everything else can wait.';
+      else {
+        const rid = addRole({ title, employer: (ui.drafts[b + '-employer'] || '').trim() || null, when: ui.drafts[b + '-when'] });
+        ids.push(rid);
+        factTexts.forEach(t => ids.push(addFact({ text: t, role: rid, project: null }, ui.today)));
+      }
+    } else if (info.what === 'project' || info.what === 'side') {
+      const title = (ui.drafts[b + '-title'] || '').trim();
+      if (!title) err = 'Write the first line. Everything else can wait.';
+      else {
+        const h = resolveHome('project', ui.drafts[b + '-home'] || (info.what === 'side' ? 'side' : (X.R.has(ctx) ? ctx : chooserDefault({ X, ui, data: DATA }, ctx, 'project'))), ui.drafts[b + '-newrole']);
+        if (h.err) err = h.err;
+        else {
+          const pid = addProject({ role: h.role, title, learn: (ui.drafts[b + '-learn'] || '').trim() || null });
+          ids.push(pid);
+          factTexts.forEach(t => ids.push(addFact({ text: t, role: h.role, project: pid }, ui.today)));
+          if (h.made) ids.push(h.made);
+        }
+      }
+    } else {
+      if (!factTexts.length) err = 'Nothing is left to keep. Start again, or cancel.';
+      else {
+        const h = resolveHome('fact', ui.drafts[b + '-home'] || (ctx === 'cap' ? 'INBOX' : chooserDefault({ X, ui, data: DATA }, ctx, 'fact')), ui.drafts[b + '-newrole']);
+        if (h.err) err = h.err;
+        else { factTexts.forEach(t => ids.push(addFact({ text: t, role: h.role, project: h.project }, ui.today))); if (h.made) ids.push(h.made); }
+      }
+    }
+    if (err) { ui.addErr = { ctx, text: err }; draw(); return; }
+    clearDrafts(b + '-');
+    ui.adding = null;
+    ui.status = { ctx, text: 'Kept ' + ids[0] + (ids.length > 1 ? ' and ' + plural(ids.length - 1, 'more item') : '') + '.' };
+    markJust(ids, { openDetail: true, open: true });
+    requestFocus(['p-title', 'l-nm-' + ids[0], 'p-nm-' + ids[0]]);
+    if (config.open === 'in-place' || ui.narrow) requestFocus(['l-nm-' + ids[0]]);
+    draw();
+  } else if (kind === 'editproj') {
+    const id = f.dataset.id, p = DATA.projects.find(x => x.id === id), e = k => ui.drafts['ed-' + id + '-' + k];
+    if (!p) return;
+    const title = (e('title') || '').trim();
+    if (!title) { ui.addErr = null; focusTo = 'ed-' + id + '-title'; draw(); return; }
+    const w = parseWhen(e('when') || '', 'project');
+    Object.assign(p, { title, start: w.start, end: w.end, where: (e('where') || '').trim() || p.where });
+    ['res', 'sit', 'did', 'learn'].forEach(k => { const v = (e(k) || '').trim(); p[k] = v || null; });
+    ui.editing = null; clearDrafts('ed-' + id + '-');
+    focusTo = 'ed-' + id; draw();
+  } else if (kind === 'editrole') {
+    const id = f.dataset.id, r = DATA.roles.find(x => x.id === id), e = k => ui.drafts['ed-' + id + '-' + k];
+    if (!r) return;
+    const title = (e('title') || '').trim();
+    if (!title) { focusTo = 'ed-' + id + '-title'; draw(); return; }
+    r.title = title;
+    r.employer = (e('employer') || '').trim() || null;
+    r.start = parseYM(e('start')) || (e('start') ? parseWhen(e('start'), 'role').start : null);
+    r.end = (e('end') || '').trim() && !/^(now|present)$/i.test(e('end').trim()) ? parseYM(e('end')) : null;
+    r.type = (e('type') || '').trim() || null;
+    r.location = (e('location') || '').trim() || null;
+    FIELDS.forEach(k => { r.marks[k] = e('m-' + k) === 'hr' ? 'hr' : 'memory'; });
+    ui.editing = null; clearDrafts('ed-' + id + '-');
+    focusTo = 'ed-' + id; draw();
+  } else if (kind === 'editfact') {
+    const id = f.dataset.id, fa = DATA.facts.find(x => x.id === id), e = k => ui.drafts['ed-' + id + '-' + k];
+    if (!fa) return;
+    const text = (e('text') || '').trim();
+    if (!text) { focusTo = 'ed-' + id + '-text'; draw(); return; }
+    const y = /(\d{4})/.exec(e('year') || '');
+    Object.assign(fa, { text, num: (e('num') || '').trim() || null, year: y ? +y[1] : null, status: e('unsure') ? 'Unsure' : 'Confirmed' });
+    ui.editing = null; clearDrafts('ed-' + id + '-');
+    focusTo = 'ed-' + id; draw();
+  } else if (kind === 'file') {
+    const id = f.dataset.id, b = 'fl-' + id;
+    const nr = newestRole({ data: DATA });
+    const h = resolveHome('fact', ui.drafts[b + '-home'] || (nr ? 'D-' + nr.id : 'new'), ui.drafts[b + '-newrole']);
+    if (h.err) { focusTo = b + '-newrole'; draw(); return; }
+    const fa = DATA.facts.find(x => x.id === id);
+    if (fa) { fa.role = h.role; fa.project = h.project; }
+    ui.filing = null; clearDrafts(b);
+    markJust(h.made ? [id, h.made] : [id], { openDetail: true, open: true });
+    requestFocus(['p-title', 'l-nm-' + id, 'p-nm-' + id, 'cap-in']);
+    draw();
+  }
+});
+
+/* ---------- Start ---------- */
+buildPanel();
+drawRail();
+{
+  const m = /^#seed-(\d+)$/.exec(location.hash);
+  if (m) config = generate(+m[1], locks, config);
+}
+ui.narrow = screenEl.clientWidth > 0 && screenEl.clientWidth < 640;
+syncPanel();
+draw();
+
+/* A handle for the lab's own tests. */
+window.__lab = {
+  get config() { return config; }, get data() { return DATA; }, ui, render, generate, sanitize, defaults, MODES, KNOBS, ORDER,
+  apply(c) { applyConfig(Object.assign({}, config, c), { byHand: true }); }, draw: () => draw(), newVariation, previous,
+  parseTell, parseWhen, detectNum, index,
+};
+})();
+</script>

@@ -43,6 +43,21 @@ shape Look
 // The look in use: DESIGN.md's defaults.
 fn look(): Look = Look(record="catalogue", refs="gutter", textSize=16, ratio=1.75, strong=600, leading=1.5, measure=38, margin=16, rowGap=12, sectionGap=48, ruleWeight=1, notes=2)
 
+// The Experience screen's own values, as the owner chose them in its lab (lab/experience-keeper.json, DESIGN.md
+// "Experience"): the view /record opens in, how many facts a group shows before "Show all", how far each level of the
+// tree steps in (rem), and the window width (px) from which an opened item is drawn beside the list.
+shape ExperienceLook
+  firstView: string
+  factsShown: number
+  indent: number
+  besideFrom: number
+
+fn experienceLook(): ExperienceLook = ExperienceLook(firstView="roles", factsShown=6, indent=1.5, besideFrom=1040)
+// From this width an opened item is drawn beside the list; under it, under its own row.
+fn lookBeside(): number = experienceLook().besideFrom
+// How far a row of the tree steps in at a level (0 for the top).
+fn lookStep(level: number): string = `${level * experienceLook().indent}rem`
+
 // What the components draw with, worked out from `look()`. Nothing else sets a size, weight or space.
 fn lookText(): string = `${look().textSize / 16}rem`
 fn lookTitle(): string = `${look().textSize * look().ratio / 16}rem`
@@ -62,6 +77,8 @@ fn lookTight(): number = look().rowGap / 2
 fn lookGutter(): number = look().rowGap + look().rowGap / 3
 // The width of a line's number (1 to 9): one and a half figures of text.
 fn lookNumberWidth(): string = `${look().textSize * 1.5 / 16}rem`
+// The width of a field's name beside its value ("Employment type"): nine figures of text.
+fn lookLabelWidth(): string = `${look().textSize * 9 / 16}rem`
 // The width a reference number takes in the gutter: five figures of text.
 fn lookRefWidth(): string = `${look().textSize * 5 / 16}rem`
 // Under this width (px) the margin notes move under the main column, and two columns become one.
@@ -738,3 +755,261 @@ component Note
   view
     column width=(wide ? lookMargin() : "auto") flex-shrink=0 padding-left=(wide ? 0 : lookGutter())
       text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
+
+// ---------- The tree (Experience) ----------
+
+// A row's content stepped in by its level of the tree (lookStep), so a project sits under its role and a fact under
+// its project. The reference number stays in the gutter, outside the step.
+component Step
+  props
+    level: number
+  slot
+  view
+    column min-width=0 gap=lookTight() padding-left=lookStep(level)
+      children
+
+// A grey line under a record's name: when, and what it holds. `mark` follows it in ink ("Just added"); "" for none.
+component TreeSub
+  props
+    text: string
+    mark: string
+    testId: string
+  view
+    if text != "" or mark != ""
+      row align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+        if text != ""
+          text text font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" overflow-wrap="break-word" testId=testId
+        if text != "" and mark != ""
+          text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+        if mark != ""
+          text mark font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" testId=`${testId}-mark`
+
+// The closed line of any item of the tree, the same at every level: its reference in the gutter, its name (a link to
+// the item opened), then when and what it holds in grey. `strong` sets the name heavy (a role, a project); `quiet`
+// sets it grey (a group such as Day to day, which has no reference). `current` marks the item that is open, with an
+// underline and for a screen reader. `rule` draws a hairline above it (between the top-level items of a list).
+// On a narrow window the reference takes a line of its own above the name, as Record's does. Extra lines go in the
+// slot. testIds: the name is `testId`, the reference `testId-ref`, the grey line `testId-sub`, the mark `testId-sub-mark`.
+component TreeRow
+  props
+    code: string
+    name: string
+    href: string
+    strong: bool
+    quiet: bool
+    sub: string
+    mark: string
+    level: number
+    current: bool
+    rule: bool
+    wide: bool
+    testId: string
+  slot
+  view
+    column min-width=0 padding-top=(rule ? look().rowGap : 0) border-top-width=(rule ? lookRule() : "0px") border-top-style="solid" border-top-color="look.line" testId=`${testId}-row`
+      if wide and look().refs == "gutter"
+        row align-items="baseline"
+          column width=lookRefWidth() flex-shrink=0
+            if code != ""
+              Ref(code=code, testId=`${testId}-ref`)
+          column flex=1 min-width=0
+            Step(level=level)
+              TreeName(name=name, href=href, strong=strong, quiet=quiet, current=current, testId=testId)
+              TreeSub(text=sub, mark=mark, testId=`${testId}-sub`)
+              children
+      else
+        Step(level=level)
+          if code != ""
+            Ref(code=code, testId=`${testId}-ref`)
+          TreeName(name=name, href=href, strong=strong, quiet=quiet, current=current, testId=testId)
+          TreeSub(text=sub, mark=mark, testId=`${testId}-sub`)
+          children
+
+// An item's name as a link to the item opened: heavy, plain or grey; underlined while it is the open one.
+component TreeName
+  props
+    name: string
+    href: string
+    strong: bool
+    quiet: bool
+    current: bool
+    testId: string
+  view
+    link href=href align-self="flex-start" max-width="100%" aria-current=(current ? "page" : "false") testId=testId
+      text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color=(quiet ? "look.grey" : "look.ink") overflow-wrap="break-word"
+        text-decoration-line=(current ? "underline" : "none")
+
+// A row of the tree that is not an item: an action ("Add a project"), an empty state, "Show all 14". It lines up with
+// the names at its level.
+component TreeLine
+  props
+    level: number
+    wide: bool
+  slot
+  view
+    if wide and look().refs == "gutter"
+      row align-items="baseline"
+        column width=lookRefWidth() flex-shrink=0
+        column flex=1 min-width=0
+          Step(level=level)
+            children
+    else
+      Step(level=level)
+        children
+
+// A list of the tree's rows, a row's space apart.
+component TreeList
+  props
+    testId: string
+  slot
+  view
+    column gap=look().rowGap min-width=0 testId=testId
+      children
+
+// The list and the opened item beside it (on a window `lookBeside()` wide and more): two columns that each scroll on
+// their own, so the list keeps its place while an item opens and closes. The caller puts a `BesideList` then a
+// `BesidePane` in it.
+component Beside
+  props
+    testId: string
+  slot
+  view
+    row flex=1 min-height=0 align-items="stretch" max-width=`${look().measure * 2 + 6}rem` color="look.ink" font-family="'Geist', system-ui" testId=testId
+      children
+
+// The list's column: the page's title, its controls and the tree. `scrollId` names its scroller for the route.
+component BesideList
+  props
+    scrollId: string
+    testId: string
+  slot
+  view
+    scroll id=scrollId flex=5 min-width=0 min-height=0
+      column padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" testId=testId
+        children
+
+// The opened item's column, beside the list, with a hairline between them.
+component BesidePane
+  props
+    label: string
+    testId: string
+  slot
+  view
+    scroll flex=6 min-width=0 min-height=0 border-left-width=lookRule() border-left-style="solid" border-left-color="look.line"
+      column role="region" aria-label=label padding-left=(lookGutter() * 2) padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().rowGap max-width=lookMeasure() align-items="stretch" testId=testId
+        children
+
+// The opened item drawn under its own row, on a narrow window, with a hairline above. It is not stepped in with its
+// row: on a phone at a large text size the steps would leave its fields no room. `level` is kept for the caller.
+component UnderRow
+  props
+    level: number
+    label: string
+    testId: string
+  slot
+  view
+    column role="region" aria-label=label padding-top=look().rowGap padding-bottom=look().rowGap gap=look().rowGap
+      border-top-width=lookRule() border-top-style="solid" border-top-color="look.line" testId=testId
+      children
+
+// Where an opened item is: the list's name, then each item above it, as grey links. It ends at the item's parent.
+component Crumbs
+  props
+    label: string
+  slot
+  view
+    nav aria-label=label
+      row flex-wrap="wrap" column-gap="0.5em" align-items="baseline"
+        children
+
+component Crumb
+  props
+    label: string
+    href: string
+    first: bool
+    testId: string
+  view
+    row align-items="baseline" column-gap="0.5em" min-width=0
+      if not first
+        text "›" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      if href != ""
+        link href=href min-width=0 testId=testId
+          text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" overflow-wrap="break-word"
+      else
+        text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" overflow-wrap="break-word" testId=testId
+
+// One field of an official record: its name in grey, its value, and where the value comes from in grey after it.
+// On a wide window the names stand in a column of their own; on a narrow one each name is over its value.
+component FieldRow
+  props
+    label: string
+    value: string
+    mark: string
+    wide: bool
+    testId: string
+  view
+    if wide
+      row align-items="baseline" column-gap=lookGutter()
+        text label width=lookLabelWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+        FieldValue(value=value, mark=mark, testId=testId)
+    else
+      column
+        text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+        FieldValue(value=value, mark=mark, testId=testId)
+
+component FieldValue
+  props
+    value: string
+    mark: string
+    testId: string
+  view
+    row flex=1 min-width=0 align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+      if value != ""
+        text value font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
+        if mark != ""
+          text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+          text mark font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-mark`
+      else
+        text "Not recorded" font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
+
+// Two fields side by side on a wide window (a value and where it comes from), one over the other on a narrow one.
+component FieldPair
+  props
+    wide: bool
+  slot
+  view
+    if wide
+      row align-items="end" column-gap=lookGutter() max-width=lookMeasure()
+        children
+    else
+      column gap=look().rowGap max-width=lookMeasure()
+        children
+
+// A form drawn in place (adding or editing an item): its fields a row's space apart, as wide as the main column.
+component InPlaceForm
+  props
+    label: string
+    testId: string
+  slot
+  view
+    column role="group" aria-label=label gap=look().rowGap max-width=lookMeasure() padding-top=lookTight() padding-bottom=lookTight() testId=testId
+      children
+
+// One field of a `FieldPair`: its label over the control, sharing the row's width with the other.
+component PairField
+  props
+    label: string
+  slot
+  view
+    column flex=1 min-width=0 gap=lookTight() align-items="stretch"
+      text label aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      children
+
+// An opened item's name, as its column's heading: the larger size, heavy (the page's own title stays the one at
+// level 1).
+component ItemTitle
+  props
+    text: string
+    testId: string
+  view
+    text text role="heading" aria-level=2 font-size=lookTitle() font-weight=look().strong line-height=lookTitleLeading() color="look.ink" overflow-wrap="break-word" testId=testId

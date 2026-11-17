@@ -180,7 +180,7 @@ members App
     activityFails = 0
   action reloadChanged
     if changedKinds.includes("read-source") or changedKinds.includes("write-reply")
-      refresh bank
+      refresh tree
     if changedKinds.includes("read-source")
       refresh lib
     // A source read with new facts asks for the profile to be written again.
