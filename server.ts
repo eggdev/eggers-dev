@@ -51,12 +51,14 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const month = (ym: string) => { const [y, m] = ym.split('-'); return m && MONTHS[Number(m) - 1] ? `${MONTHS[Number(m) - 1]}\u00a0${y}` : y; };
 const period = (r: RoleRow) => (r.start === '' ? '' : `${month(r.start)}\u00a0–\u2060\u00a0${r.end === '' ? 'Present' : month(r.end)}`);
 
-type FactRow = { id: number; role_id: number | null; kind: string; text: string; detail: string; metric: string; skills: string; evidence: string; status: string; source_id: number | null; source: string | null };
+type FactRow = { id: number; role_id: number | null; kind: string; text: string; detail: string; metric: string; skills: string; evidence: string; status: string; source_id: number | null; source: string | null; created_at: number };
+// A day in words, as a record's provenance line says it: "3 Mar 2026"; '' when unknown.
+const day = (t: number) => (t > 0 ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(t) : '');
 
 // The bank as the app shows it: roles newest first, then the facts that belong to none ("General").
 function bank() {
   const roles = db.query("SELECT * FROM roles ORDER BY CASE WHEN end = '' AND start != '' THEN 1 ELSE 0 END DESC, end DESC, start DESC, id").all() as RoleRow[];
-  const facts = db.query(`SELECT f.id, f.role_id, f.kind, f.text, f.detail, f.metric, f.skills, f.evidence, f.status, f.source_id, s.title AS source
+  const facts = db.query(`SELECT f.id, f.role_id, f.kind, f.text, f.detail, f.metric, f.skills, f.evidence, f.status, f.source_id, s.title AS source, f.created_at
     FROM facts f LEFT JOIN sources s ON s.id = f.source_id ORDER BY f.id`).all() as FactRow[];
   const ids = new Set(roles.map((r) => r.id));
   const of = (f: FactRow) => (f.role_id !== null && ids.has(f.role_id) ? String(f.role_id) : '0');
@@ -69,14 +71,16 @@ function bank() {
     // Every role, with or without facts, and "General": where a fact can be filed.
     places: groups.map((g) => ({ id: g.id, name: g.id === '0' ? 'General (no role)' : g.name })),
     facts: facts.map((f) => ({ id: String(f.id), roleId: of(f), kind: f.kind, text: f.text, detail: f.detail, metric: f.metric, skills: f.skills,
-      evidence: f.evidence, source: f.source_id === null ? 'Added by hand' : f.source ?? 'A source since deleted' })),
+      evidence: f.evidence, source: f.source_id === null ? 'Added by hand' : f.source ?? 'A source since deleted',
+      // Its provenance: the day it was added, and whether the person has since edited what a source said.
+      added: day(f.created_at), edited: f.source_id !== null && f.status === 'confirmed' })),
   };
 }
 
 function sources() {
   const rows = db.query(`SELECT s.*, (SELECT count(*) FROM facts f WHERE f.source_id = s.id) AS facts FROM sources s ORDER BY s.id DESC`).all() as (SourceRow & { facts: number })[];
   return rows.map((s) => ({ id: String(s.id), kind: s.kind, title: s.title, status: s.status, note: s.note, facts: s.facts,
-    detail: s.kind === 'github' ? `github.com/${s.body}` : s.kind === 'repo' ? (s.author ? `${s.body}, commits by ${s.author}` : s.body) : s.kind === 'file' ? `${s.body}, kept in the server’s inbox folder` : `${s.body.length.toLocaleString('en-US')} characters of pasted text` }));
+    detail: s.kind === 'github' ? `github.com/${s.body}` : s.kind === 'repo' ? (s.author ? `${s.body}, commits by ${s.author}` : s.body) : s.kind === 'file' ? `${s.body}, kept in the studio’s inbox` : `${s.body.length.toLocaleString('en-US')} characters of pasted text` }));
 }
 
 // Files waiting in the inbox folder that no source has taken yet.

@@ -10,19 +10,20 @@ test "home says in one line that nothing needs you on an empty database"
   expect tree missing "home-count"
   expect tree missing "home-keys"
 
-test "a source is added from the empty bank, waits to be read, refuses a repeat repository in words, and is deleted after asking"
+test "a source is added from the empty record, waits to be read, refuses a repeat repository in words, and is deleted after asking"
   clock data
-  tap "tab-bank"
+  tap "nav-record"
   clock settle
   clock data
   tap "bank-add"
   clock settle
-  expect state nav.tab == "sources"
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Sources"
   expect disabled "add-save"
   expect text "add-hint" == "Paste some text to add it."
   type "add-title" "Resume 2024"
   type "add-text" "Staff Engineer at Acme, 2021 to now. Built the billing export service."
-  expect text "add-hint" == "Claude Code on the server reads what you add and puts what it finds in your bank."
+  expect text "add-hint" == "Claude reads what you add and puts what it finds in your record."
   tap "add-save"
   clock data
   clock settle
@@ -49,7 +50,7 @@ test "a source is added from the empty bank, waits to be read, refuses a repeat 
   type "add-repo" "/srv/code/web"
   tap "add-save"
   clock data
-  expect text "add-error" == "Can’t reach the server. Check that it’s running, then try again."
+  expect text "add-error" == "The studio can’t be reached right now. Try again in a moment."
   expect text "add-repo" == "/srv/code/web"
   pass fetch "http://127.0.0.1:87"
   tap "add-cancel"
@@ -59,7 +60,8 @@ test "a source is added from the empty bank, waits to be read, refuses a repeat 
   tap "source-1"
   clock settle
   expect text "source-title" == "Resume 2024"
-  expect text "source-status" == "Waiting to be read."
+  expect text "source-status" == "Read in turn, one source at a time. Usually a few minutes each."
+  expect text "source-status-status" == "Waiting"
   expect disabled "source-read"
   expect text "source-hint" == "It can be read again once this reading finishes."
   tap "source-delete"
@@ -72,9 +74,9 @@ test "a source is added from the empty bank, waits to be read, refuses a repeat 
   reload
   expect state author == "ada"
 
-test "facts are in the bank with no review step; one is edited with its story, and one is deleted only after asking"
+test "facts are in the record with no review step; a role shows its reference and date range; one fact is edited with its story, and one is deleted only after asking"
   clock data
-  tap "tab-bank"
+  tap "nav-record"
   clock settle
   clock data
   expect tree has "bank-add"
@@ -86,10 +88,20 @@ test "facts are in the bank with no review step; one is edited with its story, a
   clock data
   expect state bank.facts.length == 3
   expect tree missing "bank-add"
-  expect text "bank-unclassed" == "Kind of work isn’t set for 1 role, so that work counts as middling evidence for a job. Set it on each one’s Kind of Work row."
+  expect text "bank-unclassed" == "Kind of work isn’t set for 1 role, so that work counts as middling evidence for a job. Set it on each role’s page."
   expect text "role-kind-1" == "Kind of work not set"
+  expect text "role-1-ref" == "R-01"
+  expect text "role-1" == "Staff Engineer, Acme"
+  expect text "role-1-span" == "2021–Present · 2 facts"
+  expect text "role-1-status" == "Confirmed"
+  expect text "fact-1-ref" == "F-0001"
+  expect text "fact-2-span" == "900 ms to 210 ms"
   tap "role-1"
   clock settle
+  expect text "role-title-ref" == "R-01"
+  expect text "role-title" == "Staff Engineer, Acme"
+  expect text "role-title-span" == "2021–Present · 2 facts"
+  expect tree has "role-fact-1"
   type "role-standing" "employer"
   type "role-reach" "live"
   tap "role-save"
@@ -100,6 +112,9 @@ test "facts are in the bank with no review step; one is edited with its story, a
   tap "fact-1"
   clock settle
   expect text "fact-text" == "Built the billing export service."
+  expect text "fact-text-ref" == "F-0001"
+  expect text "fact-text-status" == "Confirmed"
+  expect tree has "fact-text-from"
   expect text "fact-detail-text" == "Finance closed the month by hand. Designed and built the export in Go."
   expect text "fact-role" == "Staff Engineer, Acme"
   expect text "fact-skills" == "Go, Postgres"
@@ -134,12 +149,14 @@ test "facts are in the bank with no review step; one is edited with its story, a
 
 test "the profile is asked for, shows as being written, then shows the document with what is worth adding, and says when the bank has moved on"
   clock data
-  tap "tab-profile"
+  tap "nav-record"
+  tap "sub-profile"
   clock data
   expect tree has "profile-write"
   tap "profile-write"
   clock data
-  expect text "profile-writing" == "Claude is writing your profile from 2 facts. This takes a few minutes."
+  expect text "profile-writing" == "Writing your profile from 2 facts. Usually a few minutes."
+  expect text "profile-writing-status" == "Waiting"
   request POST "/profile/save" {"body": "# Professional profile\n\n## Summary\n\nI build billing systems.", "gaps": ["What did the billing export replace, and who used it?"]}
   clock +5000
   clock data
@@ -151,7 +168,7 @@ test "the profile is asked for, shows as being written, then shows the document 
   clock +5000
   clock data
   expect state profile.stale == true
-  tap "open-direction"
+  tap "sub-direction"
   clock settle
   clock data
   type "direction-text" "## Target tracks\n- A. Forward-deployed engineer\n\n## Fit test for a job listing\n1. Does it include mentoring?"
@@ -163,7 +180,8 @@ test "the profile is asked for, shows as being written, then shows the document 
 
 test "a picked file is uploaded and waits to be read; a type that can't be read is refused in words and the sheet stays open"
   clock data
-  tap "tab-sources"
+  tap "nav-record"
+  tap "sub-sources"
   tap "add-source"
   clock settle
   tap "kind-file"
@@ -188,7 +206,8 @@ test "a picked file is uploaded and waits to be read; a type that can't be read 
 
 test "a LinkedIn export zip becomes one text source; GitHub repositories are searched, ticked and added, and one already added can't be ticked again"
   clock data
-  tap "tab-sources"
+  tap "nav-record"
+  tap "sub-sources"
   tap "add-source"
   clock settle
   tap "kind-file"
@@ -231,7 +250,7 @@ test "a LinkedIn export zip becomes one text source; GitHub repositories are sea
 
 test "a posting is added and waits to be read; once read it is ranked by fit and shows each requirement's support, the resume written for it and what changed"
   clock data
-  tap "tab-jobs"
+  tap "nav-jobs"
   clock data
   tap "jobs-add"
   clock settle
@@ -299,7 +318,7 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
 
 test "the watchlist takes a company by its job-board link, refuses a link it can't place and a repeat, and removes one; the job list shows what became of a job"
   clock data
-  tap "tab-jobs"
+  tap "nav-jobs"
   clock data
   expect text "stage-saved" == "Saved 0"
   expect text "stage-active" == "Active 1"
@@ -343,9 +362,9 @@ test "the watchlist takes a company by its job-board link, refuses a link it can
 
 test "your details are refused without a name, saved with one, and shown again when the form is reopened"
   clock data
-  tap "tab-profile"
+  tap "nav-record"
   clock settle
-  tap "open-details"
+  tap "sub-details"
   clock data
   clock settle
   type "details-location" "Brooklyn, NY"
@@ -364,14 +383,15 @@ test "your details are refused without a name, saved with one, and shown again w
   expect state me.name == "Ada Lovelace"
   expect state me.location == "Brooklyn, NY"
   expect tree missing "details-save"
-  tap "open-details"
+  expect text "sub-current" == "Profile"
+  tap "sub-details"
   clock data
   clock settle
   expect text "details-location" == "Brooklyn, NY"
 
 test "talk starts empty, sends what is written and shows a reply being written, and starts over after asking"
   clock data
-  tap "tab-talk"
+  tap "nav-talk"
   clock settle
   expect disabled "talk-send"
   type "talk-composer" "I led the checkout rewrite at Acme."
@@ -392,7 +412,7 @@ test "talk starts empty, sends what is written and shows a reply being written, 
 
 test "experience is searched, a fact's category is changed, and an edit with changes asks before it is discarded"
   clock data
-  tap "tab-bank"
+  tap "nav-record"
   clock settle
   type "bank-search" "zzzz no such fact"
   clock settle
@@ -417,9 +437,7 @@ test "experience is searched, a fact's category is changed, and an edit with cha
 
 test "the public page says publishing works only in the deployed studio, fills the field from the bank, shows unsaved changes, and saves with its notes"
   clock data
-  tap "tab-profile"
-  clock settle
-  tap "open-public"
+  tap "nav-system"
   clock data
   clock settle
   expect text "public-live" == "Publishing works only in the deployed studio. Here you can write and save the text."
@@ -468,25 +486,94 @@ test "the public page says publishing works only in the deployed studio, fills t
   expect text "public-text" == "I build small tools for a chess club."
   expect tree has "public-saved"
 
-test "the system page opens from the profile header, says it works only in the deployed studio, and goes back"
+test "system opens from the main line and shows both of its screens: the public page, then backups and sign-in, which works only in the deployed studio"
   clock data
-  tap "tab-profile"
-  clock settle
-  tap "open-system"
+  tap "nav-system"
   clock data
   clock settle
-  expect state nav.tab == "profile"
+  expect state nav.tab == "publicPage"
+  expect text "nav-current" == "System"
+  expect text "sub-current" == "Public page"
+  expect tree has "public-text"
+  tap "sub-backups"
+  clock data
+  clock settle
+  expect state nav.tab == "publicPage"
+  expect text "sub-current" == "Backups and sign-in"
   expect text "system-absent" == "This screen works only in the deployed studio."
-  back
-  clock settle
-  expect tree has "open-public"
-  tap "open-public"
+  tap "sub-public"
   clock data
   clock settle
   expect tree has "public-text"
-  back
+  tap "nav-record"
   clock settle
-  expect tree has "open-system"
+  expect tree missing "sub-public"
+  tap "nav-system"
+  clock settle
+  expect text "sub-current" == "Public page"
+
+test "the main line goes to each of the five places and marks the current one"
+  clock data
+  expect text "nav-current" == "Home"
+  tap "nav-record"
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "nav-current" == "Record"
+  tap "nav-jobs"
+  clock settle
+  expect state nav.tab == "jobs"
+  expect text "nav-current" == "Jobs"
+  tap "nav-talk"
+  clock settle
+  expect state nav.tab == "talk"
+  expect text "nav-current" == "Talk"
+  tap "nav-system"
+  clock settle
+  expect state nav.tab == "publicPage"
+  expect text "nav-current" == "System"
+  tap "nav-home"
+  clock settle
+  expect state nav.tab == "home"
+  expect text "nav-current" == "Home"
+  expect tree has "home-title"
+
+test "record's second line goes to each of its five screens and keeps Record marked"
+  clock data
+  tap "nav-record"
+  clock settle
+  expect text "sub-current" == "Experience"
+  expect tree has "bank-title"
+  tap "sub-profile"
+  clock data
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Profile"
+  expect tree has "profile-title"
+  tap "sub-direction"
+  clock data
+  clock settle
+  expect text "sub-current" == "Direction"
+  expect tree has "direction-text"
+  tap "sub-details"
+  clock data
+  clock settle
+  expect text "sub-current" == "Details"
+  expect tree has "details-name"
+  tap "sub-sources"
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Sources"
+  expect tree has "sources-title"
+  tap "sub-experience"
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Experience"
+  expect text "nav-current" == "Record"
+  reload
+  clock data
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Experience"
 
 test "home shows a question about two current jobs; an answer waits 8 seconds and can be undone, a bad month is refused in words, and a snooze hides an item"
   request POST "/roles" {"company": "Northwind", "title": "Engineering Manager", "start": "2022-01", "end": ""}
@@ -530,3 +617,21 @@ test "home shows a question about two current jobs; an answer waits 8 seconds an
   clock +8000
   clock data
   expect state homeList.snoozed == 1
+
+test "two roles that both say Present carry the overlap marker, which leads to Home"
+  request POST "/roles" {"company": "Initech", "title": "Engineer", "start": "2023-02", "end": ""}
+  clock data
+  clock +5000
+  clock data
+  tap "nav-record"
+  clock data
+  clock settle
+  expect text "role-1-overlap-3" == "Overlaps R-03, Engineer, Initech. Both say Present."
+  tap "role-1"
+  clock data
+  clock settle
+  expect text "role-overlap-3" == "Overlaps R-03, Engineer, Initech. Both say Present."
+  tap "role-overlap-3-go"
+  clock data
+  clock settle
+  expect state nav.tab == "home"

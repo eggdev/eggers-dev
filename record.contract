@@ -1,0 +1,565 @@
+// Record: the owner's working life as records (DESIGN.md rule 4), and the screens beside it. Its second line
+// (`RecordNav`, drawn once by the root under the main line) holds Experience (the roles and their facts, at /record), Profile, Direction, Details and Sources.
+// Each screen is one document column (`Page`), drawn only with the shared pieces of look.contract. The data and
+// the actions are the root's (app.contract); a screen with a form keeps its drafts itself.
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, statusWord, look from "./look.contract"
+
+shape Role
+  id: string
+  name: string
+  period: string
+  // The dates as the person gave them: YYYY-MM or YYYY; an empty end is the present.
+  start: string
+  end: string
+  // What kind of work it was, which decides how much it counts toward a job's fit.
+  // standing: employer | own | contract | personal, reach: live | retired | never; "" is not set.
+  standing: string
+  reach: string
+  // An employer is a role with a job title. A project (a repository's work) may be part of one:
+  // partOf is that employer's id, "" for none, and it then counts as that employer's work.
+  employer: bool
+  partOf: string
+  partOfName: string
+
+shape Fact
+  id: string
+  roleId: string
+  kind: string
+  text: string
+  detail: string
+  metric: string
+  skills: string
+  evidence: string
+  source: string
+  // The day it was added ("3 Mar 2026", "" when unknown), and whether the person has edited what a source said.
+  added: string
+  edited: bool
+
+shape Bank
+  // False until the first answer arrives: an empty bank is not a failed read.
+  loaded: bool
+  roles: Role[]
+  // Every role a fact can be filed under, with or without facts yet, and "General".
+  places: Place[]
+  facts: Fact[]
+
+shape Place
+  id: string
+  name: string
+
+// Two roles that both say Present, which the server holds as an open question.
+shape Overlap
+  a: string
+  b: string
+
+// One line of the profile: a paragraph ("para") or a list item ("item"), as plain text.
+shape ProfileLine
+  kind: string
+  text: string
+
+// One part of the profile under its heading ("" before the first heading).
+shape ProfilePart
+  head: string
+  lines: ProfileLine[]
+
+shape Profile
+  loaded: bool
+  // none | queued | running | done | failed
+  status: string
+  note: string
+  body: string
+  parts: ProfilePart[]
+  gaps: string[]
+  // The bank has changed since the body was written.
+  stale: bool
+  written: string
+  facts: number
+
+// The person's direction notes, as Markdown.
+shape Direction
+  loaded: bool
+  body: string
+
+// The person's own details: the name and contact line every resume opens with.
+shape Person
+  loaded: bool
+  name: string
+  location: string
+  email: string
+  phone: string
+  website: string
+  github: string
+  linkedin: string
+
+fn kindLabel(k: string): string = k == "accomplishment" ? "Accomplishment" : k == "project" ? "Project" : k == "responsibility" ? "Responsibility" : k == "skill" ? "Skill" : k == "education" ? "Education" : "Other"
+fn factMatches(f: Fact, q: string): bool = q.trim() == "" or `${f.text} ${f.skills} ${f.metric}`.toLowerCase().includes(q.trim().toLowerCase())
+// A fact's extent: the measured result when there is one, since that is what a resume wants; else its kind.
+fn factMeta(f: Fact): string = f.metric != "" ? f.metric : kindLabel(f.kind)
+fn roleName(roles: Role[], id: string): string = match first(roles.filter(r => r.id == id)) { case some(r) => r.name, case none => "General" }
+fn placeName(places: Place[], id: string): string = match first(places.filter(p => p.id == id)) { case some(p) => p.name, case none => "another role" }
+fn factCount(n: number): string = `${n} ${n == 1 ? "fact" : "facts"}`
+fn roleCount(n: number): string = `${n} ${n == 1 ? "role" : "roles"}`
+fn standingLabel(v: string): string = v == "employer" ? "Employer" : v == "own" ? "Own company" : v == "contract" ? "Contract" : v == "personal" ? "Personal project" : "Not set"
+fn reachLabel(v: string): string = v == "live" ? "In production" : v == "retired" ? "Was in production" : v == "never" ? "Never reached users" : "Not set"
+fn roleKind(r: Role): string = r.partOf != "" ? (r.reach == "" ? `Part of ${r.partOfName}, Reached users not set` : `Part of ${r.partOfName}, ${reachLabel(r.reach).toLowerCase()}`) : r.standing == "" and r.reach == "" ? "Kind of work not set" : r.reach == "" ? `${standingLabel(r.standing)}, Reached users not set` : r.standing == "" ? `${reachLabel(r.reach)}, Type of work not set` : `${standingLabel(r.standing)}, ${reachLabel(r.reach).toLowerCase()}`
+// Reference numbers (DESIGN.md section 4), from the database id and never from a position: R-07, F-0142.
+fn roleRef(id: string): string = id.length >= 2 ? `R-${id}` : `R-0${id}`
+fn factRef(id: string): string = id.length >= 4 ? `F-${id}` : id.length == 3 ? `F-0${id}` : id.length == 2 ? `F-00${id}` : `F-000${id}`
+// A role's date range in years: "2019–2023", "2021–Present", one year alone when it starts and ends in it.
+fn yearOf(ym: string): string = ym.slice(0, 4)
+fn roleYears(r: Role): string = r.start == "" ? "" : r.end == "" ? `${yearOf(r.start)}–Present` : yearOf(r.start) == yearOf(r.end) ? yearOf(r.start) : `${yearOf(r.start)}–${yearOf(r.end)}`
+// A fact's provenance line: where it came from, and when. Only what the record holds; "" when it holds nothing.
+fn factFrom(f: Fact): string = `${f.source == "Added by hand" ? (f.added == "" ? "Added by hand" : `Added by hand on ${f.added}`) : (f.added == "" ? `From ${f.source}` : `From ${f.source}, added ${f.added}`)}.${f.edited ? " Edited by you since." : ""}`
+// The roles that say Present beside this one, while the person has not said how they relate.
+fn othersOf(os: Overlap[], id: string): string[] = os.filter(o => o.a == id or o.b == id).map(o => o.a == id ? o.b : o.a)
+// A failed read in the owner's words: no machine terms here (DESIGN.md rule 10).
+fn plainLoadError(code: string): string = code == "offline" ? "The studio can’t be reached right now. Try again in a moment." : "This couldn’t be loaded. Try again."
+
+// Record's second line. `at` is the screen shown: bank | profile | direction | details | sources.
+component RecordNav
+  props
+    at: string
+    go: action
+  view
+    SubLine(label="Record")
+      SubLink(label="Experience", current=(at == "bank"), press=go("bank"), testId="sub-experience")
+      SubLink(label="Profile", current=(at == "profile"), press=go("profile"), testId="sub-profile")
+      SubLink(label="Direction", current=(at == "direction"), press=go("direction"), testId="sub-direction")
+      SubLink(label="Details", current=(at == "details"), press=go("details"), testId="sub-details")
+      SubLink(label="Sources", current=(at == "sources"), press=go("sources"), testId="sub-sources")
+
+// A Record screen whose data has not arrived, or whose record is gone: it says so, and can always go back.
+component RecordWait
+  props
+    title: string
+    waiting: bool
+    message: string
+    backLabel: string
+    back: action
+    testId: string
+  view
+    Page(testId=testId)
+      Section(testId=`${testId}-top`)
+        if backLabel != ""
+          Action(label=backLabel, press=back, disabled=false, keys="", testId=`${testId}-back`)
+      Section(testId=`${testId}-wait`)
+        Title(text=title, testId=`${testId}-title`)
+        if waiting
+          QuietLine(text="Loading…", testId=`${testId}-loading`)
+        else
+          Line(text=message, testId=`${testId}-message`)
+
+// The marker on a role that says Present beside another that also does (DESIGN.md, Overlap marker), with the way
+// to settle it on Home.
+component OverlapLine
+  props
+    other: string
+    otherName: string
+    home: action
+    testId: string
+  view
+    Actions(testId=`${testId}-line`)
+      StrongLine(text=`Overlaps ${roleRef(other)}, ${otherName}. Both say Present.`, testId=testId)
+      Action(label="Settle it on Home", press=home, disabled=false, keys="", testId=`${testId}-go`)
+
+// Experience: every role as a record, its facts as records under it, and a search over the facts.
+component ExperienceScreen
+  props
+    bank: Bank
+    failed: bool
+    error: string
+    query: string
+    overlaps: Overlap[]
+    wide: bool
+    search: action
+    add: action
+    retry: action
+    home: action
+  derive q = query.trim()
+  derive shownRoles = bank.roles.filter(r => q == "" or bank.facts.filter(f => f.roleId == r.id and factMatches(f, q)).length > 0)
+  derive unclassed = bank.roles.filter(r => r.id != "0" and r.partOf == "" and (r.standing == "" or r.reach == "")).length
+  derive roleTotal = bank.roles.filter(r => r.id != "0").length
+  view
+    Page(testId="bank")
+      Section(testId="bank-top")
+        Title(text="Experience", testId="bank-title")
+        if bank.loaded and bank.facts.length > 0
+          QuietLine(text=(roleTotal == 0 ? `${factCount(bank.facts.length)}.` : `${factCount(bank.facts.length)} across ${roleCount(roleTotal)}.`), testId="bank-count")
+      if not bank.loaded
+        Section(testId="bank-wait")
+          if failed
+            FailLine(text=error, testId="bank-error")
+            Action(label="Try again", press=retry, disabled=false, keys="", testId="bank-retry")
+          else
+            QuietLine(text="Loading your record…", testId="bank-loading")
+      else if bank.facts.length == 0
+        Section(testId="bank-empty")
+          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and what Claude finds in it appears here, by role.", testId="bank-empty-text")
+          MainAction(label="Add a source", press=add, disabled=false, keys="", testId="bank-add")
+      else
+        Section(testId="bank-find")
+          SearchField(value=query, label="Search facts", hint="Search facts and skills", change=search, testId="bank-search")
+          if q != "" and bank.facts.filter(f => factMatches(f, q)).length == 0
+            QuietLine(text=`No fact matches “${q}”.`, testId="bank-none")
+          if unclassed > 0 and q == ""
+            QuietLine(text=`Kind of work isn’t set for ${roleCount(unclassed)}, so that work counts as middling evidence for a job. Set it on each role’s page.`, testId="bank-unclassed")
+        for r in shownRoles key=r.id
+          Section(testId=`bank-role-${r.id}`)
+            if r.id == "0"
+              SectionHead(text="General", testId="bank-general")
+            else
+              Record(code=roleRef(r.id), name=r.name, href=`/record/role/${r.id}`, strong=true, dates=roleYears(r), extent=factCount(bank.facts.filter(f => f.roleId == r.id).length), word=statusWord("role", ""), showWord=true, place="", provenance="", wide=wide, testId=`role-${r.id}`)
+                QuietLine(text=roleKind(r), testId=`role-kind-${r.id}`)
+                for o in othersOf(overlaps, r.id) key=o
+                  OverlapLine(other=o, otherName=placeName(bank.places, o), home=home, testId=`role-${r.id}-overlap-${o}`)
+            for f in bank.facts.filter(f => f.roleId == r.id and factMatches(f, q)) key=f.id
+              Record(code=factRef(f.id), name=f.text, href=`/record/fact/${f.id}`, strong=false, dates="", extent=factMeta(f), word=statusWord("fact", ""), showWord=true, place="", provenance="", wide=wide, testId=`fact-${f.id}`)
+
+// A role: its record, what kind of work it was (which decides how much it counts toward a job's fit), and its
+// facts. Saving the kind of work returns to Experience; leaving with a change asks first.
+component RoleScreen
+  props
+    role: Role
+    facts: Fact[]
+    employers: Role[]
+    places: Place[]
+    overlaps: Overlap[]
+    error: string
+    busy: bool
+    wide: bool
+    save: action
+    back: action
+    home: action
+  state standing = role.standing
+  state reach = role.reach
+  state partOf = role.partOf
+  derive dirty = standing != role.standing or reach != role.reach or partOf != role.partOf
+  action leave
+    if dirty
+      showModal("discard-edits")
+    else
+      back()
+  action pickPartOf(v: string)
+    partOf = v
+  action pickStanding(v: string)
+    standing = v
+  action pickReach(v: string)
+    reach = v
+  view
+    Page(testId="role")
+      Section(testId="role-top")
+        Action(label="Back to Experience", press=leave, disabled=false, keys="", testId="role-back")
+      Section(testId="role-head")
+        RecordHead(code=roleRef(role.id), name=role.name, dates=roleYears(role), extent=factCount(facts.length), word=statusWord("role", ""), showWord=true, place="", provenance="", testId="role-title")
+          for o in othersOf(overlaps, role.id) key=o
+            OverlapLine(other=o, otherName=placeName(places, o), home=home, testId=`role-overlap-${o}`)
+      Section(testId="role-form")
+        SectionHead(text="Kind of work", testId="role-kind-head")
+        QuietLine(text=(partOf == "" ? "Used to weigh this work when a job is read: paid, production and recent work count for more than a personal project that never shipped." : "It counts as that employer’s work, and is written up under that job in your profile and resumes."), testId="role-hint")
+        if not role.employer
+          FieldLabel(label="Done for")
+            select value=partOf change=pickPartOf aria-label="The employer it was done for" align-self="flex-start" max-width="100%" testId="role-part-of"
+              option "No employer" value=""
+              for e in employers key=e.id
+                option e.name value=e.id
+        if partOf == ""
+          FieldLabel(label="Type of work")
+            select value=standing change=pickStanding aria-label="Type of work" align-self="flex-start" max-width="100%" testId="role-standing"
+              option "Not set" value=""
+              option "Employer" value="employer"
+              option "Own company" value="own"
+              option "Contract" value="contract"
+              option "Personal project" value="personal"
+        FieldLabel(label="Reached users")
+          select value=reach change=pickReach aria-label="Reached users" align-self="flex-start" max-width="100%" testId="role-reach"
+            option "Not set" value=""
+            option "In production" value="live"
+            option "Was in production" value="retired"
+            option "Never reached users" value="never"
+        if error != ""
+          FailLine(text=error, testId="role-error")
+        Actions(testId="role-actions")
+          MainAction(label="Save kind of work", press=save(role.id, (partOf == "" ? standing : ""), reach, partOf), disabled=busy, keys="", testId="role-save")
+          Action(label="Cancel", press=leave, disabled=false, keys="", testId="role-cancel")
+      Section(testId="role-facts")
+        SectionHead(text="Facts", testId="role-facts-head")
+        for f in facts key=f.id
+          Record(code=factRef(f.id), name=f.text, href=`/record/fact/${f.id}`, strong=false, dates="", extent=factMeta(f), word=statusWord("fact", ""), showWord=true, place="", provenance="", wide=wide, testId=`role-fact-${f.id}`)
+
+// One fact: its record with where it came from, the story behind it, where it is filed, what supports it.
+component FactScreen
+  props
+    fact: Fact
+    role: string
+    error: string
+    edit: action
+    askRemove: action
+    back: action
+  view
+    Page(testId="fact")
+      Section(testId="fact-top")
+        Action(label="Back to Experience", press=back, disabled=false, keys="", testId="fact-back")
+      Section(testId="fact-head")
+        RecordHead(code=factRef(fact.id), name=fact.text, dates="", extent=factMeta(fact), word=statusWord("fact", ""), showWord=true, place="", provenance=factFrom(fact), testId="fact-text")
+      if fact.detail != ""
+        Section(testId="fact-story")
+          SectionHead(text="Story", testId="fact-story-head")
+          Line(text=fact.detail, testId="fact-detail-text")
+      Section(testId="fact-fields")
+        Labelled(label="Role", value=role, testId="fact-role")
+        Labelled(label="Category", value=kindLabel(fact.kind), testId="fact-kind")
+        if fact.metric != ""
+          Labelled(label="Measured result", value=fact.metric, testId="fact-metric")
+        if fact.skills != ""
+          Labelled(label="Skills", value=fact.skills, testId="fact-skills")
+      Section(testId="fact-support")
+        SectionHead(text="Evidence", testId="fact-evidence-head")
+        Line(text=(fact.evidence == "" ? "None recorded." : fact.evidence), testId="fact-evidence")
+      Section(testId="fact-actions")
+        if error != ""
+          FailLine(text=error, testId="fact-error")
+        MainAction(label="Edit", press=edit, disabled=false, keys="", testId="fact-edit")
+        DangerAction(label="Delete fact", press=askRemove, disabled=false, testId="fact-delete")
+
+// Edit a fact: its drafts start from the fact. Save returns to the fact on an ok reply; a refusal stays here,
+// saying why. Leaving with a change asks first.
+component EditFactScreen
+  props
+    fact: Fact
+    places: Place[]
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state body = fact.text
+  state story = fact.detail
+  state metric = fact.metric
+  state roleId = fact.roleId
+  state kind = fact.kind
+  derive dirty = body != fact.text or story != fact.detail or metric != fact.metric or roleId != fact.roleId or kind != fact.kind
+  action pickRole(v: string)
+    roleId = v
+  action pickKind(v: string)
+    kind = v
+  action leave
+    if dirty
+      showModal("discard-edits")
+    else
+      cancel()
+  action editBody(v: string)
+    body = v
+  action editStory(v: string)
+    story = v
+  action editMetric(v: string)
+    metric = v
+  view
+    Page(testId="edit")
+      Section(testId="edit-top")
+        Title(text=`Edit ${factRef(fact.id)}`, testId="edit-title")
+      Section(testId="edit-form")
+        FieldLabel(label="Fact")
+          textarea value=body input=editBody placeholder="What you did, in one sentence" aria-label="Fact" rows=4 aria-invalid=(error != "") testId="edit-text"
+        if error != ""
+          FailLine(text=error, testId="edit-error")
+        FieldLabel(label="Story")
+          textarea value=story input=editStory placeholder="The situation, what you did and decided, what was hard, what came of it" aria-label="Story" rows=6 testId="edit-story"
+        FieldLabel(label="Measured result")
+          input value=metric input=editMetric placeholder="Such as 40% fewer support tickets" aria-label="Measured result" enterkeyhint="done" testId="edit-metric"
+        QuietLine(text=(body.trim() == "" ? "Enter the fact to save it." : "Leave the result empty if nothing was measured."), testId="edit-hint")
+        FieldLabel(label="Filed under")
+          select value=roleId change=pickRole aria-label="Role" align-self="flex-start" max-width="100%" testId="edit-role"
+            for r in places key=r.id
+              option r.name value=r.id
+        FieldLabel(label="Category")
+          select value=kind change=pickKind aria-label="Category" align-self="flex-start" max-width="100%" testId="edit-kind"
+            option "Accomplishment" value="accomplishment"
+            option "Project" value="project"
+            option "Responsibility" value="responsibility"
+            option "Skill" value="skill"
+            option "Education" value="education"
+            option "Other" value="other"
+      Section(testId="edit-actions")
+        Actions(testId="edit-actions-row")
+          MainAction(label="Save", press=save(fact.id, body, story, metric, roleId, kind), disabled=(body.trim() == "" or busy), keys="", testId="edit-save")
+          Action(label="Cancel", press=leave, disabled=false, keys="", testId="edit-cancel")
+
+// The profile: one document written from the whole record, set in the two sizes, and the questions whose
+// answers would strengthen it. Writing it is slow work, said in one line.
+component ProfileScreen
+  props
+    profile: Profile
+    failed: bool
+    error: string
+    askError: string
+    asking: bool
+    write: action
+    ask: action
+    add: action
+    retry: action
+    // How much slow work is ahead of the profile while it waits ("2 ahead").
+    ahead: number
+  derive writing = profile.status == "queued" or profile.status == "running"
+  derive place = profile.status == "queued" ? (ahead == 0 ? "next" : `${ahead} ahead`) : ""
+  derive work = statusWord("work", profile.status)
+  view
+    Page(testId="profile")
+      Section(testId="profile-top")
+        Title(text="Profile", testId="profile-title")
+      if not profile.loaded
+        Section(testId="profile-wait")
+          if failed
+            FailLine(text=error, testId="profile-error")
+            Action(label="Try again", press=retry, disabled=false, keys="", testId="profile-retry")
+          else
+            QuietLine(text="Loading your profile…", testId="profile-loading")
+      else if profile.body == "" and writing
+        Section(testId="profile-wait")
+          WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. Usually a few minutes.`, testId="profile-writing")
+      else if profile.body == "" and profile.facts == 0
+        Section(testId="profile-empty")
+          Line(text="Your profile is written from the facts in your record. Add a source to start.", testId="profile-empty-text")
+          MainAction(label="Add a source", press=add, disabled=false, keys="", testId="profile-add")
+      else if profile.body == ""
+        Section(testId="profile-empty")
+          if profile.status == "failed"
+            FailLine(text=`Writing failed. ${profile.note}`, testId="profile-failed")
+          else if askError != ""
+            FailLine(text=askError, testId="profile-failed")
+          else
+            Line(text=`Claude can write it from the ${factCount(profile.facts)} in your record: who you are, how you work, what you delivered and why to hire you.`, testId="profile-empty-text")
+          MainAction(label="Write profile", press=write, disabled=asking, keys="", testId="profile-write")
+      else
+        Section(testId="profile-about")
+          if writing
+            WorkLine(word=work, place=place, text="Rewriting this from your record. Usually a few minutes. The text below is the last version.", testId="profile-state")
+          else if profile.status == "failed"
+            FailLine(text=`Rewriting failed. ${profile.note}`, testId="profile-state")
+          else if askError != ""
+            FailLine(text=askError, testId="profile-state")
+          else
+            QuietLine(text=(profile.stale ? `Written by Claude on ${profile.written}. Your record has changed since. Rewrite it to include the changes.` : `Written by Claude on ${profile.written}, from your record.`), testId="profile-state")
+          Action(label="Rewrite", press=write, disabled=(writing or asking), keys="", testId="profile-rewrite")
+        column gap=look().sectionGap testId="profile-body"
+          for p, i in profile.parts key=`${i}`
+            Section(testId=`profile-part-${i}`)
+              if p.head != ""
+                SectionHead(text=p.head, testId=`profile-head-${i}`)
+              for l, n in p.lines key=`${n}`
+                if l.kind == "item"
+                  Bulleted(testId=`profile-item-${i}-${n}`)
+                    Line(text=l.text, testId=`profile-line-${i}-${n}`)
+                else
+                  Line(text=l.text, testId=`profile-line-${i}-${n}`)
+        if profile.gaps.length > 0
+          Section(testId="profile-gaps")
+            SectionHead(text="Worth adding", testId="profile-gaps-head")
+            QuietLine(text="Answers to these would strengthen it. Pick one to answer it in Talk.", testId="profile-gaps-hint")
+            for g, i in profile.gaps key=g
+              Numbered(n=i + 1)
+                Action(label=g, press=ask(g), disabled=false, keys="", testId=`gap-${i}`)
+
+// The direction notes, edited as Markdown. They steer what the profile argues for, how jobs are judged and how
+// resumes are shaped. Save returns to the profile; leaving with a change asks first.
+component DirectionScreen
+  props
+    body: string
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state draft = body
+  action edit(v: string)
+    draft = v
+  action leave
+    if draft != body
+      showModal("discard-edits")
+    else
+      cancel()
+  view
+    Page(testId="direction")
+      Section(testId="direction-top")
+        Title(text="Direction", testId="direction-title")
+        QuietLine(text="Your own notes, in Markdown. A “Target tracks” list sets the roles your profile argues for, and a “Fit test” list of questions is answered on every job. A section you mark as a personal lens, such as numerology, is used to judge fit and is kept out of resumes and the profile.", testId="direction-hint")
+      Section(testId="direction-form")
+        textarea value=draft input=edit placeholder="Where you are heading: the tracks you want, your constraints, a fit test for a listing, how your resume should lead" aria-label="Direction notes"
+          rows=22 testId="direction-text"
+        if error != ""
+          FailLine(text=error, testId="direction-error")
+        Actions(testId="direction-actions")
+          MainAction(label="Save", press=save(draft), disabled=busy, keys="", testId="direction-save")
+          Action(label="Cancel", press=leave, disabled=false, keys="", testId="direction-cancel")
+
+// The person's own details. They open every resume, so saving rewrites the first lines of the resumes not yet
+// sent. Save returns to the profile; leaving with a change asks first.
+component DetailsScreen
+  props
+    me: Person
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state name = me.name
+  state location = me.location
+  state email = me.email
+  state phone = me.phone
+  state website = me.website
+  state github = me.github
+  state linkedin = me.linkedin
+  action editName(v: string)
+    name = v
+  action editLocation(v: string)
+    location = v
+  action editEmail(v: string)
+    email = v
+  action editPhone(v: string)
+    phone = v
+  action editWebsite(v: string)
+    website = v
+  action editGithub(v: string)
+    github = v
+  action editLinkedin(v: string)
+    linkedin = v
+  action submit
+    save(name, location, email, phone, website, github, linkedin)
+  action leave
+    if name != me.name or location != me.location or email != me.email or phone != me.phone or website != me.website or github != me.github or linkedin != me.linkedin
+      showModal("discard-edits")
+    else
+      cancel()
+  view
+    Page(testId="details")
+      Section(testId="details-top")
+        Title(text="Details", testId="details-title")
+        QuietLine(text="The name and contact line every resume opens with. Anything left empty stays off your resume.", testId="details-hint")
+      Section(testId="details-who")
+        FieldLabel(label="Name")
+          input value=name input=editName submit=submit placeholder="Your full name" aria-label="Name"
+            autocomplete="name" enterkeyhint="next" aria-invalid=(error != "" and name.trim() == "") testId="details-name"
+        FieldLabel(label="Where you live")
+          input value=location input=editLocation submit=submit placeholder="Such as Brooklyn, NY" aria-label="Where you live"
+            autocomplete="address-level2" enterkeyhint="next" testId="details-location"
+        QuietLine(text="Shown on your resume and used for a posting’s location questions.", testId="details-location-hint")
+      Section(testId="details-contact")
+        SectionHead(text="Contact", testId="details-contact-head")
+        FieldLabel(label="Email")
+          input value=email input=editEmail submit=submit placeholder="you@example.com" aria-label="Email" type="email"
+            autocapitalize="none" autocomplete="email" spellcheck=false enterkeyhint="next" testId="details-email"
+        FieldLabel(label="Phone")
+          input value=phone input=editPhone submit=submit placeholder="(212) 555-0142" aria-label="Phone" type="tel"
+            autocomplete="tel" enterkeyhint="next" testId="details-phone"
+        FieldLabel(label="Website")
+          input value=website input=editWebsite submit=submit placeholder="example.com" aria-label="Website" type="url"
+            autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="next" testId="details-website"
+        FieldLabel(label="GitHub")
+          input value=github input=editGithub submit=submit placeholder="github.com/you" aria-label="GitHub" type="url"
+            autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="next" testId="details-github"
+        FieldLabel(label="LinkedIn")
+          input value=linkedin input=editLinkedin submit=submit placeholder="linkedin.com/in/you" aria-label="LinkedIn" type="url"
+            autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="done" testId="details-linkedin"
+      Section(testId="details-actions")
+        if error != ""
+          FailLine(text=error, testId="details-error")
+        QuietLine(text="Saving updates the resume of every job still marked Not applied.", testId="details-save-hint")
+        Actions(testId="details-actions-row")
+          MainAction(label="Save", press=submit, disabled=busy, keys="", testId="details-save")
+          Action(label="Cancel", press=leave, disabled=false, keys="", testId="details-cancel")

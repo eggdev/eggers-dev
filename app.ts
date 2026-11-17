@@ -6,7 +6,7 @@ const API = import.meta.env.API_BASE_URL ?? 'http://127.0.0.1:8787';
 // A picked file is a copy under app:/tmp/picked, read here to upload it.
 export const grants = `net.fetch ${API}\nfs.read app:/tmp/picked`;
 
-const UNREACHABLE = 'Can’t reach the server. Check that it’s running, then try again.';
+const UNREACHABLE = 'The studio can’t be reached right now. Try again in a moment.';
 const headers = { 'content-type': 'application/json' };
 
 // A read: a failure fails its resource, so the app keeps the last answer it had.
@@ -106,6 +106,24 @@ const rows = (v: unknown): Record<string, unknown>[] => {
   return v as Record<string, unknown>[];
 };
 const id = (v: string) => encodeURIComponent(v);
+// The profile's Markdown as parts the screen sets in its two sizes: each heading with the paragraphs and list items
+// under it, the inline marks (bold, italic, code, a link's address) taken out. The words are kept as written.
+const plain = (t: string) => t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/(\*\*|__)(.+?)\1/g, '$2').replace(/\*(\S(?:.*?\S)?)\*/g, '$1').replace(/(^|\s)_(\S(?:.*?\S)?)_(?=\s|[.,;:!?]|$)/g, '$1$2').replace(/`([^`]+)`/g, '$1').trim();
+function partsOf(body: string): { head: string; lines: { kind: string; text: string }[] }[] {
+  const parts: { head: string; lines: { kind: string; text: string }[] }[] = [{ head: '', lines: [] }];
+  let para: string[] = [];
+  const last = () => parts[parts.length - 1];
+  const end = () => { if (para.length > 0) last().lines.push({ kind: 'para', text: plain(para.join(' ')) }); para = []; };
+  for (const line of body.split('\n')) {
+    const head = /^#{1,6}\s+(.*)$/.exec(line), item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
+    if (line.trim() === '' || /^\s*(---+|\*\*\*+)\s*$/.test(line)) end();
+    else if (head) { end(); parts.push({ head: plain(head[1]), lines: [] }); }
+    else if (item) { end(); last().lines.push({ kind: 'item', text: plain(item[1]) }); }
+    else para.push(line.trim());
+  }
+  end();
+  return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') })).filter((p) => p.head !== '' || p.lines.length > 0);
+}
 // A flag's severity, the most serious first.
 const SEVERITY = ['high', 'warn', 'info'];
 
@@ -114,24 +132,28 @@ const sources: Sources = {
     const b = (await get('/bank')) as { roles?: unknown; facts?: unknown };
     return {
       loaded: true,
-      roles: rows(b.roles).map((r) => ({ id: text(r.id), name: text(r.name), period: text(r.period), standing: text(r.standing), reach: text(r.reach), employer: r.employer === true, partOf: text(r.partOf), partOfName: text(r.partOfName) })),
+      roles: rows(b.roles).map((r) => ({ id: text(r.id), name: text(r.name), period: text(r.period), start: text(r.start), end: text(r.end), standing: text(r.standing), reach: text(r.reach), employer: r.employer === true, partOf: text(r.partOf), partOfName: text(r.partOfName) })),
       places: rows((b as { places?: unknown }).places ?? []).map((r) => ({ id: text(r.id), name: text(r.name) })),
       facts: rows(b.facts).map((f) => ({ id: text(f.id), roleId: text(f.roleId), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric),
-        skills: text(f.skills), evidence: text(f.evidence), source: text(f.source) })),
+        skills: text(f.skills), evidence: text(f.evidence), source: text(f.source), added: text(f.added), edited: f.edited === true })),
     };
   },
-  loadSources: async (): Promise<Result<'loadSources'>> => ({
-    loaded: true,
-    items: rows(await get('/sources')).map((s) => ({ id: text(s.id), kind: text(s.kind), title: text(s.title), detail: text(s.detail),
-      status: text(s.status), note: text(s.note), facts: typeof s.facts === 'number' ? s.facts : 0 })),
-  }),
+  // A waiting source's place: the worker reads one source at a time, the oldest first, so what is ahead of it is the
+  // one being read and every older one still waiting (-1 when it is not waiting).
+  loadSources: async (): Promise<Result<'loadSources'>> => {
+    const list = rows(await get('/sources')).map((s) => ({ id: text(s.id), kind: text(s.kind), title: text(s.title), detail: text(s.detail),
+      status: text(s.status), note: text(s.note), facts: typeof s.facts === 'number' ? s.facts : 0 }));
+    const ahead = (s: { id: string; status: string }) => s.status !== 'queued' ? -1
+      : list.filter((x) => x.status === 'running' || (x.status === 'queued' && Number(x.id) < Number(s.id))).length;
+    return { loaded: true, items: list.map((s) => ({ ...s, ahead: ahead(s) })) };
+  },
   loadInbox: async (): Promise<Result<'loadInbox'>> => {
     const b = (await get('/inbox')) as { folder?: unknown; files?: unknown };
     return { folder: text(b.folder), files: rows(b.files).map((f) => text(f)) };
   },
   loadProfile: async (): Promise<Result<'loadProfile'>> => {
     const p = (await get('/profile')) as Record<string, unknown>;
-    return { loaded: true, status: text(p.status), note: text(p.note), body: text(p.body), gaps: rows(p.gaps).map((g) => text(g)),
+    return { loaded: true, status: text(p.status), note: text(p.note), body: text(p.body), parts: partsOf(text(p.body)), gaps: rows(p.gaps).map((g) => text(g)),
       stale: p.stale === true, written: text(p.written), facts: typeof p.facts === 'number' ? p.facts : 0 };
   },
   // Listing every repository can take a while the first time; the server keeps the answer.
@@ -203,6 +225,11 @@ const sources: Sources = {
     return { loaded: true, busy: t.busy === true,
       messages: rows(t.messages ?? []).map((m) => ({ id: text(m.id), mine: m.mine === true, body: text(m.body), status: text(m.status), note: text(m.note), added: rows(m.added ?? []).map((x) => text(x)) })),
       questions: rows(t.questions ?? []).map((q) => ({ id: text(q.id), text: text(q.text), from: text(q.from) })) };
+  },
+  // Two roles that both say Present, while the person has not said how they relate: the open questions about them.
+  loadOverlaps: async (): Promise<Result<'loadOverlaps'>> => {
+    const q = (await get('/questions')) as { questions?: unknown };
+    return rows(q.questions ?? []).map((x) => text(x.key).split(':')).filter((k) => k[0] === 'two-current' && k.length === 3).map((k) => ({ a: k[1], b: k[2] }));
   },
   // Home: what needs the person (GET /queue). An answer or a snooze replies with the item's key, so a refusal
   // finds its item again.

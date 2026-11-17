@@ -1,34 +1,36 @@
-// Eggdev: the career knowledge bank. Six tabs, each its own stack.
-// Home: the things that need the person, one in focus (home.contract), drawn in the new look (look.contract).
-// Experience: the facts found in the sources, grouped by role. A row pushes its fact: the
-//   headline, the story behind it, what supports it; Edit is a sheet. What the person supplies
-//   is taken as true, so nothing waits for review.
-// Profile: one document written from the whole bank (who they are, how they work, what they
-//   delivered, why to hire them), and the questions whose answers would strengthen it.
-// Sources: what has been added to read (pasted text, a file, a git repository) and how each
-//   reading went. server.ts keeps it all; worker.ts reads and writes with Claude Code. All polled.
-use Badge, EmptyState, SummaryCard from "exact:content"
-use Viewport, Page, Section, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, lookNarrow, lookTight from "./look.contract"
+// Eggdev: the career studio. Five places on one main line (look.contract's MainLine), each its own stack.
+// Home: the things that need the person, one in focus (home.contract).
+// Record (record.contract and the Sources screens here): Experience, the roles and facts as records; Profile, one
+//   document written from the whole record, and the questions whose answers would strengthen it; Direction and
+//   Details, the person's own notes and contact line; Sources, what has been added to read and how each reading
+//   went. What the person supplies is taken as true, so nothing waits for review.
+// Jobs and Talk: still in the platform's look (a later stage converts them).
+// System: the Public page and the machine (backups and sign-in).
+// server.ts keeps it all; worker.ts reads and writes with Claude Code. All polled.
+use Badge, EmptyState from "exact:content"
+use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
+use Bank, Overlap, Profile, Direction, Person, ExperienceScreen, RoleScreen, FactScreen, EditFactScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, roleName, factCount, plainLoadError from "./record.contract"
 
-// The look follows ../eggers-dev: neutral greys and Geist, with one colour, a burnt orange, kept for the
-// main action of a screen or sheet (app.tamber's AccentColor). Row buttons stay the text colour.
-// Controls, bars and sheets stay the platform's.
+// The look is DESIGN.md's: Geist, one ink, one paper, two greys, hairline rules (look.contract). Jobs and Talk
+// still keep the earlier look: neutral greys, the platform's controls and sheets, and a burnt orange
+// (app.tamber's AccentColor) for a sheet's main action.
 font "Geist" = "assets/fonts/Geist.ttf"
 
 routes nav
   tab home "/"
+  // Record: Experience at its root; Profile and Sources open over it from Record's second line, each with its own
+  // screens over it in turn.
   tab bank "/record"
     role "/record/role/:id"
     fact "/record/fact/:id"
     edit "/record/fact/:id/edit"
-  tab profile "/profile"
-    direction "/profile/direction"
-    details "/profile/details"
-    publicPage "/profile/public"
-    system "/profile/system"
-  tab talk "/talk"
-    questions "/talk/questions"
+    profile "/profile"
+      direction "/profile/direction"
+      details "/profile/details"
+    sources "/sources"
+      source "/source/:id"
+      add "/sources/add"
   tab jobs "/jobs"
     job "/job/:id"
     resume "/job/:id/resume"
@@ -36,58 +38,11 @@ routes nav
     addJob "/jobs/add"
     lead "/lead/:id"
     companies "/jobs/companies"
-  tab sources "/sources"
-    source "/source/:id"
-    add "/sources/add"
-
-shape Role
-  id: string
-  name: string
-  period: string
-  // What kind of work it was, which decides how much it counts toward a job's fit.
-  // standing: employer | own | contract | personal, reach: live | retired | never; "" is not set.
-  standing: string
-  reach: string
-  // An employer is a role with a job title. A project (a repository's work) may be part of one:
-  // partOf is that employer's id, "" for none, and it then counts as that employer's work.
-  employer: bool
-  partOf: string
-  partOfName: string
-
-shape Fact
-  id: string
-  roleId: string
-  kind: string
-  text: string
-  detail: string
-  metric: string
-  skills: string
-  evidence: string
-  source: string
-
-shape Bank
-  // False until the first answer arrives: an empty bank is not a failed read.
-  loaded: bool
-  roles: Role[]
-  // Every role a fact can be filed under, with or without facts yet, and "General".
-  places: Place[]
-  facts: Fact[]
-
-shape Place
-  id: string
-  name: string
-
-shape Profile
-  loaded: bool
-  // none | queued | running | done | failed
-  status: string
-  note: string
-  body: string
-  gaps: string[]
-  // The bank has changed since the body was written.
-  stale: bool
-  written: string
-  facts: number
+  tab talk "/talk"
+    questions "/talk/questions"
+  // System: the Public page at its root, the machine over it.
+  tab publicPage "/system"
+    system "/system/backups"
 
 shape Source
   id: string
@@ -97,6 +52,8 @@ shape Source
   status: string
   note: string
   facts: number
+  // How many readings are ahead of it while it waits; -1 when it is not waiting.
+  ahead: number
 
 shape SourceList
   loaded: bool
@@ -212,22 +169,6 @@ shape Check
   question: string
   answer: string
   note: string
-
-// The person's direction notes, as Markdown.
-shape Direction
-  loaded: bool
-  body: string
-
-// The person's own details: the name and contact line every resume opens with.
-shape Person
-  loaded: bool
-  name: string
-  location: string
-  email: string
-  phone: string
-  website: string
-  github: string
-  linkedin: string
 
 // One message of the conversation. status is done | queued | running | failed (a reply being written); added lists the facts a reply put in the bank.
 shape TalkMessage
@@ -446,17 +387,11 @@ shape Reply
   ok: bool
   error: string
 
-fn kindLabel(k: string): string = k == "accomplishment" ? "Accomplishment" : k == "project" ? "Project" : k == "responsibility" ? "Responsibility" : k == "skill" ? "Skill" : k == "education" ? "Education" : "Other"
-// The row's second line: the measured result when there is one, since that is what a resume wants; else what kind of fact it is.
-fn factMatches(f: Fact, q: string): bool = q.trim() == "" or `${f.text} ${f.skills} ${f.metric}`.toLowerCase().includes(q.trim().toLowerCase())
-fn factMeta(f: Fact): string = f.metric != "" ? f.metric : kindLabel(f.kind)
-fn roleName(roles: Role[], id: string): string = match first(roles.filter(r => r.id == id)) { case some(r) => r.name, case none => "General" }
-fn factCount(n: number): string = `${n} ${n == 1 ? "fact" : "facts"}`
-fn statusText(s: Source): string = s.status == "queued" ? "Waiting to be read." : s.status == "running" ? "Claude is reading it now. A repository can take several minutes." : s.status == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
+// A source's reading in one line, and where it waits (the data module counts what is ahead of it).
+fn sourceLine(s: Source): string = s.status == "queued" ? "Read in turn, one source at a time. Usually a few minutes each." : s.status == "running" ? "Claude is reading it. Usually a few minutes; a repository can take longer." : s.status == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
+fn sourceKind(k: string): string = k == "github" ? "Repository" : k == "repo" ? "Folder" : k == "file" ? "File" : "Pasted text"
+fn sourcePlace(s: Source): string = s.ahead < 0 ? "" : s.ahead == 0 ? "next" : `${s.ahead} ahead`
 fn jobWhere(j: JobRow): string = j.company == "" ? (j.status == "queued" ? "Waiting to be read" : j.status == "running" ? "Being read now" : j.status == "failed" ? "Couldn’t be read" : j.place) : j.place == "" ? j.company : `${j.company}, ${j.place}`
-fn standingLabel(v: string): string = v == "employer" ? "Employer" : v == "own" ? "Own company" : v == "contract" ? "Contract" : v == "personal" ? "Personal project" : "Not set"
-fn reachLabel(v: string): string = v == "live" ? "In production" : v == "retired" ? "Was in production" : v == "never" ? "Never reached users" : "Not set"
-fn roleKind(r: Role): string = r.partOf != "" ? (r.reach == "" ? `Part of ${r.partOfName}, Reached users not set` : `Part of ${r.partOfName}, ${reachLabel(r.reach).toLowerCase()}`) : r.standing == "" and r.reach == "" ? "Kind of work not set" : r.reach == "" ? `${standingLabel(r.standing)}, Reached users not set` : r.standing == "" ? `${reachLabel(r.reach)}, Type of work not set` : `${standingLabel(r.standing)}, ${reachLabel(r.reach).toLowerCase()}`
 fn outcomeLabel(o: string): string = o == "applied" ? "Applied" : o == "interviewed" ? "Interviewed" : o == "rejected" ? "Rejected" : o == "no-response" ? "No response" : o == "offer" ? "Offer" : ""
 fn companyCount(n: number): string = `${n} ${n == 1 ? "company" : "companies"}`
 fn jobMeta(j: JobRow): string = [j.salary, (j.posted != "" ? `posted ${j.posted}` : j.added != "" ? `added ${j.added}` : ""), (j.contact != "" ? "you know someone there" : "")].filter(x => x != "").join(", ")
@@ -543,14 +478,21 @@ component App
   resource lead = loadLead(selectedLead) as shape LeadDetail else empty()
   resource companies = loadCompanies() as shape CompanyList else empty()
   resource viewport = exactViewport() as shape Viewport else empty()
-  // On a wide window a sheet is a dialog as tall as its content, so a long list is given a height to scroll in.
+  // Only the root reads the window; the new-look screens are told whether it is wide (two columns, a ledger).
+  derive wide = viewport.width >= lookNarrow()
+  // On a wide window a sheet (Jobs, Talk) is a dialog as tall as its content, so a long list is given a height to scroll in.
   // A phone's sheet fills the screen and its list already scrolls.
-  // A sidebar's labels (a wide window) are the platform's reading size; a tab bar's are small and stop growing where four still fit a phone.
-  // The size is written out in each branch: a size worked out from state is not read as a capped text style.
-  derive wideWindow = viewport.width >= 900
-  // A sheet whose content changes with a choice (the kind of source) keeps a floor on a wide window, so the dialog does not jump in size.
-  derive sheetFloor = viewport.width >= 900 ? 340 : 0
   derive sheetList = viewport.width >= 900 ? max(240, viewport.height - 340) : 100000
+  // Which place of the main line is shown, and which screen of Record's second line: Sources marks its own
+  // screens too, and Profile marks the profile's (Direction and Details mark themselves).
+  derive inRecord = nav.tab == "bank"
+  derive inSystem = nav.tab == "publicPage"
+  derive recordAt = stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
+  // The open questions about two roles that both say Present, read while Experience or a role is shown.
+  derive onExperience = top(nav).name == "bank" or top(nav).name == "role"
+  resource overlaps = loadOverlaps() when onExperience as shape Overlap[] else empty()
+  // What the worker reads before it writes the profile: every source waiting or being read, and a job being read.
+  derive profileAhead = lib.items.filter(x => x.status == "queued" or x.status == "running").length + jobs.items.filter(j => j.status == "running").length
   mutation asked as shape Reply refreshes profile
   mutation notesSaved as shape Reply refreshes notes then afterNotes
   mutation personSaved as shape Reply refreshes me, job then afterPerson
@@ -559,7 +501,7 @@ component App
   mutation talkCleared as shape Reply refreshes talk
   mutation savedFact as shape Reply refreshes bank, profile then afterSaveFact
   mutation removedFact as shape Reply refreshes bank, profile then afterRemoveFact
-  mutation roleSaved as shape Reply refreshes bank then afterRoleSave
+  mutation roleSaved as shape Reply refreshes bank, overlaps then afterRoleSave
   mutation added as shape Reply refreshes lib, inbox, hub then afterAdd
   mutation reread as shape Reply refreshes lib
   mutation jobAdded as shape Reply refreshes jobs then afterJobAdd
@@ -616,7 +558,7 @@ component App
   derive selectedSource = match stack(nav).filter(e => e.name == "source").at(-1) { case some(e) => e.params.id, case none => "" }
   derive readCount = lib.items.filter(s => s.status == "done").length
   derive writing = profile.status == "queued" or profile.status == "running"
-  derive profileError = match failure(profile) { case some(f) => loadError(f.code), case none => "" }
+  derive profileError = match failure(profile) { case some(f) => plainLoadError(f.code), case none => "" }
   derive notesError = pending(notesSaved) ? "" : match notesSaved { case some(r) => r.error, case none => "" }
   derive talkError = pending(talkSent) ? "" : match talkSent { case some(r) => r.error, case none => "" }
   derive clearTalkError = pending(talkCleared) ? "" : match talkCleared { case some(r) => r.error, case none => "" }
@@ -624,11 +566,10 @@ component App
   derive lastTalk = match talk.messages.at(-1) { case some(m) => m.id, case none => "" }
   derive personError = pending(personSaved) ? "" : match personSaved { case some(r) => r.error, case none => "" }
   derive askError = pending(asked) ? "" : match asked { case some(r) => r.error, case none => "" }
-  derive bankError = match failure(bank) { case some(f) => loadError(f.code), case none => "" }
-  derive libError = match failure(lib) { case some(f) => loadError(f.code), case none => "" }
+  derive bankError = match failure(bank) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive libError = match failure(lib) { case some(f) => plainLoadError(f.code), case none => "" }
   derive removeFactError = pending(removedFact) ? "" : match removedFact { case some(r) => r.error, case none => "" }
   derive roleError = pending(roleSaved) ? "" : match roleSaved { case some(r) => r.error, case none => "" }
-  derive unclassed = bank.roles.filter(r => r.id != "0" and r.partOf == "" and (r.standing == "" or r.reach == "")).length
   derive saveFactError = pending(savedFact) ? "" : match savedFact { case some(r) => r.error, case none => "" }
   derive addError = match added { case some(r) => r.error, case none => "" }
   derive rereadError = pending(reread) ? "" : match reread { case some(r) => r.error, case none => "" }
@@ -670,7 +611,7 @@ component App
   derive pubField = pubEdited ? pubDraft : pub.text
   derive pubDirty = pub.loaded and pubEdited and pubDraft.trim() != pub.text.trim()
   derive pubTooLong = pubField.length > 120000
-  derive pubLoadError = match failure(pub) { case some(f) => loadError(f.code), case none => "" }
+  derive pubLoadError = match failure(pub) { case some(f) => plainLoadError(f.code), case none => "" }
   derive liveError = match failure(live) { case some(f) => failText(f.code), case none => "" }
   derive draftOk = match drafted { case some(r) => r.ok, case none => false }
   derive draftReply = match drafted { case some(r) => r.text, case none => "" }
@@ -742,6 +683,25 @@ component App
     nav = select(nav, name)
   action back
     nav = back(nav)
+  // Record's second line. Each screen opens over Experience; Direction and Details open over the profile, as they
+  // always have, so saving them returns there.
+  action goRecord(name: string)
+    if name == "direction"
+      openDirection()
+    else if name == "details"
+      openDetails()
+    else if name == "profile"
+      nav = push(select(nav, "bank"), "/profile")
+    else if name == "sources"
+      nav = push(select(nav, "bank"), "/sources")
+    else
+      pick("bank")
+  // System's second line: the Public page and the machine.
+  action goSystem(name: string)
+    if name == "system"
+      openSystem()
+    else
+      openPublic()
   // A row is a link; Back, Forward and a deep link arrive here too. A phone pushes the
   // detail; a wide window replaces the one beside the list.
   action follow(url: string)
@@ -914,7 +874,7 @@ component App
     send checkAsked = checkWatchlist()
   action openDirection
     refresh notes
-    nav = push(select(nav, "profile"), "/profile/direction")
+    nav = push(push(select(nav, "bank"), "/profile"), "/profile/direction")
   action saveNotes(body: string)
     send notesSaved = saveDirection(body)
   action afterNotes
@@ -954,17 +914,21 @@ component App
     send talkCleared = clearTalk()
   action openDetails
     refresh me
-    nav = push(select(nav, "profile"), "/profile/details")
+    nav = push(push(select(nav, "bank"), "/profile"), "/profile/details")
   action openPublic
+    sendHeld()
+    rowTried = false
+    talkAct = ""
     ticked = performanceNow()
     pubAct = ""
     if not pubDirty
       pubEdited = false
-    nav = push(select(nav, "profile"), "/profile/public")
+    nav = select(nav, "publicPage")
   action openSystem
+    sendHeld()
     ticked = performanceNow()
     sysAct = ""
-    nav = push(select(nav, "profile"), "/profile/system")
+    nav = push(select(nav, "publicPage"), "/system/backups")
   action editPublic(v: string)
     pubDraft = v
     pubEdited = true
@@ -1069,7 +1033,7 @@ component App
     refusal = ""
     refresh inbox
     refresh hub
-    nav = push(select(nav, "sources"), "/sources/add")
+    nav = push(push(select(nav, "bank"), "/sources"), "/sources/add")
   action setKind(v: string)
     kind = v
     refusal = ""
@@ -1093,10 +1057,11 @@ component App
     draftRepo = v
   action searchHub(v: string)
     hubQuery = v
-  action toggleRepo(full: string)
-    chosen = chosen.includes(full) ? chosen.filter(c => c != full) : chosen.concat([full])
-  action toggleExtra
-    showExtra = not showExtra
+  // A repository's box: the event hands the repository first, then whether it is now ticked.
+  action tickRepo(full: string, on: bool)
+    chosen = on ? (chosen.includes(full) ? chosen : chosen.concat([full])) : chosen.filter(c => c != full)
+  action tickExtra(on: bool)
+    showExtra = on
   action reloadHub
     refresh hub
   action editAuthor(v: string)
@@ -1128,145 +1093,62 @@ component App
 
   view
     main navigationKey=`${top(nav).id}` navigationBack="back" navigate=follow testId="app"
-      width="100%" height="100%" display="flex" flex-direction="column" font-family="'Geist', system-ui"
+      width="100%" height="100%" display="flex" flex-direction="column" font-family="'Geist', system-ui" background-color="look.paper"
+      // The main line (DESIGN.md): the places as plain words. Record holds Experience, Profile, Direction, Details and
+      // Sources; System holds the Public page and the machine. Each drawn screen has its second line itself.
+      MainLine(testId="nav")
+        NavTab(label="Home", current=(nav.tab == "home"), quiet=false, far=false, controls="panel-home", press=pick("home"), testId="nav-home")
+        NavTab(label="Record", current=inRecord, quiet=false, far=false, controls="panel-bank", press=pick("bank"), testId="nav-record")
+        NavTab(label="Jobs", current=(nav.tab == "jobs"), quiet=false, far=false, controls="panel-jobs", press=pick("jobs"), testId="nav-jobs")
+        NavTab(label="Talk", current=(nav.tab == "talk"), quiet=false, far=false, controls="panel-talk", press=pick("talk"), testId="nav-talk")
+        NavTab(label="System", current=inSystem, quiet=true, far=true, controls="panel-publicPage", press=openPublic, testId="nav-system")
+      // The second line of a place that holds several screens, drawn once, under the main line.
+      if inRecord
+        SubBar(testId="subnav")
+          RecordNav(at=recordAt, go=goRecord)
+      if inSystem
+        SubBar(testId="subnav")
+          SystemNav(at=top(nav).name, go=goSystem)
       column flex=1 min-height=0 position="relative"
         for t in nav.tabs key=t.name
-          column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0
+          // The bar is the app's own (appearance="none"), so the app hides the tabs not shown (DESIGN.md; docs/recipes/tabs.md).
+          column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0 display=(nav.tab == t.name ? "flex" : "none")
             for e in t.stack key=e.id
               if e.name == "home"
                 column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="home-scroll" flex=1 min-height=0
                     HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome)
               if e.name == "bank"
-                column navigationKey=`${e.id}` navigationScroll="bank-list" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "Experience" role="heading" aria-level=1 flex=1
-                  if not bank.loaded
-                    if pending(bank)
-                      column flex=1 justify-content="center" align-items="center"
-                        progress aria-label="Loading" testId="bank-loading"
-                    else
-                      EmptyState(symbol="symbol:alert", title="Can’t Load Experience", message=bankError)
-                        button press=pull testId="bank-retry"
-                          text "Try Again"
-                  else if bank.facts.length == 0
-                    EmptyState(symbol="symbol:document", title="No Experience Yet", message="Add a resume, a LinkedIn export or a repository. What Claude finds in it appears here, by role.")
-                      button press=openAdd testId="bank-add"
-                        text "Add a Source"
-                  else
-                    column padding="12px 16px"
-                      input type="search" value=bankQuery input=searchBank placeholder="Search facts and skills" aria-label="Search facts"
-                        autocapitalize="none" autocomplete="off" testId="bank-search"
-                    list id="bank-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      if bankQuery.trim() != "" and bank.facts.filter(f => factMatches(f, bankQuery)).length == 0
-                        section
-                          row
-                            text `No fact matches “${bankQuery.trim()}”.` color="-exact-secondary-label" flex=1 min-width=0 testId="bank-none"
-                      if unclassed > 0 and bankQuery.trim() == ""
-                        section
-                          row
-                            text `Kind of work isn’t set for ${unclassed} ${unclassed == 1 ? "role" : "roles"}, so that work counts as middling evidence for a job. Set it on each one’s Kind of Work row.` flex=1 min-width=0 color="-exact-secondary-label" testId="bank-unclassed"
-                      for r in bank.roles.filter(r => bankQuery.trim() == "" or bank.facts.filter(f => f.roleId == r.id and factMatches(f, bankQuery)).length > 0) key=r.id
-                        section
-                          header
-                            text (r.period == "" ? r.name : `${r.name}, ${r.period}`)
-                          if r.id != "0" and bankQuery.trim() == ""
-                            link href=path("role", r.id) testId=`role-${r.id}`
-                              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                text "Kind of work" font="-exact-footnote" color="-exact-secondary-label"
-                                text roleKind(r) testId=`role-kind-${r.id}`
-                              image "symbol:forward-chevron"
-                          for f in bank.facts.filter(f => f.roleId == r.id and factMatches(f, bankQuery)) key=f.id
-                            link href=path("fact", f.id) testId=`fact-${f.id}`
-                              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                text f.text
-                                text factMeta(f) font="-exact-subheadline" color="-exact-secondary-label"
-                              image "symbol:forward-chevron"
-                    // A wide window shows this beside the list while no fact is selected.
-                    column navigationSplit="placeholder" flex=1 justify-content="center" align-items="center" padding=24
-                      column gap=16 width="100%" max-width="26.25rem"
-                        SummaryCard(label="In your bank", value=`${bank.facts.length}`, detail=`${bank.facts.length == 1 ? "fact" : "facts"} across ${bank.roles.length} ${bank.roles.length == 1 ? "role" : "roles"}`, progress=none, symbol=some("symbol:person"))
-                        text "Select a fact to read its story and what supports it, or to edit it." color="-exact-secondary-label" text-align="center" testId="bank-overview"
+                column navigationKey=`${e.id}` navigationScroll="bank-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="bank-scroll" flex=1 min-height=0
+                    ExperienceScreen(bank=bank, failed=failed(bank), error=bankError, query=bankQuery, overlaps=overlaps, wide=wide, search=searchBank, add=openAdd, retry=pull, home=pick("home"))
               if e.name == "fact"
-                column navigationKey=`${e.id}` navigationScroll="fact-detail" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "Fact" role="heading" aria-level=2
-                  if not bank.loaded
-                    column flex=1 justify-content="center" align-items="center" padding=24
-                      if bankError != ""
-                        text bankError color="-exact-secondary-label" text-align="center"
-                      else
-                        progress aria-label="Loading"
-                  else if bank.facts.filter(x => x.id == e.params.id).length == 0
-                    EmptyState(symbol="symbol:document", title="Fact Not Found", message="It was deleted, or replaced when its source was read again.")
-                      button press=back testId="fact-gone-back"
-                        text "Back to Experience"
-                  else
-                    list id="fact-detail" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
-                        FactSections(fact=f, role=roleName(bank.roles, f.roleId), error=(actedFact == f.id and lastFactAct == "remove" ? removeFactError : ""), edit=openEdit, askRemove=askRemoveFact)
-              if e.name == "role" and bank.roles.filter(x => x.id == e.params.id).length == 0
-                SheetWait(route=e.id, title="Kind of Work", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This role is no longer in your bank." : bankError), close=back)
-              if e.name == "edit" and bank.facts.filter(x => x.id == e.params.id).length == 0
-                SheetWait(route=e.id, title="Edit Fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your bank." : bankError), close=back)
+                column navigationKey=`${e.id}` navigationScroll="fact-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="fact-scroll" flex=1 min-height=0
+                    if bank.facts.filter(x => x.id == e.params.id).length == 0
+                      RecordWait(title="Fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your record. It was deleted, or replaced when its source was read again." : bankError), backLabel="Back to Experience", back=back, testId="fact-gone")
+                    for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
+                      FactScreen(fact=f, role=roleName(bank.roles, f.roleId), error=(actedFact == f.id and lastFactAct == "remove" ? removeFactError : ""), edit=openEdit, askRemove=askRemoveFact, back=back)
+              if e.name == "role"
+                column navigationKey=`${e.id}` navigationScroll="role-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="role-scroll" flex=1 min-height=0
+                    if bank.roles.filter(x => x.id == e.params.id).length == 0
+                      RecordWait(title="Role", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This role is no longer in your record." : bankError), backLabel="Back to Experience", back=back, testId="role-gone")
+                    for r in bank.roles.filter(x => x.id == e.params.id) key=r.id
+                      RoleScreen(role=r, facts=bank.facts.filter(f => f.roleId == r.id), employers=bank.roles.filter(x => x.employer), places=bank.places, overlaps=overlaps, error=roleError, busy=pending(roleSaved), wide=wide, save=saveRole, back=back, home=pick("home"))
+              if e.name == "edit"
+                column navigationKey=`${e.id}` navigationScroll="edit-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="edit-scroll" flex=1 min-height=0
+                    if bank.facts.filter(x => x.id == e.params.id).length == 0
+                      RecordWait(title="Edit fact", waiting=(not bank.loaded and bankError == ""), message=(bank.loaded ? "This fact is no longer in your record." : bankError), backLabel="Back to Experience", back=back, testId="edit-gone")
+                    for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
+                      EditFactScreen(fact=f, places=bank.places, error=(actedFact == f.id and lastFactAct == "save" ? saveFactError : ""), busy=pending(savedFact), save=saveFact, cancel=back)
               if e.name == "editResume" and not (job.loaded and job.id == e.params.id)
                 SheetWait(route=e.id, title="Edit Resume", waiting=(not failed(job)), message="Couldn’t load this job. It may have been deleted.", close=back)
-              if e.name == "role"
-                for r in bank.roles.filter(x => x.id == e.params.id) key=r.id
-                  EditRole(route=e.id, role=r, employers=bank.roles.filter(x => x.employer), error=roleError, busy=pending(roleSaved), save=saveRole, cancel=back)
-              if e.name == "edit"
-                for f in bank.facts.filter(x => x.id == e.params.id) key=f.id
-                  EditFact(route=e.id, fact=f, roles=bank.places, error=(actedFact == f.id and lastFactAct == "save" ? saveFactError : ""), busy=pending(savedFact), save=saveFact, cancel=back)
               if e.name == "profile"
-                column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Profile" role="heading" aria-level=1 flex=1
-                    // Four buttons: like a bar's, their labels stop growing at a large text size, so the header fits a phone.
-                    button press=openDetails testId="open-details"
-                      text "Details" font-size="min(-exact-body, 22px)"
-                    button press=openDirection testId="open-direction"
-                      text "Direction" font-size="min(-exact-body, 22px)"
-                    button press=openPublic testId="open-public"
-                      text "Public Page" font-size="min(-exact-body, 22px)" white-space="nowrap"
-                    // The machine's page is the quietest: a symbol, named for a screen reader.
-                    button press=openSystem aria-label="System" testId="open-system"
-                      image "symbol:settings" font-size="min(-exact-body, 22px)"
-                  if not profile.loaded
-                    if pending(profile)
-                      column flex=1 justify-content="center" align-items="center"
-                        progress aria-label="Loading" testId="profile-loading"
-                    else
-                      EmptyState(symbol="symbol:alert", title="Can’t Load Profile", message=profileError)
-                        button press=pull testId="profile-retry"
-                          text "Try Again"
-                  else if profile.body == "" and writing
-                    column flex=1 justify-content="center" align-items="center" gap=12 padding=24
-                      progress aria-label="Writing"
-                      text `Claude is writing your profile from ${factCount(profile.facts)}. This takes a few minutes.` color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="profile-writing"
-                  else if profile.body == "" and profile.facts == 0
-                    EmptyState(symbol="symbol:person", title="No Profile Yet", message="Your profile is written from the facts in your bank. Add a source to start.")
-                      button press=openAdd testId="profile-add"
-                        text "Add a Source"
-                  else if profile.body == ""
-                    EmptyState(symbol="symbol:person", title="No Profile Yet", message=(profile.status == "failed" ? `Writing failed. ${profile.note}` : askError != "" ? askError : `Claude can write it from the ${factCount(profile.facts)} in your bank: who you are, how you work, what you delivered and why to hire you.`))
-                      button press=writeProfile disabled=pending(asked) buttonStyle="filled" testId="profile-write"
-                        text "Write Profile"
-                  else
-                    scroll id="profile-scroll" flex=1 min-height=0
-                      column gap=24 padding=16 max-width="45rem" width="100%" box-sizing="border-box" margin-left="auto" margin-right="auto"
-                        row gap=12 align-items="center" flex-wrap="wrap"
-                          text (writing ? "Claude is rewriting this from your bank now." : profile.status == "failed" ? `Rewriting failed. ${profile.note}` : askError != "" ? askError : profile.stale ? `Written by Claude on ${profile.written}. Your bank has changed since. Rewrite to include it.` : `Written by Claude on ${profile.written}, from your bank.`) flex="1 1 12rem" min-width=0 font="-exact-footnote" color=(profile.status == "failed" or askError != "" ? "-exact-system-red" : "-exact-secondary-label") testId="profile-state"
-                          button press=writeProfile disabled=(writing or pending(asked)) buttonStyle="bordered" testId="profile-rewrite"
-                            text "Rewrite"
-                        text profile.body markup="markdown" testId="profile-body"
-                        if profile.gaps.length > 0
-                          column gap=8 padding=16 border-radius=12 background-color="surface.note"
-                            text "Worth adding" role="heading" aria-level=2 font="-exact-headline"
-                            text "Answers to these would strengthen it. Pick one to answer it in Talk." font="-exact-footnote" color="text.muted"
-                            for g, i in profile.gaps key=g
-                              button press=askQuestion(g) accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start" testId=`gap-${i}`
-                                text g flex=1 min-width=0
-                                image "symbol:forward-chevron" aria-hidden=true
+                column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="profile-scroll" flex=1 min-height=0
+                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=profileAhead, write=writeProfile, ask=askQuestion, add=openAdd, retry=pull)
               if e.name == "talk"
                 column navigationKey=`${e.id}` navigationScroll="transcript" position="absolute" inset=0
                   header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
@@ -1346,184 +1228,157 @@ component App
                             text askTalkError color="-exact-system-red" flex=1 min-width=0 testId="questions-error"
                         footer
                           text "Pick one and Claude asks it. Your answer goes into your bank."
-              if e.name == "details" and not me.loaded
-                SheetWait(route=e.id, title="Your Details", waiting=pending(me), message="Can’t reach the server. Check that it’s running, then open this again.", close=back)
-              if e.name == "direction" and not notes.loaded
-                SheetWait(route=e.id, title="Direction", waiting=pending(notes), message="Can’t reach the server. Check that it’s running, then open this again.", close=back)
               if e.name == "details"
-                if me.loaded
-                  EditDetails(route=e.id, me=me, height=sheetList, error=personError, busy=pending(personSaved), save=savePerson, cancel=back)
+                column navigationKey=`${e.id}` navigationScroll="details-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="details-scroll" flex=1 min-height=0
+                    if me.loaded
+                      DetailsScreen(me=me, error=personError, busy=pending(personSaved), save=savePerson, cancel=back)
+                    else
+                      RecordWait(title="Details", waiting=(not failed(me)), message="Your details couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="details-wait")
               if e.name == "direction"
-                if notes.loaded
-                  EditDirection(route=e.id, body=notes.body, height=sheetList, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
+                column navigationKey=`${e.id}` navigationScroll="direction-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="direction-scroll" flex=1 min-height=0
+                    if notes.loaded
+                      DirectionScreen(body=notes.body, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
+                    else
+                      RecordWait(title="Direction", waiting=(not failed(notes)), message="Your direction notes couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="direction-wait")
               // The public collection: written, saved and published here, each only by the person's own press.
               if e.name == "publicPage"
-                column navigationKey=`${e.id}` navigationScroll="public-form" position="absolute" inset=0
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Public Page" role="heading" aria-level=2 flex=1
-                    if pub.loaded
-                      button press=saveCollection disabled=(not pubDirty or pubTooLong or pubField.trim() == "" or pending(pubSaved)) buttonStyle="bordered-prominent" testId="public-save"
-                        text (pending(pubSaved) ? "Saving…" : "Save")
-                  if not pub.loaded
-                    column flex=1 justify-content="center" align-items="center" padding=24
-                      if pubLoadError != ""
-                        text pubLoadError color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="public-load-error"
+                column navigationKey=`${e.id}` navigationScroll="public-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="public-scroll" flex=1 min-height=0
+                    Page(testId="public")
+                      Section(testId="public-top")
+                        Title(text="Public page", testId="public-title")
+                      if not pub.loaded
+                        Section(testId="public-wait")
+                          if pubLoadError != ""
+                            FailLine(text=pubLoadError, testId="public-load-error")
+                          else
+                            QuietLine(text="Loading…", testId="public-loading")
                       else
-                        progress aria-label="Loading" testId="public-loading"
-                  else
-                    list id="public-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      section
-                        header
-                          text "On the public page"
-                        row
-                          column flex=1 min-width=0 gap=4 padding-top=4 padding-bottom=4
-                            text liveLine hyphens="manual" testId="public-live"
-                            if liveNote != ""
-                              text liveNote font="-exact-subheadline" color="-exact-secondary-label" testId="public-live-note"
-                        if liveHere
-                          button press=askPublish disabled=(not canPublish) testId="public-publish"
-                            text (pending(published) ? "Publishing…" : "Publish Saved Text")
-                        if isLive
-                          button press=askUnpublish disabled=(pending(unpublished) or pending(published)) destructive=true testId="public-unpublish"
-                            text (pending(unpublished) ? "Taking the Chat Offline…" : "Take the Chat Offline")
-                        if (live.loaded and live.where == "starting") or liveError != ""
-                          button press=recheckLive disabled=pending(live) testId="public-recheck"
-                            text "Check Again"
-                        if (pubAct == "publish" and publishError != "") or (pubAct == "unpublish" and unpublishError != "")
-                          row
-                            text (pubAct == "publish" ? `Not published. ${publishError}` : `The chat is still on. ${unpublishError}`) color="-exact-system-red" flex=1 min-width=0 testId="public-live-error"
-                        footer
-                          text (not liveHere ? "The public chat answers only from text you publish." : pubDirty ? "Save your changes first. Only the saved text can be published." : "Publishing puts your saved text on the public page.")
-                      section
-                        header
-                          text "Public collection"
-                        row padding-top=8 padding-bottom=8
-                          textarea value=pubField input=editPublic rows=16 aria-label="Public collection" testId="public-text" flex=1 min-width=0
+                        Section(testId="public-live-section")
+                          SectionHead(text="On the public page", testId="public-live-head")
+                          if liveHere
+                            WorkLine(word=statusWord("public", (isLive ? "live" : "offline")), place="", text=liveLine, testId="public-live")
+                          else
+                            Line(text=liveLine, testId="public-live")
+                          if liveNote != ""
+                            QuietLine(text=liveNote, testId="public-live-note")
+                          if (pubAct == "publish" and publishError != "") or (pubAct == "unpublish" and unpublishError != "")
+                            FailLine(text=(pubAct == "publish" ? `Not published. ${publishError}` : `The chat is still on. ${unpublishError}`), testId="public-live-error")
+                          if liveHere
+                            MainAction(label=(pending(published) ? "Publishing…" : "Publish saved text"), press=askPublish, disabled=(not canPublish), keys="", testId="public-publish")
+                          if isLive
+                            DangerAction(label=(pending(unpublished) ? "Taking the chat offline…" : "Take the chat offline"), press=askUnpublish, disabled=(pending(unpublished) or pending(published)), testId="public-unpublish")
+                          if (live.loaded and live.where == "starting") or liveError != ""
+                            Action(label="Check again", press=recheckLive, disabled=pending(live), keys="", testId="public-recheck")
+                          QuietLine(text=(not liveHere ? "The public chat answers only from text you publish." : pubDirty ? "Save your changes first. Only the saved text can be published." : "Publishing puts your saved text on the public page."), testId="public-live-hint")
+                        Section(testId="public-collection")
+                          SectionHead(text="Public collection", testId="public-collection-head")
+                          textarea value=pubField input=editPublic rows=16 aria-label="Public collection" testId="public-text"
                             placeholder="What anyone may ask the public chat about: your work, your projects and your interests, in your words."
-                        row gap=12
-                          text pubState flex=1 min-width=0 font="-exact-subheadline" font-weight=(pubDirty or pubTooLong ? 600 : 400)
-                            color=(pubTooLong ? "-exact-system-red" : pubDirty ? "-exact-label" : "-exact-secondary-label") testId=(pubDirty ? "public-unsaved" : "public-saved")
+                          if pubTooLong
+                            FailLine(text=pubState, testId=(pubDirty ? "public-unsaved" : "public-saved"))
+                          else if pubDirty
+                            StrongLine(text=pubState, testId="public-unsaved")
+                          else
+                            QuietLine(text=pubState, testId="public-saved")
                           if pubField.length > 96000 and not pubTooLong
-                            text `${thousands(pubField.length)} of 120,000 characters` font="-exact-subheadline" color="-exact-secondary-label" font-variant-numeric="tabular-nums" testId="public-count"
-                        if pubAct == "save" and pubSaveError != ""
-                          row
-                            text `Not saved. ${pubSaveError}` color="-exact-system-red" flex=1 min-width=0 testId="public-save-error"
-                      section
-                        button press=askDraft disabled=pending(drafted) accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start" testId="public-draft"
-                          image "symbol:document" aria-hidden=true
-                          text (pending(drafted) ? "Making a Draft…" : "Start from My Bank")
-                        if pubAct == "draft" and draftError != ""
-                          row
-                            text `No draft was made. ${draftError}` color="-exact-system-red" flex=1 min-width=0 testId="public-draft-error"
-                        footer
-                          text "Puts a draft made from the facts in your bank into the field. Nothing is saved until you press Save."
-                      section
-                        header
-                          text "Lines to check before you publish"
-                        if notesStale
-                          row
-                            text "These notes were for the text before your latest edits." color="-exact-secondary-label" flex=1 min-width=0 testId="public-notes-stale"
-                          button press=checkAgain disabled=pending(checked) testId="public-check"
-                            text (pending(checked) ? "Checking…" : "Check the Field Again")
-                          if pubAct == "check" and noteCheckError != ""
-                            row
-                              text noteCheckError color="-exact-system-red" flex=1 min-width=0 testId="public-check-error"
-                        else if shownNotes.length == 0
-                          row
-                            text "No lines to check." color="-exact-secondary-label" flex=1 min-width=0 testId="public-notes-none"
-                        else
-                          for n, i in shownNotes key=`${n.line} ${n.kind}`
-                            row
-                              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                text noteLabel(n) font="-exact-footnote" color="-exact-secondary-label" testId=`public-note-${i}`
-                                text n.text overflow-wrap="break-word" testId=`public-note-text-${i}`
-                        footer
-                          text "Advice only: these lines may hold money, a person or client, a link, or inside knowledge. You decide what is public."
+                            QuietLine(text=`${thousands(pubField.length)} of 120,000 characters`, testId="public-count")
+                          if pubAct == "save" and pubSaveError != ""
+                            FailLine(text=`Not saved. ${pubSaveError}`, testId="public-save-error")
+                          MainAction(label=(pending(pubSaved) ? "Saving…" : "Save"), press=saveCollection, disabled=(not pubDirty or pubTooLong or pubField.trim() == "" or pending(pubSaved)), keys="", testId="public-save")
+                        Section(testId="public-drafting")
+                          Action(label=(pending(drafted) ? "Making a draft…" : "Start from my record"), press=askDraft, disabled=pending(drafted), keys="", testId="public-draft")
+                          if pubAct == "draft" and draftError != ""
+                            FailLine(text=`No draft was made. ${draftError}`, testId="public-draft-error")
+                          QuietLine(text="Puts a draft made from the facts in your record into the field. Nothing is saved until you press Save.", testId="public-draft-hint")
+                        Section(testId="public-notes")
+                          SectionHead(text="Lines to check before you publish", testId="public-notes-head")
+                          if notesStale
+                            QuietLine(text="These notes were for the text before your latest edits.", testId="public-notes-stale")
+                            Action(label=(pending(checked) ? "Checking…" : "Check the field again"), press=checkAgain, disabled=pending(checked), keys="", testId="public-check")
+                            if pubAct == "check" and noteCheckError != ""
+                              FailLine(text=noteCheckError, testId="public-check-error")
+                          else if shownNotes.length == 0
+                            QuietLine(text="No lines to check.", testId="public-notes-none")
+                          else
+                            for n, i in shownNotes key=`${n.line} ${n.kind}`
+                              column
+                                QuietLine(text=noteLabel(n), testId=`public-note-${i}`)
+                                Line(text=n.text, testId=`public-note-text-${i}`)
+                          QuietLine(text="Advice only: these lines may hold money, a person or client, a link, or inside knowledge. You decide what is public.", testId="public-notes-hint")
               // The cloud machine, from the studio's Worker: backups first, then the model's sign-in, then the machine itself.
               if e.name == "system"
-                column navigationKey=`${e.id}` navigationScroll="system-list" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "System" role="heading" aria-level=2
-                  if not sys.loaded or sys.where != "here"
-                    column flex=1 justify-content="center" align-items="center" padding=24 gap=12
-                      if sys.loaded and sys.where == "absent"
-                        text "This screen works only in the deployed studio." color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-absent"
-                      else if sys.loaded and sys.where == "starting"
-                        text "The machine is starting. Try again in a moment." color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-starting"
-                        button press=pullSystem disabled=pending(sys) buttonStyle="bordered" testId="system-retry"
-                          text "Try Again"
-                      else if sysLoadError != ""
-                        text `Couldn’t check the machine. ${sysLoadError}` color="-exact-secondary-label" text-align="center" max-width="26.25rem" testId="system-error"
-                        button press=pullSystem disabled=pending(sys) buttonStyle="bordered" testId="system-retry"
-                          text "Try Again"
+                column navigationKey=`${e.id}` navigationScroll="system-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="system-scroll" flex=1 min-height=0
+                    Page(testId="system")
+                      Section(testId="system-top")
+                        Title(text="Backups and sign-in", testId="system-title")
+                      if not sys.loaded or sys.where != "here"
+                        Section(testId="system-wait")
+                          if sys.loaded and sys.where == "absent"
+                            Line(text="This screen works only in the deployed studio.", testId="system-absent")
+                          else if sys.loaded and sys.where == "starting"
+                            Line(text="The machine is starting. Try again in a moment.", testId="system-starting")
+                            Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
+                          else if sysLoadError != ""
+                            FailLine(text=`Couldn’t check the machine. ${sysLoadError}`, testId="system-error")
+                            Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
+                          else
+                            QuietLine(text="Checking the machine…", testId="system-loading")
                       else
-                        progress aria-label="Loading" testId="system-loading"
-                  else
-                    list id="system-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      if sys.backupError != ""
-                        section
-                          row gap=12 align-items="flex-start" padding-top=8 padding-bottom=8
-                            image "symbol:alert-fill" color="-exact-system-red" font="-exact-title3" aria-hidden=true
-                            column flex=1 min-width=0 gap=4
-                              text "The last backup failed" font="-exact-headline" color="-exact-system-red"
-                              text sys.backupError overflow-wrap="break-word" testId="system-backup-error"
-                              text "Changes since the last good backup are only on the machine." font="-exact-subheadline" color="-exact-secondary-label"
-                      section
-                        header
-                          text "Data safety"
-                        Field(label="Last backup", value=(sys.backupAt > 0 ? agoAndWhen(sys.backupAt, sys.backupWhen, nowMs) : "None since the machine started"), testId="system-last-backup")
-                        Field(label="Changes not backed up", value=(not sys.unsaved ? "None" : sys.unsavedSince > 0 ? `Yes, since ${agoAndWhen(sys.unsavedSince, sys.unsavedWhen, nowMs)}` : "Yes"), testId="system-unsaved")
-                        if sys.startedFrom != ""
-                          Field(label="Started from", value=sys.startedFrom, testId="system-started-from")
-                        button press=backUp disabled=pending(backedUp) testId="system-backup"
-                          text (pending(backedUp) ? "Backing Up… This can take a few minutes." : "Back Up Now")
-                        if sysAct == "backup" and backupReply != ""
-                          row
-                            text backupReply color=(backupFailed ? "-exact-system-red" : "-exact-secondary-label") flex=1 min-width=0 testId="system-backup-result"
-                      section
-                        header
-                          text "ChatGPT sign-in"
-                        row
-                          column flex=1 min-width=0 gap=4 padding-top=4 padding-bottom=4
-                            text modelLine(sys) testId="system-model"
-                            if modelDetail(sys) != ""
-                              text modelDetail(sys) font="-exact-footnote" color="-exact-secondary-label" overflow-wrap="break-word"
-                        if loginWaiting
-                          row
-                            column flex=1 min-width=0 gap=8 padding-top=8 padding-bottom=8
-                              text "Open the address, sign in to ChatGPT, and type this code."
-                              text loginNow.code font="-exact-large-title" color="-exact-label" font-variant-numeric="tabular-nums" user-select="all" overflow-wrap="break-word" testId="system-login-code"
-                          link href=loginNow.url target="_blank" testId="system-login-url"
-                            text loginNow.url flex=1 min-width=0 overflow-wrap="break-word"
-                            image "symbol:forward-chevron"
-                          button press=cancelSignIn disabled=pending(loginCancelled) testId="system-login-cancel"
-                            text "Cancel"
-                        else
-                          if loginNow.state == "done"
-                            row
-                              text "Signed in to ChatGPT." color="-exact-secondary-label" flex=1 min-width=0 testId="system-login-result"
-                          if loginNow.state == "failed"
-                            row
-                              text `Sign-in failed. ${loginNow.detail}` color="-exact-system-red" flex=1 min-width=0 testId="system-login-result"
-                          button press=signIn disabled=pending(loginAsked) testId="system-sign-in"
-                            text (pending(loginAsked) ? "Starting Sign-In… This can take a minute or two." : "Sign In Again")
-                        if (sysAct == "login" and loginError != "") or (sysAct == "cancel" and cancelError != "")
-                          row
-                            text (sysAct == "login" ? loginError : cancelError) color="-exact-system-red" flex=1 min-width=0 testId="system-login-error"
-                      section
-                        header
-                          text "Machine"
-                        QuietRow(label="State", value=(sys.note != "" and sys.machine != "running" ? `${machineLine(sys)}. ${sys.note}` : machineLine(sys)), testId="system-machine")
-                        if not sys.keeper
-                          row
-                            text "Its details appear once it is up." font="-exact-footnote" color="-exact-secondary-label" flex=1 min-width=0 testId="system-machine-wait"
-                        if sys.startedAt > 0
-                          QuietRow(label="Started", value=agoAndWhen(sys.startedAt, sys.startedWhen, nowMs), testId="system-started")
-                        for p in sys.programs key=p.name
-                          row gap=8 align-items="center"
-                            image (p.ok ? "symbol:checkmark" : "symbol:alert") color=(p.ok ? "-exact-secondary-label" : "-exact-system-red") font="-exact-footnote" aria-hidden=true
-                            text p.name font="-exact-footnote" flex=1 min-width=0
-                            text (p.ok ? "Passed" : p.detail != "" ? `Failed: ${p.detail}` : "Failed") font="-exact-footnote" color=(p.ok ? "-exact-secondary-label" : "-exact-system-red") overflow-wrap="break-word" testId=`system-program-${p.name}`
+                        if sys.backupError != ""
+                          Section(testId="system-backup-failed")
+                            FailLine(text="The last backup failed.", testId="system-backup-failed-head")
+                            Line(text=sys.backupError, testId="system-backup-error")
+                            QuietLine(text="Changes since the last good backup are only on the machine.", testId="system-backup-failed-hint")
+                        Section(testId="system-safety")
+                          SectionHead(text="Data safety", testId="system-safety-head")
+                          Labelled(label="Last backup", value=(sys.backupAt > 0 ? agoAndWhen(sys.backupAt, sys.backupWhen, nowMs) : "None since the machine started"), testId="system-last-backup")
+                          Labelled(label="Changes not backed up", value=(not sys.unsaved ? "None" : sys.unsavedSince > 0 ? `Yes, since ${agoAndWhen(sys.unsavedSince, sys.unsavedWhen, nowMs)}` : "Yes"), testId="system-unsaved")
+                          if sys.startedFrom != ""
+                            Labelled(label="Started from", value=sys.startedFrom, testId="system-started-from")
+                          if pending(backedUp)
+                            WorkLine(word="Running", place="", text="Backing up. Usually a few minutes.", testId="system-backup-work")
+                          Action(label="Back up now", press=backUp, disabled=pending(backedUp), keys="", testId="system-backup")
+                          if sysAct == "backup" and backupReply != ""
+                            if backupFailed
+                              FailLine(text=backupReply, testId="system-backup-result")
+                            else
+                              QuietLine(text=backupReply, testId="system-backup-result")
+                        Section(testId="system-login")
+                          SectionHead(text="ChatGPT sign-in", testId="system-login-head")
+                          Line(text=modelLine(sys), testId="system-model")
+                          if modelDetail(sys) != ""
+                            QuietLine(text=modelDetail(sys), testId="system-model-detail")
+                          if loginWaiting
+                            Line(text="Open the address, sign in to ChatGPT, and type this code.", testId="system-login-steps")
+                            StrongLine(text=loginNow.code, testId="system-login-code")
+                            OutLink(label=loginNow.url, href=loginNow.url, testId="system-login-url")
+                            Action(label="Cancel", press=cancelSignIn, disabled=pending(loginCancelled), keys="", testId="system-login-cancel")
+                          else
+                            if loginNow.state == "done"
+                              QuietLine(text="Signed in to ChatGPT.", testId="system-login-result")
+                            if loginNow.state == "failed"
+                              FailLine(text=`Sign-in failed. ${loginNow.detail}`, testId="system-login-result")
+                            if pending(loginAsked)
+                              WorkLine(word="Running", place="", text="Starting the sign-in. Usually a minute or two.", testId="system-sign-in-work")
+                            Action(label="Sign in again", press=signIn, disabled=pending(loginAsked), keys="", testId="system-sign-in")
+                          if (sysAct == "login" and loginError != "") or (sysAct == "cancel" and cancelError != "")
+                            FailLine(text=(sysAct == "login" ? loginError : cancelError), testId="system-login-error")
+                        Section(testId="system-machine-section")
+                          SectionHead(text="Machine", testId="system-machine-head")
+                          Labelled(label="State", value=(sys.note != "" and sys.machine != "running" ? `${machineLine(sys)}. ${sys.note}` : machineLine(sys)), testId="system-machine")
+                          if not sys.keeper
+                            QuietLine(text="Its details appear once it is up.", testId="system-machine-wait")
+                          if sys.startedAt > 0
+                            Labelled(label="Started", value=agoAndWhen(sys.startedAt, sys.startedWhen, nowMs), testId="system-started")
+                          for p in sys.programs key=p.name
+                            if p.ok
+                              Line(text=`${p.name} works.`, testId=`system-program-${p.name}`)
+                            else
+                              FailLine(text=(p.detail != "" ? `${p.name} failed: ${p.detail}` : `${p.name} failed.`), testId=`system-program-${p.name}`)
               if e.name == "jobs"
                 // Beside a detail on a wide window the list is 400 wide, so its four stages fit on one line.
                 column navigationKey=`${e.id}` navigationScroll="job-list" navigationSplit=400 position="absolute" inset=0
@@ -1780,223 +1635,136 @@ component App
                       footer
                         text (jobHint != "" ? jobHint : "Claude Code on the server reads it against your bank.") testId="job-hint"
               if e.name == "sources"
-                column navigationKey=`${e.id}` navigationScroll="source-list" position="absolute" inset=0
-                  // The Add button drops under the title when the title alone fills the bar (the largest text sizes).
-                  header display="flex" flex-wrap="wrap" align-items="center" padding="8px 16px"
-                    text "Sources" role="heading" aria-level=1 flex=1
-                    button press=openAdd aria-label="Add Source" testId="add-source"
-                      image "symbol:add"
-                  if not lib.loaded
-                    if pending(lib)
-                      column flex=1 justify-content="center" align-items="center"
-                        progress aria-label="Loading" testId="sources-loading"
-                    else
-                      EmptyState(symbol="symbol:alert", title="Can’t Load Sources", message=libError)
-                        button press=pull testId="sources-retry"
-                          text "Try Again"
-                  else if lib.items.length == 0
-                    EmptyState(symbol="symbol:document", title="No Sources", message="A source is something Claude reads for facts about your work: pasted text, a file or a git repository.")
-                      button press=openAdd testId="sources-add"
-                        text "Add a Source"
-                  else
-                    list id="source-list" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      section
-                        for s in lib.items key=s.id
-                          link href=path("source", s.id) testId=`source-${s.id}`
-                            row flex=1 min-width=0 gap=12 align-items="center"
-                              column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                text s.title
-                                text (s.status == "done" ? factCount(s.facts) : s.kind == "github" ? "Repository" : s.kind == "repo" ? "Folder" : s.kind == "file" ? "File" : "Pasted text") font="-exact-subheadline" color="-exact-secondary-label"
-                              if s.status == "queued"
-                                Badge(label="Waiting", tint=none)
-                              if s.status == "running"
-                                Badge(label="Reading", tint=none)
-                              if s.status == "failed"
-                                Badge(label="Failed", tint=some("-exact-system-red"))
-                            image "symbol:forward-chevron"
-                    column navigationSplit="placeholder" flex=1 justify-content="center" align-items="center" padding=24
-                      column gap=16 width="100%" max-width="26.25rem"
-                        SummaryCard(label="Read", value=`${readCount}`, detail=`of ${lib.items.length} ${lib.items.length == 1 ? "source" : "sources"}`, progress=some(readCount / lib.items.length), symbol=some("symbol:document"))
-                        text "Select a source to see how its reading went, read it again or delete it." color="-exact-secondary-label" text-align="center" testId="sources-overview"
+                column navigationKey=`${e.id}` navigationScroll="sources-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="sources-scroll" flex=1 min-height=0
+                    Page(testId="sources")
+                      Section(testId="sources-top")
+                        Title(text="Sources", testId="sources-title")
+                        if lib.loaded and lib.items.length > 0
+                          QuietLine(text=`${readCount} of ${lib.items.length} read. Claude reads each source for facts about your work, one at a time.`, testId="sources-count")
+                          MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="add-source")
+                      if not lib.loaded
+                        Section(testId="sources-wait")
+                          if failed(lib)
+                            FailLine(text=libError, testId="sources-error")
+                            Action(label="Try again", press=pull, disabled=false, keys="", testId="sources-retry")
+                          else
+                            QuietLine(text="Loading your sources…", testId="sources-loading")
+                      else if lib.items.length == 0
+                        Section(testId="sources-empty")
+                          Line(text="A source is something Claude reads for facts about your work: pasted text, a file or a git repository.", testId="sources-empty-text")
+                          MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="sources-add")
+                      else
+                        Section(testId="sources-list")
+                          for s in lib.items key=s.id
+                            Record(code="", name=s.title, href=`/source/${s.id}`, strong=false, dates="", extent=(s.status == "done" ? factCount(s.facts) : sourceKind(s.kind)), word=statusWord("work", s.status), showWord=(s.status != "done"), place=sourcePlace(s), provenance="", wide=wide, testId=`source-${s.id}`)
               if e.name == "source"
-                column navigationKey=`${e.id}` navigationScroll="source-detail" position="absolute" inset=0
-                  header display="flex" align-items="center" padding="8px 16px"
-                    text "Source" role="heading" aria-level=2
-                  if not lib.loaded
-                    column flex=1 justify-content="center" align-items="center" padding=24
-                      if libError != ""
-                        text libError color="-exact-secondary-label" text-align="center"
-                      else
-                        progress aria-label="Loading"
-                  else if lib.items.filter(x => x.id == e.params.id).length == 0
-                    EmptyState(symbol="symbol:document", title="Source Not Found", message="It was deleted.")
-                      button press=back testId="source-gone-back"
-                        text "Back to Sources"
-                  else
-                    list id="source-detail" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-                      for s in lib.items.filter(x => x.id == e.params.id) key=s.id
-                        SourceSections(source=s, busy=pending(reread), error=(actedSource != s.id ? "" : lastSourceAct == "remove" ? removeSourceError : rereadError), readAgain=readAgain, askRemove=askRemoveSource)
+                column navigationKey=`${e.id}` navigationScroll="source-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="source-scroll" flex=1 min-height=0
+                    if lib.items.filter(x => x.id == e.params.id).length == 0
+                      RecordWait(title="Source", waiting=(not lib.loaded and libError == ""), message=(lib.loaded ? "This source was deleted." : libError), backLabel="Back to Sources", back=back, testId="source-gone")
+                    for s in lib.items.filter(x => x.id == e.params.id) key=s.id
+                      Page(testId="source")
+                        Section(testId="source-top")
+                          Action(label="Back to Sources", press=back, disabled=false, keys="", testId="source-back")
+                        Section(testId="source-head")
+                          Title(text=s.title, testId="source-title")
+                          if s.status == "failed"
+                            FailLine(text=sourceLine(s), testId="source-status")
+                          else if s.status == "queued" or s.status == "running"
+                            WorkLine(word=statusWord("work", s.status), place=sourcePlace(s), text=sourceLine(s), testId="source-status")
+                          else
+                            Line(text=sourceLine(s), testId="source-status")
+                          Labelled(label=sourceKind(s.kind), value=s.detail, testId="source-what")
+                        Section(testId="source-actions")
+                          if actedSource == s.id and (lastSourceAct == "remove" ? removeSourceError : rereadError) != ""
+                            FailLine(text=(lastSourceAct == "remove" ? removeSourceError : rereadError), testId="source-error")
+                          Action(label="Read again", press=readAgain, disabled=(pending(reread) or s.status == "queued" or s.status == "running"), keys="", testId="source-read")
+                          DangerAction(label="Delete source", press=askRemoveSource, disabled=false, testId="source-delete")
+                          QuietLine(text=(s.status == "queued" or s.status == "running" ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited."), testId="source-hint")
               if e.name == "add"
-                column navigationKey=`${e.id}` navigationPresentation="modal" navigationScroll="add-form" position="absolute" inset=0
-                  header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-                    button id="back" press=leaveAdd aria-label="Cancel" testId="add-cancel"
-                      image "symbol:close"
-                    text "New Source" role="heading"
-                    button press=add buttonStyle="bordered-prominent" aria-label="Add" testId="add-save"
-                      disabled=(addHint != "")
-                      image "symbol:checkmark"
-                  // Pinned above the list: what kind of source, and for GitHub the search, so both stay in reach while the list scrolls.
-                  column gap=12 padding="12px 16px"
-                    row role="radiogroup" aria-label="Kind of source" flex-wrap="wrap" align-self="stretch"
-                      button role="radio" aria-checked=(kind == "text") press=setKind("text") testId="kind-text" flex="1 1 0" min-width=0
-                        text "Text"
-                      button role="radio" aria-checked=(kind == "file") press=setKind("file") testId="kind-file" flex="1 1 0" min-width=0
-                        text "File"
-                      button role="radio" aria-checked=(kind == "repo") press=setKind("repo") testId="kind-repo" flex="1 1 0" min-width=0
-                        text "Folder"
-                      button role="radio" aria-checked=(kind == "github") press=setKind("github") testId="kind-github" flex="1 1 0" min-width=0
-                        text "GitHub"
-                    if kind == "github" and hub.loaded and hub.connected and hub.error == ""
-                      input type="search" value=hubQuery input=searchHub placeholder="Search repositories" aria-label="Search repositories"
-                        autocapitalize="none" autocomplete="off" testId="hub-search"
-                  list id="add-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=sheetFloor max-height=sheetList
-                    if kind == "text"
-                      section
-                        row
-                          input value=draftTitle input=editTitle submit=add placeholder="Title, such as Resume 2024" aria-label="Title"
-                            autofocus=true enterkeyhint="next" testId="add-title" flex=1 min-width=0
-                        row padding-top=8 padding-bottom=8
-                          textarea value=draftText input=editText placeholder="Paste a resume, a LinkedIn profile or a review" aria-label="Text to read"
-                            rows=8 aria-invalid=(refusal != "") testId="add-text" flex=1 min-width=0
-                        if refusal != "" and not pending(added)
-                          row
-                            text refusal color="-exact-system-red" flex=1 min-width=0 testId="add-error"
-                    if kind == "file"
-                      section
-                        if pickedName != ""
-                          Field(label="Chosen file", value=pickedName, testId="add-picked")
-                        button press=choosePicked testId="add-choose" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-                          image "symbol:document" aria-hidden=true
-                          text (pickedName == "" ? "Choose File" : "Choose Another File")
-                        input type="file" id="add-pick" display="none" change=filePicked aria-label="File to add" testId="add-pick"
-                        if refusal != "" and not pending(added)
-                          row
-                            text refusal color="-exact-system-red" flex=1 min-width=0 testId="add-error"
-                        footer
-                          text "PDF, Word or text, or a LinkedIn export zip. Up to 25 MB."
-                      if inbox.files.length > 0
-                        section
-                          header
-                            text "Already on the server"
-                          row
-                            text "File"
-                            select value=draftFile change=pickFile aria-label="File already on the server" testId="add-file"
-                              option "None" value=""
-                              for name in inbox.files key=name
-                                option name value=name
-                    if kind == "github"
-                      if not hub.loaded
-                        section
-                          row
-                            if pending(hub)
-                              progress aria-label="Loading repositories" testId="hub-loading"
+                column navigationKey=`${e.id}` navigationScroll="add-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="add-scroll" flex=1 min-height=0
+                    Page(testId="add")
+                      Section(testId="add-top")
+                        Title(text="Add a source", testId="add-heading")
+                        Choices(label="Kind of source")
+                          ChoiceWord(label="Text", chosen=(kind == "text"), press=setKind("text"), testId="kind-text")
+                          ChoiceWord(label="File", chosen=(kind == "file"), press=setKind("file"), testId="kind-file")
+                          ChoiceWord(label="Folder", chosen=(kind == "repo"), press=setKind("repo"), testId="kind-repo")
+                          ChoiceWord(label="GitHub", chosen=(kind == "github"), press=setKind("github"), testId="kind-github")
+                      if kind == "text"
+                        Section(testId="add-text-form")
+                          FieldLabel(label="Title")
+                            input value=draftTitle input=editTitle submit=add placeholder="Such as Resume 2024" aria-label="Title" autofocus=true enterkeyhint="next" testId="add-title"
+                          FieldLabel(label="Text to read")
+                            textarea value=draftText input=editText placeholder="Paste a resume, a LinkedIn profile or a review" aria-label="Text to read" rows=8 aria-invalid=(refusal != "") testId="add-text"
+                          if refusal != "" and not pending(added)
+                            FailLine(text=refusal, testId="add-error")
+                      if kind == "file"
+                        Section(testId="add-file-form")
+                          if pickedName != ""
+                            Labelled(label="Chosen file", value=pickedName, testId="add-picked")
+                          Action(label=(pickedName == "" ? "Choose a file" : "Choose another file"), press=choosePicked, disabled=false, keys="", testId="add-choose")
+                          input type="file" id="add-pick" display="none" change=filePicked aria-label="File to add" testId="add-pick"
+                          if refusal != "" and not pending(added)
+                            FailLine(text=refusal, testId="add-error")
+                          QuietLine(text="PDF, Word or text, or a LinkedIn export zip. Up to 25 MB.", testId="add-file-hint")
+                        if inbox.files.length > 0
+                          Section(testId="add-inbox")
+                            SectionHead(text="Already in the studio’s inbox", testId="add-inbox-head")
+                            FieldLabel(label="File")
+                              select value=draftFile change=pickFile aria-label="File already in the studio’s inbox" align-self="flex-start" max-width="100%" testId="add-file"
+                                option "None" value=""
+                                for name in inbox.files key=name
+                                  option name value=name
+                      if kind == "github"
+                        if not hub.loaded
+                          Section(testId="add-hub-wait")
+                            if failed(hub)
+                              FailLine(text="GitHub couldn’t be asked just now. Try again in a moment.", testId="hub-error")
+                              Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
                             else
-                              text "Couldn’t reach the server to ask about GitHub." color="-exact-secondary-label" flex=1 min-width=0
-                      else if not hub.connected or hub.error != ""
-                        section
-                          row
-                            text hub.error flex=1 min-width=0 testId="hub-error"
-                          button press=reloadHub testId="hub-retry" accent-color="-exact-label"
-                            text "Try Again"
-                      else
-                        section
-                          if hubExtras > 0
-                            // The whole row is the control, as the repository rows are: a small box alone is easy to miss.
-                            button role="checkbox" aria-checked=showExtra press=toggleExtra testId="hub-extra"
-                              display="flex" align-items="center" gap=8 text-align="start" accent-color="-exact-label"
-                              text "Show forks and archived" flex=1 min-width=0
-                              image "symbol:checkmark" aria-hidden=true visibility=(showExtra ? "visible" : "hidden")
-                          footer
-                            text (chosen.length == 0 ? `Signed in to GitHub as ${hub.login}. Only your own commits are read.` : `${chosen.length} ${chosen.length == 1 ? "repository" : "repositories"} chosen.`) font-variant-numeric="tabular-nums" testId="hub-who"
-                        for o in hub.owners.filter(o => hubShown.filter(r => r.owner == o).length > 0) key=o
-                          section
-                            header
-                              text o
-                            for r in hubShown.filter(r => r.owner == o) key=r.full
-                              button role="checkbox" aria-checked=(chosen.includes(r.full)) press=toggleRepo(r.full) disabled=r.added testId=`repo-${r.full}`
-                                display="flex" align-items="center" gap=8 text-align="start" accent-color="-exact-label"
-                                column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
-                                  // The whole name: deep in a long group its header has scrolled away.
-                                  text r.full
-                                  text (r.added ? "Already a source" : r.detail) font="-exact-subheadline" color="-exact-secondary-label"
-                                // The mark keeps its place whether ticked or not, so ticking a row never moves its text.
-                                image "symbol:checkmark" aria-hidden=true visibility=(chosen.includes(r.full) ? "visible" : "hidden")
-                        if refusal != "" and not pending(added)
-                          section
-                            row
-                              text refusal color="-exact-system-red" flex=1 min-width=0 testId="add-error"
-                        if hubShown.length == 0
-                          section
-                            row
-                              text (hub.repos.length == 0 ? "No repositories found." : hubQuery.trim() == "" ? "Only forks and archived repositories here. Turn them on above." : `No repository matches “${hubQuery.trim()}”.`) color="-exact-secondary-label" flex=1 min-width=0 testId="hub-none"
-                    if kind == "repo"
-                      section
-                        row
-                          text "Folder"
-                          input value=draftRepo input=editRepo submit=add placeholder="/srv/code/app" aria-label="Repository folder"
-                            autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="next" aria-invalid=(refusal != "") testId="add-repo" flex=1 min-width=0
-                        row
-                          text "Author"
-                          input value=author input=editAuthor submit=add placeholder="Name or email" aria-label="Commit author"
-                            autocapitalize="none" autocomplete="off" enterkeyhint="done" testId="add-author" flex=1 min-width=0
-                        if refusal != "" and not pending(added)
-                          row
-                            text refusal color="-exact-system-red" flex=1 min-width=0 testId="add-error"
-                        footer
-                          text "A folder on the server. Only commits by this author count as yours. Claude reads the history and the code, and can’t change the repository."
-                    section
-                      footer
-                        text (addHint != "" ? addHint : "Claude Code on the server reads what you add and puts what it finds in your bank.") testId="add-hint"
-      // Six tabs stay on one line: their labels stop growing at a size that still fits a phone's width, as a platform tab bar's do.
-      row role="tablist"
-        button role="tab" aria-controls="panel-home" aria-selected=(nav.tab == "home") press=pick("home") testId="tab-home" flex=1 min-width=0
-          image "symbol:home"
-          if wideWindow
-            text "Home" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Home" font-size="min(-exact-caption2, 11px)"
-        button role="tab" aria-controls="panel-bank" aria-selected=(nav.tab == "bank") press=pick("bank") testId="tab-bank" flex=1 min-width=0
-          image "symbol:person"
-          if wideWindow
-            text "Experience" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Experience" font-size="min(-exact-caption2, 11px)"
-        button role="tab" aria-controls="panel-profile" aria-selected=(nav.tab == "profile") press=pick("profile") testId="tab-profile" flex=1 min-width=0
-          image "symbol:book"
-          if wideWindow
-            text "Profile" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Profile" font-size="min(-exact-caption2, 11px)"
-        button role="tab" aria-controls="panel-talk" aria-selected=(nav.tab == "talk") press=pick("talk") testId="tab-talk" flex=1 min-width=0
-          image "symbol:messages"
-          if wideWindow
-            text "Talk" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Talk" font-size="min(-exact-caption2, 11px)"
-        button role="tab" aria-controls="panel-jobs" aria-selected=(nav.tab == "jobs") press=pick("jobs") testId="tab-jobs" flex=1 min-width=0
-          image "symbol:search"
-          if wideWindow
-            text "Jobs" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Jobs" font-size="min(-exact-caption2, 11px)"
-        button role="tab" aria-controls="panel-sources" aria-selected=(nav.tab == "sources") press=pick("sources") testId="tab-sources" flex=1 min-width=0
-          image "symbol:document"
-          if wideWindow
-            text "Sources" font-size="min(-exact-subheadline, 17px)"
-          else
-            text "Sources" font-size="min(-exact-caption2, 11px)"
+                              QuietLine(text="Loading your repositories…", testId="hub-loading")
+                        else if not hub.connected or hub.error != ""
+                          Section(testId="add-hub-wait")
+                            Line(text=hub.error, testId="hub-error")
+                            Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
+                        else
+                          Section(testId="add-hub")
+                            SearchField(value=hubQuery, label="Search repositories", hint="Search repositories", change=searchHub, testId="hub-search")
+                            QuietLine(text=(chosen.length == 0 ? `Signed in to GitHub as ${hub.login}. Only your own commits are read.` : `${chosen.length} ${chosen.length == 1 ? "repository" : "repositories"} chosen.`), testId="hub-who")
+                            if hubExtras > 0
+                              CheckLine(label="Show forks and archived", detail="", checked=showExtra, disabled=false, change=tickExtra, testId="hub-extra")
+                          for o in hub.owners.filter(o => hubShown.filter(r => r.owner == o).length > 0) key=o
+                            Section(testId=`add-owner-${o}`)
+                              SectionHead(text=o, testId=`add-owner-${o}-head`)
+                              for r in hubShown.filter(r => r.owner == o) key=r.full
+                                CheckLine(label=r.full, detail=(r.added ? "Already a source" : r.detail), checked=(chosen.includes(r.full)), disabled=r.added, change=tickRepo(r.full), testId=`repo-${r.full}`)
+                          if (refusal != "" and not pending(added)) or hubShown.length == 0
+                            Section(testId="add-hub-end")
+                              if refusal != "" and not pending(added)
+                                FailLine(text=refusal, testId="add-error")
+                              if hubShown.length == 0
+                                QuietLine(text=(hub.repos.length == 0 ? "No repositories found." : hubQuery.trim() == "" ? "Only forks and archived repositories here. Turn them on above." : `No repository matches “${hubQuery.trim()}”.`), testId="hub-none")
+                      if kind == "repo"
+                        Section(testId="add-repo-form")
+                          FieldLabel(label="Folder")
+                            input value=draftRepo input=editRepo submit=add placeholder="/srv/code/app" aria-label="Repository folder"
+                              autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="next" aria-invalid=(refusal != "") testId="add-repo"
+                          FieldLabel(label="Author")
+                            input value=author input=editAuthor submit=add placeholder="Name or email" aria-label="Commit author"
+                              autocapitalize="none" autocomplete="off" enterkeyhint="done" testId="add-author"
+                          if refusal != "" and not pending(added)
+                            FailLine(text=refusal, testId="add-error")
+                          QuietLine(text="A repository folder on the studio’s computer. Only commits by this author count as yours. Claude reads the history and the code, and can’t change the repository.", testId="add-repo-hint")
+                      Section(testId="add-actions")
+                        QuietLine(text=(addHint != "" ? addHint : "Claude reads what you add and puts what it finds in your record."), testId="add-hint")
+                        Actions(testId="add-actions-row")
+                          MainAction(label="Add", press=add, disabled=(addHint != ""), keys="", testId="add-save")
+                          Action(label="Cancel", press=leaveAdd, disabled=false, keys="", testId="add-cancel")
       dialog id="remove-fact" role="alertdialog" aria-label="Delete this fact?"
-        text "It’s removed from the bank and from future profiles and resumes, and stays out when its source is read again. This can’t be undone."
+        text "It’s removed from your record and from future profiles and resumes, and stays out when its source is read again. This can’t be undone."
         button press=removeFact destructive=true commandfor="remove-fact" command="close" testId="remove-fact-confirm"
           text "Delete"
         button commandfor="remove-fact" command="close" testId="remove-fact-cancel"
@@ -2020,7 +1788,7 @@ component App
         button commandfor="dismiss-lead" command="close" testId="dismiss-lead-cancel"
           text "Cancel"
       dialog id="replace-public" role="alertdialog" aria-label="Replace the text in the field?"
-        text "A fresh draft from your bank replaces what is in the field. Your saved text stays as it is until you press Save."
+        text "A fresh draft from your record replaces what is in the field. Your saved text stays as it is until you press Save."
         button press=draftFromBank destructive=true commandfor="replace-public" command="close" testId="replace-public-confirm"
           text "Replace"
         button commandfor="replace-public" command="close" testId="replace-public-cancel"
@@ -2034,7 +1802,7 @@ component App
       dialog id="unpublish-public" role="alertdialog" aria-label="Take the chat offline?"
         text "The public chat stops answering within a minute and stays off until you publish again. Your saved text stays here."
         button press=unpublishNow destructive=true commandfor="unpublish-public" command="close" testId="unpublish-public-confirm"
-          text "Take Offline"
+          text "Take offline"
         button commandfor="unpublish-public" command="close" testId="unpublish-public-cancel"
           text "Cancel"
       dialog id="discard-edits" role="alertdialog" aria-label="Discard your changes?"
@@ -2042,7 +1810,7 @@ component App
         button press=back destructive=true commandfor="discard-edits" command="close" testId="discard-edits-confirm"
           text "Discard"
         button commandfor="discard-edits" command="close" testId="discard-edits-cancel"
-          text "Keep Editing"
+          text "Keep editing"
       dialog id="remove-job" role="alertdialog" aria-label="Delete this job?"
         text "Its fit and the resume written for it are deleted. This can’t be undone."
         button press=removeJob destructive=true commandfor="remove-job" command="close" testId="remove-job-confirm"
@@ -2061,6 +1829,16 @@ component App
           text "Delete"
         button commandfor="remove-source" command="close" testId="remove-source-cancel"
           text "Cancel"
+
+// System's second line. `at` is the screen shown: publicPage | system.
+component SystemNav
+  props
+    at: string
+    go: action
+  view
+    SubLine(label="System")
+      SubLink(label="Public page", current=(at == "publicPage"), press=go("publicPage"), testId="sub-public")
+      SubLink(label="Backups and sign-in", current=(at == "system"), press=go("system"), testId="sub-backups")
 
 // A sheet whose content has not arrived: it says so, or that it could not, and can always be closed.
 component SheetWait
@@ -2094,162 +1872,6 @@ component Field
       column flex=1 min-width=0 gap=2 padding-top=4 padding-bottom=4
         text label font="-exact-footnote" color="-exact-secondary-label"
         text value hyphens="manual" testId=testId
-
-// A label and its value on one quiet line: the machine's details, which matter least on the System page.
-component QuietRow
-  props
-    label: string
-    value: string
-    testId: string
-  view
-    row gap=12 align-items="center"
-      text label font="-exact-footnote" color="-exact-secondary-label" flex-shrink=0
-      text value font="-exact-footnote" flex=1 min-width=0 text-align="end" overflow-wrap="break-word" testId=testId
-
-// One fact: its headline, the story behind it, where it belongs, what supports it.
-component FactSections
-  props
-    fact: Fact
-    role: string
-    error: string
-    edit: action
-    askRemove: action
-  view
-    section
-      row padding-top=10 padding-bottom=10
-        text fact.text flex=1 min-width=0 font="-exact-title3" hyphens="manual" testId="fact-text"
-      if fact.detail != ""
-        row padding-top=10 padding-bottom=10
-          text fact.detail flex=1 min-width=0 hyphens="manual" testId="fact-detail-text"
-    section
-      Field(label="Role", value=role, testId="fact-role")
-      Field(label="Category", value=kindLabel(fact.kind), testId="fact-kind")
-      if fact.metric != ""
-        Field(label="Measured result", value=fact.metric, testId="fact-metric")
-      if fact.skills != ""
-        Field(label="Skills", value=fact.skills, testId="fact-skills")
-    section
-      header
-        text "Evidence"
-      row padding-top=10 padding-bottom=10
-        text (fact.evidence == "" ? "None recorded." : fact.evidence) flex=1 min-width=0 testId="fact-evidence"
-      footer
-        text (fact.source == "Added by hand" ? "Added by hand." : `From ${fact.source}.`) testId="fact-source"
-    section
-      if error != ""
-        row
-          text error color="-exact-system-red" flex=1 min-width=0 testId="fact-error"
-      button press=edit testId="fact-edit" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-        image "symbol:pencil" aria-hidden=true
-        text "Edit"
-      button press=askRemove destructive=true testId="fact-delete"
-        text "Delete Fact"
-
-// The edit sheet: its drafts start from the fact when its route shows it.
-component EditFact
-  props
-    route: number
-    fact: Fact
-    roles: Place[]
-    error: string
-    busy: bool
-    save: action
-    cancel: action
-  state body = fact.text
-  state story = fact.detail
-  state metric = fact.metric
-  state roleId = fact.roleId
-  state kind = fact.kind
-  derive dirty = body != fact.text or story != fact.detail or metric != fact.metric or roleId != fact.roleId or kind != fact.kind
-  action pickRole(v: string)
-    roleId = v
-  action pickKind(v: string)
-    kind = v
-  action leave
-    if dirty
-      showModal("discard-edits")
-    else
-      cancel()
-  action editBody(v: string)
-    body = v
-  action editStory(v: string)
-    story = v
-  action editMetric(v: string)
-    metric = v
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" navigationScroll="edit-form" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=leave aria-label="Cancel" testId="edit-cancel"
-          image "symbol:close"
-        text "Edit Fact" role="heading"
-        button press=save(fact.id, body, story, metric, roleId, kind) disabled=(body.trim() == "" or busy) buttonStyle="bordered-prominent" aria-label="Save" testId="edit-save"
-          image "symbol:checkmark"
-      list id="edit-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-        section
-          header
-            text "Fact"
-          row padding-top=8 padding-bottom=8
-            textarea value=body input=editBody placeholder="What you did, in one sentence" aria-label="Fact"
-              rows=4 aria-invalid=(error != "") testId="edit-text" flex=1 min-width=0
-          if error != ""
-            row
-              text error color="-exact-system-red" flex=1 min-width=0 testId="edit-error"
-        section
-          header
-            text "Story"
-          row padding-top=8 padding-bottom=8
-            textarea value=story input=editStory placeholder="The situation, what you did and decided, what was hard, what came of it" aria-label="Story"
-              rows=6 testId="edit-story" flex=1 min-width=0
-        section
-          header
-            text "Measured result"
-          row
-            input value=metric input=editMetric placeholder="Such as 40% fewer support tickets" aria-label="Measured result"
-              enterkeyhint="done" testId="edit-metric" flex=1 min-width=0
-          footer
-            text (body.trim() == "" ? "Enter the fact to save it." : "Leave the result empty if nothing was measured.") testId="edit-hint"
-        section
-          header
-            text "Filed under"
-          row
-            select value=roleId change=pickRole aria-label="Role" testId="edit-role" flex=1 min-width=0
-              for r in roles key=r.id
-                option r.name value=r.id
-          row
-            text "Category"
-            select value=kind change=pickKind aria-label="Category" testId="edit-kind"
-              option "Accomplishment" value="accomplishment"
-              option "Project" value="project"
-              option "Responsibility" value="responsibility"
-              option "Skill" value="skill"
-              option "Education" value="education"
-              option "Other" value="other"
-
-// One source: how its reading went, what it is, and reading it again or deleting it.
-component SourceSections
-  props
-    source: Source
-    busy: bool
-    error: string
-    readAgain: action
-    askRemove: action
-  view
-    section
-      row padding-top=10 padding-bottom=10
-        text source.title flex=1 min-width=0 font="-exact-title3" hyphens="manual" testId="source-title"
-      Field(label="Reading", value=statusText(source), testId="source-status")
-      Field(label=(source.kind == "github" ? "Repository" : source.kind == "repo" ? "Folder" : source.kind == "file" ? "File" : "Text"), value=source.detail, testId="source-what")
-    section
-      if error != ""
-        row
-          text error color="-exact-system-red" flex=1 min-width=0 testId="source-error"
-      button press=readAgain disabled=(busy or source.status == "queued" or source.status == "running") testId="source-read" accent-color="-exact-label" display="flex" align-items="center" gap=8 text-align="start"
-        image "symbol:refresh" aria-hidden=true
-        text "Read Again"
-      button press=askRemove destructive=true testId="source-delete"
-        text "Delete Source"
-      footer
-        text (source.status == "queued" or source.status == "running" ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited.") testId="source-hint"
 
 // One job: what it is, how well the bank fits it and why, the resume for it, each requirement with its support.
 component JobSections
@@ -2529,7 +2151,6 @@ component JobSections
       footer
         text (job.status == "queued" or job.status == "running" ? "It can be read again once this reading finishes." : "Reading again scores the job against your bank as it is now and writes its resume again.") testId="job-read-hint"
 
-// What kind of work a role or project was. Two choices; saving returns to the list.
 // What to look at on a job's resume: the six-second skim's conclusion, then each flag with its items under it,
 // the serious ones first (app.ts sorts them) and in the heavy weight. No badge and no box (DESIGN.md).
 component JobFlags
@@ -2552,197 +2173,6 @@ component JobFlags
               Indented(testId=`job-flag-${f.id}-items`)
                 for item, n in f.items key=`${n}`
                   Line(text=item, testId=`job-flag-${f.id}-item-${n}`)
-
-component EditRole
-  props
-    route: number
-    role: Role
-    employers: Role[]
-    error: string
-    busy: bool
-    save: action
-    cancel: action
-  state standing = role.standing
-  state reach = role.reach
-  state partOf = role.partOf
-  action leave
-    if standing != role.standing or reach != role.reach or partOf != role.partOf
-      showModal("discard-edits")
-    else
-      cancel()
-  action pickPartOf(v: string)
-    partOf = v
-  action pickStanding(v: string)
-    standing = v
-  action pickReach(v: string)
-    reach = v
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" navigationScroll="role-form" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=leave aria-label="Cancel" testId="role-cancel"
-          image "symbol:close"
-        text "Kind of Work" role="heading"
-        button press=save(role.id, (partOf == "" ? standing : ""), reach, partOf) disabled=busy buttonStyle="bordered-prominent" aria-label="Save" testId="role-save"
-          image "symbol:checkmark"
-      list id="role-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0
-        section
-          header
-            text role.name
-          if not role.employer
-            row
-              text "Done for"
-              select value=partOf change=pickPartOf aria-label="The employer it was done for" testId="role-part-of"
-                option "No employer" value=""
-                for e in employers key=e.id
-                  option e.name value=e.id
-          if partOf == ""
-            row
-              text "Type of work"
-              select value=standing change=pickStanding aria-label="Type of work" testId="role-standing"
-                option "Not set" value=""
-                option "Employer" value="employer"
-                option "Own company" value="own"
-                option "Contract" value="contract"
-                option "Personal project" value="personal"
-          row
-            text "Reached users"
-            select value=reach change=pickReach aria-label="Reached users" testId="role-reach"
-              option "Not set" value=""
-              option "In production" value="live"
-              option "Was in production" value="retired"
-              option "Never reached users" value="never"
-          if error != ""
-            row
-              text error color="-exact-system-red" flex=1 min-width=0 testId="role-error"
-          footer
-            text (partOf == "" ? "Used to weigh this work when a job is read: paid, production and recent work count for more than a personal project that never shipped." : "It counts as that employer’s work, and is written up under that job in your profile and resumes.") testId="role-hint"
-
-// The direction notes, edited as Markdown. They steer what the profile argues for, how jobs are judged and how resumes are shaped.
-component EditDirection
-  props
-    route: number
-    body: string
-    height: number
-    error: string
-    busy: bool
-    save: action
-    cancel: action
-  state draft = body
-  action edit(v: string)
-    draft = v
-  action leave
-    if draft != body
-      showModal("discard-edits")
-    else
-      cancel()
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" navigationScroll="direction-form" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=leave aria-label="Cancel" testId="direction-cancel"
-          image "symbol:close"
-        text "Direction" role="heading"
-        button press=save(draft) disabled=busy buttonStyle="bordered-prominent" aria-label="Save" testId="direction-save"
-          image "symbol:checkmark"
-      list id="direction-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=height
-        section
-          row padding-top=8 padding-bottom=8
-            textarea value=draft input=edit placeholder="Where you are heading: the tracks you want, your constraints, a fit test for a listing, how your resume should lead" aria-label="Direction notes"
-              rows=22 testId="direction-text" flex=1 min-width=0
-          if error != ""
-            row
-              text error color="-exact-system-red" flex=1 min-width=0 testId="direction-error"
-          footer
-            text "Your own notes, in Markdown. A “Target tracks” list sets the roles your profile argues for, and a “Fit test” list of questions is answered on every job. A section you mark as a personal lens, such as numerology, is used to judge fit and is kept out of resumes and the profile."
-
-// The person's own details. They open every resume, so saving rewrites the first lines of the resumes not yet sent.
-component EditDetails
-  props
-    route: number
-    me: Person
-    height: number
-    error: string
-    busy: bool
-    save: action
-    cancel: action
-  state name = me.name
-  state location = me.location
-  state email = me.email
-  state phone = me.phone
-  state website = me.website
-  state github = me.github
-  state linkedin = me.linkedin
-  action editName(v: string)
-    name = v
-  action editLocation(v: string)
-    location = v
-  action editEmail(v: string)
-    email = v
-  action editPhone(v: string)
-    phone = v
-  action editWebsite(v: string)
-    website = v
-  action editGithub(v: string)
-    github = v
-  action editLinkedin(v: string)
-    linkedin = v
-  action submit
-    save(name, location, email, phone, website, github, linkedin)
-  action leave
-    if name != me.name or location != me.location or email != me.email or phone != me.phone or website != me.website or github != me.github or linkedin != me.linkedin
-      showModal("discard-edits")
-    else
-      cancel()
-  view
-    column navigationKey=`${route}` navigationPresentation="modal" navigationScroll="details-form" position="absolute" inset=0
-      header display="flex" align-items="center" justify-content="space-between" padding="8px 16px"
-        button id="back" press=leave aria-label="Cancel" testId="details-cancel"
-          image "symbol:close"
-        text "Your Details" role="heading"
-        button press=submit disabled=busy buttonStyle="bordered-prominent" aria-label="Save" testId="details-save"
-          image "symbol:checkmark"
-      list id="details-form" appearance="auto" listStyle="inset-grouped" flex=1 min-height=0 max-height=height
-        section
-          header
-            text "Name"
-          row
-            input value=name input=editName submit=submit placeholder="Your full name" aria-label="Name"
-              autocomplete="name" enterkeyhint="next" aria-invalid=(error != "" and name.trim() == "") testId="details-name" flex=1 min-width=0
-        section
-          header
-            text "Where you live"
-          row
-            input value=location input=editLocation submit=submit placeholder="Such as Brooklyn, NY" aria-label="Where you live"
-              autocomplete="address-level2" enterkeyhint="next" testId="details-location" flex=1 min-width=0
-          footer
-            text "Shown on your resume and used for a posting’s location questions."
-        section
-          header
-            text "Contact"
-          row
-            text "Email" width=84 flex-shrink=0 color="-exact-secondary-label"
-            input value=email input=editEmail submit=submit placeholder="you@example.com" aria-label="Email" type="email"
-              autocapitalize="none" autocomplete="email" spellcheck=false enterkeyhint="next" testId="details-email" flex=1 min-width=0
-          row
-            text "Phone" width=84 flex-shrink=0 color="-exact-secondary-label"
-            input value=phone input=editPhone submit=submit placeholder="(212) 555-0142" aria-label="Phone" type="tel"
-              autocomplete="tel" enterkeyhint="next" testId="details-phone" flex=1 min-width=0
-          row
-            text "Website" width=84 flex-shrink=0 color="-exact-secondary-label"
-            input value=website input=editWebsite submit=submit placeholder="example.com" aria-label="Website" type="url"
-              autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="next" testId="details-website" flex=1 min-width=0
-          row
-            text "GitHub" width=84 flex-shrink=0 color="-exact-secondary-label"
-            input value=github input=editGithub submit=submit placeholder="github.com/you" aria-label="GitHub" type="url"
-              autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="next" testId="details-github" flex=1 min-width=0
-          row
-            text "LinkedIn" width=84 flex-shrink=0 color="-exact-secondary-label"
-            input value=linkedin input=editLinkedin submit=submit placeholder="linkedin.com/in/you" aria-label="LinkedIn" type="url"
-              autocapitalize="none" autocomplete="off" spellcheck=false enterkeyhint="done" testId="details-linkedin" flex=1 min-width=0
-          if error != ""
-            row
-              text error color="-exact-system-red" flex=1 min-width=0 testId="details-error"
-          footer
-            text "Anything left empty stays off your resume. Saving updates the resume of every job still marked Not applied."
 
 // The resume for one job, edited as Markdown before it is sent. Saving prints the PDF again.
 component EditResume

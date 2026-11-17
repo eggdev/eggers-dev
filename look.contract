@@ -93,7 +93,7 @@ component Title
     text: string
     testId: string
   view
-    text text role="heading" aria-level=1 font-size=lookTitle() font-weight=400 line-height=lookTitleLeading() color="look.ink" testId=testId
+    text text role="heading" aria-level=1 font-size=lookTitle() font-weight=400 line-height=lookTitleLeading() color="look.ink" hyphens="auto" overflow-wrap="break-word" testId=testId
 
 // A section's head: text size, the heavy weight, a hairline under it.
 component SectionHead
@@ -169,27 +169,306 @@ component Ref
       text code font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" white-space="nowrap" color="look.grey" testId=testId
 
 // A record's line with its reference number placed as the look says: in a gutter of its own to the left,
-// inline before the line, or not at all.
+// inline before the line, or not at all. `refId` is the reference number's own testId.
 component RefRow
   props
     code: string
+    refId: string
     testId: string
   slot
   view
     if look().refs == "gutter"
       row align-items="baseline" testId=testId
         column width=lookRefWidth() flex-shrink=0
-          Ref(code=code, testId=`${testId}-ref`)
+          Ref(code=code, testId=refId)
         column flex=1 min-width=0 gap=lookTight()
           children
     else if look().refs == "inline"
       row align-items="baseline" gap=lookTight() testId=testId
-        Ref(code=code, testId=`${testId}-ref`)
+        Ref(code=code, testId=refId)
         column flex=1 min-width=0 gap=lookTight()
           children
     else
       column gap=lookTight() testId=testId
         children
+
+// The parts of a record's second line, joined as DESIGN.md writes them: "2019–2023 · 48 facts".
+fn joinDot(parts: string[]): string = parts.filter(p => p != "").join(" · ")
+
+// A record's second line: its dates and extent, then its status word (DESIGN.md rule 4: reference, name, dates,
+// extent, status, provenance). `showWord` false leaves the status out where the data holds none.
+component RecordMeta
+  props
+    span: string
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    showWord: bool
+    // Where it waits, after a Waiting ("2 ahead"); "" for none.
+    place: string
+    needsYou: bool
+    testId: string
+  view
+    row align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+      if span != ""
+        text span font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-span`
+      if span != "" and showWord
+        text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      if showWord
+        row align-items="baseline" flex-wrap="wrap"
+          Status(word=word, needsYou=needsYou, testId=`${testId}-status`)
+          if place != ""
+            text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-place`
+
+// A record in a list or at the head of its page, drawn as the look says (`look().record`). Catalogue: the name;
+// then dates, extent and status on one line; then the provenance (DESIGN.md, three lines, not six). Ledger, on a
+// wide window: one row, the parts in aligned columns, the provenance under the name. `href` makes the name a link
+// to the record's own page ("" draws it as text); `strong` sets it in the heavy weight, for a record that heads
+// the records under it. `code` "" is a row with no reference number. Extra lines (a marker, a note) go in the slot,
+// under the record. testIds: the link or name is `testId`, the reference `testId-ref`, the second line
+// `testId-span` and `testId-status`, the provenance `testId-from`.
+component Record
+  props
+    code: string
+    name: string
+    href: string
+    strong: bool
+    dates: string
+    extent: string
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    showWord: bool
+    place: string
+    provenance: string
+    wide: bool
+    testId: string
+  slot
+  view
+    if look().record == "ledger" and wide
+      RefRow(code=code, refId=`${testId}-ref`, testId=`${testId}-record`)
+        row align-items="baseline" gap=lookGutter()
+          column flex=1 min-width=0 gap=lookTight()
+            RecordName(name=name, href=href, strong=strong, testId=testId)
+            if provenance != ""
+              QuietLine(text=provenance, testId=`${testId}-from`)
+          text joinDot([dates, extent]) width=lookRefWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-span`
+          column width=lookRefWidth() flex-shrink=0
+            if showWord
+              Status(word=word, needsYou=false, testId=`${testId}-status`)
+        children
+    else if code == "" or (not wide and look().refs != "hidden")
+      // A narrow window gives the reference number a line of its own above the name: a gutter would take a fifth
+      // of a phone's width, and most of it at the largest text size (DESIGN.md section 3, found in the lab).
+      column gap=lookTight() testId=`${testId}-record`
+        if code != ""
+          Ref(code=code, testId=`${testId}-ref`)
+        RecordName(name=name, href=href, strong=strong, testId=testId)
+        RecordMeta(span=joinDot([dates, extent]), word=word, showWord=showWord, place=place, needsYou=false, testId=testId)
+        if provenance != ""
+          QuietLine(text=provenance, testId=`${testId}-from`)
+        children
+    else
+      RefRow(code=code, refId=`${testId}-ref`, testId=`${testId}-record`)
+        RecordName(name=name, href=href, strong=strong, testId=testId)
+        RecordMeta(span=joinDot([dates, extent]), word=word, showWord=showWord, place=place, needsYou=false, testId=testId)
+        if provenance != ""
+          QuietLine(text=provenance, testId=`${testId}-from`)
+        children
+
+// A record's name: a link to its page, or plain text; heavy for a record that heads others.
+component RecordName
+  props
+    name: string
+    href: string
+    strong: bool
+    testId: string
+  view
+    if href != ""
+      link href=href align-self="flex-start" testId=testId
+        text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink"
+    else
+      text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" testId=testId
+
+// A record at the head of its own page: the reference number, the name as the page's title, then the record's
+// second line and its provenance. testIds as Record's.
+component RecordHead
+  props
+    code: string
+    name: string
+    dates: string
+    extent: string
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    showWord: bool
+    place: string
+    provenance: string
+    testId: string
+  slot
+  view
+    column gap=lookTight() testId=`${testId}-record`
+      Ref(code=code, testId=`${testId}-ref`)
+      Title(text=name, testId=testId)
+      RecordMeta(span=joinDot([dates, extent]), word=word, showWord=showWord, place=place, needsYou=false, testId=testId)
+      if provenance != ""
+        QuietLine(text=provenance, testId=`${testId}-from`)
+      children
+
+// A label over its value: a fact's role, a source's address. The value carries the testId.
+component Labelled
+  props
+    label: string
+    value: string
+    testId: string
+  view
+    column
+      text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      text value font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
+
+// A label over a control the platform draws (a text field, a text area, a select). The control names itself
+// for a screen reader by its own `aria-label`; this label is for the eye.
+component FieldLabel
+  props
+    label: string
+  slot
+  view
+    column gap=lookTight() align-items="stretch" max-width=lookMeasure()
+      text label aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      children
+
+// A search field, drawn by the platform.
+component SearchField
+  props
+    value: string
+    label: string
+    hint: string
+    change: action
+    testId: string
+  view
+    input type="search" value=value input=change placeholder=hint aria-label=label autocapitalize="none" autocomplete="off" max-width=lookMeasure() testId=testId
+
+// A choice among a few words (the kind of a source): one line of words, the chosen one in the heavy weight.
+component Choices
+  props
+    label: string
+  slot
+  view
+    row role="radiogroup" aria-label=label flex-wrap="wrap" column-gap=lookGutter() align-items="baseline"
+      children
+
+component ChoiceWord
+  props
+    label: string
+    chosen: bool
+    press: action
+    testId: string
+  view
+    button role="radio" aria-checked=chosen press=press text-align="start" testId=testId
+      text label font-size=lookText() font-weight=(chosen ? look().strong : 400) line-height=lookLeading() color="look.ink"
+
+// A line with a box to tick, drawn by the platform, and a grey line under it ("" for none).
+component CheckLine
+  props
+    label: string
+    detail: string
+    checked: bool
+    disabled: bool
+    change: action
+    testId: string
+  view
+    row align-items="baseline" gap=lookTight()
+      input type="checkbox" checked=checked disabled=disabled change=change aria-label=label flex-shrink=0 testId=testId
+      column flex=1 min-width=0
+        text label font-size=lookText() font-weight=400 line-height=lookLeading() color=(disabled ? "look.grey" : "look.ink") overflow-wrap="break-word"
+        if detail != ""
+          text detail font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" overflow-wrap="break-word"
+
+// A link that opens outside the studio (a sign-in page, a posting), in a new tab.
+component OutLink
+  props
+    label: string
+    href: string
+    testId: string
+  view
+    link href=href target="_blank" align-self="flex-start" overflow-wrap="break-word" testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading()
+
+// Slow work in one line (DESIGN.md rule 8): its status word (Waiting with its place, "2 ahead"), then what is
+// happening and how long it usually takes.
+component WorkLine
+  props
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    place: string
+    text: string
+    testId: string
+  view
+    row align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+      row align-items="baseline" flex-wrap="wrap"
+        Status(word=word, needsYou=false, testId=`${testId}-status`)
+        if place != ""
+          text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-place`
+      text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+      text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" testId=testId
+
+// The main line: the places of the studio as plain words, flush left, with a hairline under it and no fill. It is
+// the root's tab bar drawn by the app (`appearance="none"`), so each place keeps its own stack. Its tabs are
+// `NavTab`s; the last, System, is pushed to the far end.
+component MainLine
+  props
+    testId: string
+  slot
+  view
+    row flex-shrink=0 background-color="look.paper" border-bottom-width=lookRule() border-bottom-style="solid" border-bottom-color="look.line" testId=testId
+      // The tabs are the tablist's own children: the host finds each tab's panel through them.
+      // The host's tab bar draws a line above itself; this bar has its one hairline below.
+      row role="tablist" appearance="none" aria-label="Places" flex=1 max-width=lookMeasure() flex-wrap="wrap" column-gap=lookGutter() align-items="baseline"
+        border-top-width=0 background-color="look.paper"
+        padding-left=lookGutter() padding-right=lookGutter() padding-top=lookTight() padding-bottom=lookTight()
+        children
+
+// One place on the main line: the current one in the heavy weight; `quiet` sets it in grey (System) unless current.
+// Its label's testId is "nav-current" while it is the current place, so a test can read which one is marked.
+component NavTab
+  props
+    label: string
+    current: bool
+    quiet: bool
+    far: bool
+    controls: string
+    press: action
+    testId: string
+  view
+    button role="tab" appearance="none" aria-selected=current aria-controls=controls press=press
+      margin-left=(far ? "auto" : 0) padding-top=lookTight() padding-bottom=lookTight() padding-left=0 padding-right=0 text-align="start" testId=testId
+      text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading()
+        color=(quiet and not current ? "look.grey" : "look.ink") testId=(current ? "nav-current" : `${testId}-label`)
+
+// The band that holds the second line, under the main line, lined up with the page's column.
+component SubBar
+  props
+    testId: string
+  slot
+  view
+    column flex-shrink=0 max-width=lookMeasure() padding-left=lookGutter() padding-right=lookGutter() padding-top=look().rowGap background-color="look.paper" testId=testId
+      children
+
+// The second line, under the main one on a place that holds several screens (Record, System).
+component SubLine
+  props
+    label: string
+  slot
+  view
+    nav aria-label=label
+      row flex-wrap="wrap" column-gap=lookGutter() align-items="baseline"
+        children
+
+// One screen on the second line: the current one in the heavy weight, marked for a screen reader. Its label's
+// testId is "sub-current" while it is the current screen.
+component SubLink
+  props
+    label: string
+    current: bool
+    press: action
+    testId: string
+  view
+    button press=press aria-current=(current ? "page" : "false") text-align="start" testId=testId
+      text label font-size=lookText() font-weight=(current ? look().strong : 400) line-height=lookLeading() color="look.ink"
+        testId=(current ? "sub-current" : `${testId}-label`)
 
 // A numbered line (1, 2, 3 …): the number in a narrow column of its own, in tabular figures, then the line.
 component Numbered
@@ -199,6 +478,17 @@ component Numbered
   view
     row align-items="baseline"
       text `${n}` aria-hidden=true width=lookNumberWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey"
+      column flex=1 min-width=0 gap=lookTight()
+        children
+
+// A list item (the profile's lists): an en dash in the number's column, then the line.
+component Bulleted
+  props
+    testId: string
+  slot
+  view
+    row align-items="baseline" testId=testId
+      text "–" aria-hidden=true width=lookNumberWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
       column flex=1 min-width=0 gap=lookTight()
         children
 
@@ -213,6 +503,15 @@ component ValueField
     testId: string
   view
     input value=value input=change submit=submit placeholder=hint aria-label=label autocomplete="off" max-width=lookMeasure() testId=testId
+
+// A line of actions side by side (Save, Cancel), a gutter apart, wrapping on a narrow window.
+component Actions
+  props
+    testId: string
+  slot
+  view
+    row flex-wrap="wrap" column-gap=lookGutter() row-gap=lookTight() align-items="baseline" testId=testId
+      children
 
 // An action: the platform's plain text button. `keys` is its one-key shortcut ("" for none).
 component Action
