@@ -3,6 +3,7 @@
 // Each screen is one document column (`Page`), drawn only with the shared pieces of look.contract. The data and
 // the actions are the root's (app.contract); a screen with a form keeps its drafts itself.
 use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, statusWord, look, lookTight from "./look.contract"
+use usualWords, inHand from "./activity.contract"
 
 shape Role
   id: string
@@ -396,11 +397,16 @@ component ProfileScreen
     ask: action
     add: action
     retry: action
-    // How much slow work is ahead of the profile while it waits ("2 ahead").
+    // How much slow work is ahead of the profile while it waits ("2 ahead"), and how long writing it usually takes,
+    // from the activity list (-1 when not known).
     ahead: number
-  derive writing = profile.status == "queued" or profile.status == "running"
-  derive place = profile.status == "queued" ? (ahead == 0 ? "next" : `${ahead} ahead`) : ""
-  derive work = statusWord("work", profile.status)
+    usual: number
+    // The writing's state: the activity list's (waiting | running) while it has the writing open, else the profile's own.
+    state: string
+  derive writing = inHand(state)
+  derive place = (state == "queued" or state == "waiting") and ahead >= 0 ? (ahead == 0 ? "next" : `${ahead} ahead`) : ""
+  derive usually = `Usually ${usualWords(usual)}.`
+  derive work = statusWord("work", state)
   view
     Page(testId="profile")
       Section(testId="profile-top")
@@ -414,7 +420,7 @@ component ProfileScreen
             QuietLine(text="Loading your profile…", testId="profile-loading")
       else if profile.body == "" and writing
         Section(testId="profile-wait")
-          WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. Usually a few minutes.`, testId="profile-writing")
+          WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. ${usually}`, testId="profile-writing")
       else if profile.body == "" and profile.facts == 0
         Section(testId="profile-empty")
           Line(text="Your profile is written from the facts in your record. Add a source to start.", testId="profile-empty-text")
@@ -431,7 +437,7 @@ component ProfileScreen
       else
         Section(testId="profile-about")
           if writing
-            WorkLine(word=work, place=place, text="Rewriting this from your record. Usually a few minutes. The text below is the last version.", testId="profile-state")
+            WorkLine(word=work, place=place, text=`Rewriting this from your record. ${usually} The text below is the last version.`, testId="profile-state")
           else if profile.status == "failed"
             FailLine(text=`Rewriting failed. ${profile.note}`, testId="profile-state")
           else if askError != ""

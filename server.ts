@@ -19,6 +19,7 @@ import { lf } from './lib/resume.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { type AtsCheck } from './lib/pdf.ts';
 import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
+import { activity, dismiss, failedRow, markSeen, stubStep, type Kind } from './lib/activity.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -124,6 +125,57 @@ function inboxName(wanted: string) {
   for (let n = 2; existsSync(join(INBOX, name)); n++) name = `${stem} ${n}${ext}`;
   return name;
 }
+
+// Asking for slow work again. Each is the one way the screens ask for it (the routes below), and Activity's Try again
+// (POST /activity/:id/retry) asks by the same function, so there is no second way to start work.
+function readSourceAgain(id: number) {
+  const s = db.query('SELECT status FROM sources WHERE id = ?').get(id) as { status: string } | null;
+  if (!s) return send({ error: 'That source was deleted.' }, 404);
+  if (s.status === 'running') return send({ error: 'It’s being read now. Wait for it to finish.' }, 409);
+  db.query("UPDATE sources SET status = 'queued', note = '' WHERE id = ?").run(id);
+  return send({ ok: true });
+}
+function readJobAgain(id: number) {
+  const j = db.query('SELECT status FROM jobs WHERE id = ?').get(id) as { status: string } | null;
+  if (!j) return send({ error: 'That job was deleted.' }, 404);
+  if (j.status === 'running') return send({ error: 'It’s being read now. Wait for it to finish.' }, 409);
+  db.query("UPDATE jobs SET status = 'queued', note = '' WHERE id = ?").run(id);
+  return send({ ok: true });
+}
+// Asked for by the person: the resume is written again from the bank as it is now. The reading of the posting stays.
+function writeResumeAgain(id: number) {
+  const state = db.query('SELECT status, resume_status FROM jobs WHERE id = ?').get(id) as { status: string; resume_status: string } | null;
+  if (!state) return send({ error: 'That job was deleted.' }, 404);
+  // While the resume is being written, a change to it would be lost or would disagree with what comes back.
+  if (['queued', 'running'].includes(state.status) || ['queued', 'running'].includes(state.resume_status)) return send({ error: 'This job’s resume is being written now. Wait for it to finish, then change it.' }, 409);
+  const r = db.query("UPDATE jobs SET resume_status = 'queued', resume_note = '' WHERE id = ? AND status = 'done'").run(id);
+  return r.changes ? send({ ok: true }) : send({ error: 'This job hasn’t been read yet.' }, 409);
+}
+function writeProfileAgain() {
+  const facts = (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;
+  if (facts === 0) return send({ error: 'Your record is empty. Add a source first.' }, 409);
+  db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
+  return send({ ok: true });
+}
+// Asks for a few short messages the person could send to reach someone at the company. The worker writes them.
+function draftMessagesAgain(id: number) {
+  const j = db.query('SELECT outreach_status, posting FROM jobs WHERE id = ?').get(id) as { outreach_status: string; posting: string } | null;
+  if (!j) return send({ error: 'That job was deleted.' }, 404);
+  if (j.posting.trim() === '') return send({ error: 'This job hasn’t been read yet. Draft messages once it has.' }, 409);
+  if (j.outreach_status === 'queued' || j.outreach_status === 'running') return send({ error: 'They’re being written now.' }, 409);
+  db.query("UPDATE jobs SET outreach_status = 'queued', outreach_note = '' WHERE id = ?").run(id);
+  return send({ ok: true });
+}
+function checkWatchlistAgain() {
+  if ((db.query('SELECT count(*) AS n FROM companies').get() as { n: number }).n === 0) return send({ error: 'The watchlist is empty. Add a company first.' }, 409);
+  db.run("UPDATE discovery SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
+  return send({ ok: true });
+}
+// A reply in Talk is asked for only by sending a message, so a failed one is not tried again from Activity.
+const AGAIN: Partial<Record<Kind, (subject: number) => Response>> = {
+  'read-source': readSourceAgain, 'read-posting': readJobAgain, 'write-resume': writeResumeAgain, 'write-profile': () => writeProfileAgain(),
+  'draft-messages': draftMessagesAgain, 'check-watchlist': () => checkWatchlistAgain(),
+};
 
 // Where it listens: HOST and PORT when set; else the app's API_BASE_URL when that is this machine
 // (a test run on a spare port while a dev server holds the usual one); else LOCAL.
@@ -237,15 +289,7 @@ Bun.serve({ hostname, port, routes: {
       return send({ ok: true, updated: open.length });
     },
   },
-  '/profile/write': {
-    OPTIONS: preflight,
-    POST: () => {
-      const facts = (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;
-      if (facts === 0) return send({ error: 'Your record is empty. Add a source first.' }, 409);
-      db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
-      return send({ ok: true });
-    },
-  },
+  '/profile/write': { OPTIONS: preflight, POST: () => writeProfileAgain() },
   // Who is signed in to GitHub on this machine and what they can reach, with what is already a source marked.
   '/github': {
     OPTIONS: preflight,
@@ -353,11 +397,7 @@ Bun.serve({ hostname, port, routes: {
         await publish(id, !STUB);
         return send({ ok: true });
       }
-      // Asked for by the person: the resume is written again from the bank as it is now. The reading of the posting stays.
-      if (b.rewrite === true) {
-        const r = db.query("UPDATE jobs SET resume_status = 'queued', resume_note = '' WHERE id = ? AND status = 'done'").run(id);
-        return r.changes ? send({ ok: true }) : send({ error: 'This job hasn’t been read yet.' }, 409);
-      }
+      if (b.rewrite === true) return writeResumeAgain(id);
       // One page or two: the resume is written again to that length.
       if (b.pages === 1 || b.pages === 2) {
         // Only the resume is written again: the reading of the posting does not depend on its length.
@@ -412,14 +452,7 @@ Bun.serve({ hostname, port, routes: {
           salary: l.salary, posted: ago(l.posted_at), fresh: l.posted_at > 0 && Date.now() - l.posted_at <= 7 * DAY })) });
     },
   },
-  '/leads/check': {
-    OPTIONS: preflight,
-    POST: () => {
-      if ((db.query('SELECT count(*) AS n FROM companies').get() as { n: number }).n === 0) return send({ error: 'The watchlist is empty. Add a company first.' }, 409);
-      db.run("UPDATE discovery SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
-      return send({ ok: true });
-    },
-  },
+  '/leads/check': { OPTIONS: preflight, POST: () => checkWatchlistAgain() },
   '/leads/:id': {
     OPTIONS: preflight,
     GET: (req) => {
@@ -471,32 +504,12 @@ Bun.serve({ hostname, port, routes: {
       return send({ ok: true });
     },
   },
-  // Asks for a few short messages the person could send to reach someone at the company. The worker writes them.
-  '/jobs/:id/outreach': {
+  '/jobs/:id/outreach': { OPTIONS: preflight, POST: (req) => draftMessagesAgain(Number(req.params.id)) },
+  '/jobs/:id/read': { OPTIONS: preflight, POST: (req) => readJobAgain(Number(req.params.id)) },
+  // A test server only (--stub-github): a job as the worker would leave it, for trying the screens without a model.
+  ...(STUB ? { '/jobs/:id/result': {
     OPTIONS: preflight,
-    POST: (req) => {
-      const j = db.query('SELECT outreach_status, posting FROM jobs WHERE id = ?').get(Number(req.params.id)) as { outreach_status: string; posting: string } | null;
-      if (!j) return send({ error: 'That job was deleted.' }, 404);
-      if (j.posting.trim() === '') return send({ error: 'This job hasn’t been read yet. Draft messages once it has.' }, 409);
-      if (j.outreach_status === 'queued' || j.outreach_status === 'running') return send({ error: 'They’re being written now.' }, 409);
-      db.query("UPDATE jobs SET outreach_status = 'queued', outreach_note = '' WHERE id = ?").run(Number(req.params.id));
-      return send({ ok: true });
-    },
-  },
-  '/jobs/:id/read': {
-    OPTIONS: preflight,
-    POST: (req) => {
-      const j = db.query('SELECT status FROM jobs WHERE id = ?').get(Number(req.params.id)) as { status: string } | null;
-      if (!j) return send({ error: 'That job was deleted.' }, 404);
-      if (j.status === 'running') return send({ error: 'It’s being read now. Wait for it to finish.' }, 409);
-      db.query("UPDATE jobs SET status = 'queued', note = '' WHERE id = ?").run(Number(req.params.id));
-      return send({ ok: true });
-    },
-  },
-  // A job as the worker would leave it, for trying the screens without a model (tests).
-  '/jobs/:id/result': {
-    OPTIONS: preflight,
-    POST: async (req) => {
+    POST: async (req: Request & { params: { id: string } }) => {
       const b = await req.json().catch(() => ({}));
       const reqs = weigh(Array.isArray(b.requirements) ? b.requirements : [], db.query('SELECT * FROM roles').all() as RoleRow[], Date.now());
       db.query("UPDATE jobs SET status = 'done', note = '', title = ?, company = ?, place = ?, fit = ?, analysis = ?, resume = ?, bank_sig = ?, updated_at = ? WHERE id = ?")
@@ -504,7 +517,7 @@ Bun.serve({ hostname, port, routes: {
           terms: termsOf(Array.isArray(b.terms) ? b.terms : [], str(b.resume), ''), checks: b.checks ?? [] }), str(b.resume), bankSignature(), Date.now(), Number(req.params.id));
       return send({ ok: true });
     },
-  },
+  } } : {}),
   '/inbox': { OPTIONS: preflight, GET: () => send({ folder: INBOX, files: inbox() }) },
   '/roles': {
     OPTIONS: preflight,
@@ -607,6 +620,40 @@ Bun.serve({ hostname, port, routes: {
       return refused ? send({ error: refused }, 400) : send({ ok: true });
     },
   },
+  // Slow work (lib/activity.ts): what waits, runs, failed and finished, and what finished since the owner last looked.
+  '/activity': { OPTIONS: preflight, GET: () => send(activity(Date.now(), bankSignature)) },
+  // The owner has seen the digest up to {at}, the end time of the latest line drawn: it is not announced again.
+  '/activity/seen': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      const refused = markSeen(typeof b.at === 'number' ? b.at : NaN, Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // A failed piece of work, asked for again by the same path its screen uses.
+  '/activity/:id/retry': {
+    OPTIONS: preflight,
+    POST: (req) => {
+      if (!/^\d+$/.test(req.params.id)) return send({ error: 'Say which piece of work, by its number.' }, 400);
+      const row = failedRow(Number(req.params.id));
+      if (!row) return send({ error: 'This work has already been tried again or put away.' }, 404);
+      const again = AGAIN[row.kind];
+      return again ? again(row.subject) : send({ error: 'Send your message again in Talk.' }, 409);
+    },
+  },
+  // Puts a failed piece of work out of view. Nothing else changes.
+  '/activity/:id/dismiss': {
+    OPTIONS: preflight,
+    POST: (req) => (!/^\d+$/.test(req.params.id) ? send({ error: 'Say which piece of work, by its number.' }, 400)
+      : dismiss(Number(req.params.id), Date.now()) ? send({ ok: true }) : send({ error: 'This work has already been tried again or put away.' }, 404)),
+  },
+  // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
+  ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
+    const b = await req.json().catch(() => ({}));
+    const refused = stubStep(str(b.kind) as Kind, Number(b.id), str(b.to), str(b.note), str(b.stage), typeof b.resume === 'string' ? b.resume : '');
+    return refused ? send({ error: refused }, 400) : send({ ok: true });
+  } } } : {}),
   '/facts': {
     OPTIONS: preflight,
     // A fact written by hand (or by a test) is the person's own word: confirmed unless it says otherwise.
@@ -675,16 +722,7 @@ Bun.serve({ hostname, port, routes: {
       return send({ ok: true }, 201);
     },
   },
-  '/sources/:id/read': {
-    OPTIONS: preflight,
-    POST: (req) => {
-      const s = db.query('SELECT status FROM sources WHERE id = ?').get(Number(req.params.id)) as { status: string } | null;
-      if (!s) return send({ error: 'That source was deleted.' }, 404);
-      if (s.status === 'running') return send({ error: 'It’s being read now. Wait for it to finish.' }, 409);
-      db.query("UPDATE sources SET status = 'queued', note = '' WHERE id = ?").run(Number(req.params.id));
-      return send({ ok: true });
-    },
-  },
+  '/sources/:id/read': { OPTIONS: preflight, POST: (req) => readSourceAgain(Number(req.params.id)) },
   '/sources/:id': {
     OPTIONS: preflight,
     // Its facts go with it, except the ones the person edited, which stay in the bank.

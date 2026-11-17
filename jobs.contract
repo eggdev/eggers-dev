@@ -7,6 +7,7 @@
 // `statusWord` names it). Every other number the reading or the checks produce is said in a sentence, under "How the
 // resume was checked", never as a second headline number.
 use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Aside, statusWord, joinDot, look from "./look.contract"
+use WorkItem, workPlace, workUsual, workStage, workStatus, inHand, usualWords, durationWords from "./activity.contract"
 
 // A job in the list: its fit is 0 to 100 once read, -1 before.
 shape JobRow
@@ -252,6 +253,12 @@ fn reviewLine(j: Job): string = `${j.seats.length == 0 ? `Readers scored this re
 fn atsLine(j: Job): string = `The file reads cleanly in ${j.ats.filter(a => a.ok).length} of ${j.ats.length} ${j.ats.length == 1 ? "check" : "checks"}.${j.atsScore >= 0 ? ` By fixed rules it scores ${j.atsScore} of 100, and ${j.atsRequired} is needed before it is ready to send.` : ""}`
 fn readingNow(j: Job): bool = j.status == "queued" or j.status == "running"
 fn writingNow(j: Job): bool = j.resumeStatus == "queued" or j.resumeStatus == "running"
+// A job's slow-work lines take their place, stage and usual duration from the activity list (activity.contract), so
+// they say what Activity says. kind: read-posting | write-resume | draft-messages.
+fn usuallyFor(work: WorkItem[], kind: string, id: string): string = `Usually ${usualWords(workUsual(work, kind, id))}.`
+fn stageFor(work: WorkItem[], kind: string, id: string): string = workStage(work, kind, id) == "" ? "" : ` ${workStage(work, kind, id)}.`
+fn readingLine(work: WorkItem[], id: string): string = `${workStage(work, "read-posting", id) == "" ? "Reading the posting against your record" : workStage(work, "read-posting", id)}. ${usuallyFor(work, "read-posting", id)}`
+fn draftingLine(work: WorkItem[], id: string): string = workUsual(work, "draft-messages", id) < 0 ? "Drafting messages. Usually a minute or two." : `Drafting messages. Usually ${durationWords(workUsual(work, "draft-messages", id))}.`
 
 // The Jobs list. `stage` is the group shown: saved, active, done, or found (postings found on the watchlist).
 component JobsScreen
@@ -317,7 +324,7 @@ component JobsScreen
                   if jobLine(j.place, j.salary, j.contact) != ""
                     QuietLine(text=jobLine(j.place, j.salary, j.contact), testId=`job-line-${j.id}`)
                   InlineField(label="What happened")
-                    select value=j.outcome change=pickOutcome(j.id) aria-label=`What happened with ${j.title}` testId=`status-${j.id}`
+                    select value=j.outcome change=pickOutcome(j.id) aria-label=`What happened with ${j.title}` max-width="100%" testId=`status-${j.id}`
                       option "Not applied" value=""
                       option "Applied" value="applied"
                       option "Interviewed" value="interviewed"
@@ -360,7 +367,7 @@ component JobFlags
             Line(text=f.text, testId=`job-flag-${f.id}`)
           if f.items.length > 0
             Indented(testId=`job-flag-${f.id}-items`)
-              for item, n in f.items key=`${n}`
+              for item, n in f.items key=item
                 QuietLine(text=item, testId=`job-flag-${f.id}-item-${n}`)
 
 // One job: its record, what to look at, the posting requirement by requirement, the resume, what happened, the
@@ -368,6 +375,8 @@ component JobFlags
 component JobScreen
   props
     job: Job
+    // The slow work in view (activity.contract), for this job's slow-work lines.
+    work: WorkItem[]
     wide: bool
     // The length the picker shows: the one being asked about while a confirm is open, else the resume's.
     pages: string
@@ -396,6 +405,10 @@ component JobScreen
   state who = job.contact
   derive read = job.status == "done" or job.verdict != ""
   derive resumeBusy = readingNow(job) or writingNow(job)
+  // Each slow-work line's state: the activity list's (waiting | running) while it has that work open, else the job's own.
+  derive reading = workStatus(work, "read-posting", job.id, job.status)
+  derive writingIt = workStatus(work, "write-resume", job.id, job.resumeStatus)
+  derive drafting = workStatus(work, "draft-messages", job.id, job.doorsStatus)
   action editWho(v: string)
     who = v
   action editNote(v: string)
@@ -408,10 +421,10 @@ component JobScreen
         RecordHead(code=jobRef(job.id), name=jobName(job.title, job.company), dates=jobDates(job.posted, job.added, job.sent), extent=fitText(job.status, job.fit), word=jobWord(job), showWord=true, place="", provenance=jobFrom(job.from), testId="job-title")
           if jobLine(job.place, "", "") != ""
             QuietLine(text=job.place, testId="job-place")
-          if job.status == "queued"
-            WorkLine(word=statusWord("work", "queued"), place="", text="Waiting to be read against your record. Reading usually takes a few minutes.", testId="job-status")
-          else if job.status == "running"
-            WorkLine(word=statusWord("work", "running"), place="", text="Reading the posting against your record. Usually a few minutes.", testId="job-status")
+          if reading == "queued" or reading == "waiting"
+            WorkLine(word=statusWord("work", reading), place=workPlace(work, "read-posting", job.id), text=`Waiting to be read against your record. Reading usually takes ${usualWords(workUsual(work, "read-posting", job.id))}.`, testId="job-status")
+          else if reading == "running"
+            WorkLine(word=statusWord("work", reading), place="", text=readingLine(work, job.id), testId="job-status")
           else if job.status == "failed"
             FailLine(text=`Reading failed. ${job.note}`, testId="job-status")
       if job.flags.length > 0 or job.skimConclusion != ""
@@ -469,8 +482,8 @@ component JobScreen
       if read
         Section(testId="job-resume-section")
           SectionHead(text="Resume", testId="job-resume-head")
-          if writingNow(job)
-            WorkLine(word=statusWord("work", job.resumeStatus), place="", text=(job.resume == "" ? "Writing your resume for this job and having it reviewed. Usually a few minutes." : "Writing this resume again and having it reviewed. Usually a few minutes. The one you can read now is the last version."), testId="job-resume-writing")
+          if inHand(writingIt)
+            WorkLine(word=statusWord("work", writingIt), place=workPlace(work, "write-resume", job.id), text=(job.resume == "" ? `Writing your resume for this job and having it reviewed.${stageFor(work, "write-resume", job.id)} ${usuallyFor(work, "write-resume", job.id)}` : `Writing this resume again and having it reviewed.${stageFor(work, "write-resume", job.id)} ${usuallyFor(work, "write-resume", job.id)} The one you can read now is the last version.`), testId="job-resume-writing")
           else if job.resumeStatus == "failed"
             FailLine(text=`The resume couldn’t be written. ${job.resumeNote} Write it again to retry.`, testId="job-resume-failed")
           else if job.resumeStale
@@ -552,11 +565,11 @@ component JobScreen
               QuietLine(text=`${d.why} ${d.find}`, testId=`door-why-${d.id}`)
               Prose(text=d.message, strong=false, testId=`door-message-${d.id}`)
               Action(label=(copied == `${job.id}:${d.id}` ? "Copied" : "Copy the message"), press=copyDoor(d.id, d.message), disabled=false, keys="", testId=`door-copy-${d.id}`)
-          if job.doorsStatus == "queued" or job.doorsStatus == "running"
-            WorkLine(word=statusWord("work", job.doorsStatus), place="", text="Drafting messages. Usually a minute or two.", testId="doors-writing")
+          if inHand(drafting)
+            WorkLine(word=statusWord("work", drafting), place=workPlace(work, "draft-messages", job.id), text=draftingLine(work, job.id), testId="doors-writing")
           if job.doorsStatus == "failed" or doorsError != ""
             FailLine(text=(doorsError != "" ? doorsError : `Drafting failed. ${job.doorsNote}`), testId="doors-error")
-          Action(label=(job.doors.length > 0 ? "Draft again" : "Draft messages"), press=draftDoors, disabled=(doorsBusy or job.doorsStatus == "queued" or job.doorsStatus == "running"), keys="", testId="doors-draft")
+          Action(label=(job.doors.length > 0 ? "Draft again" : "Draft messages"), press=draftDoors, disabled=(doorsBusy or inHand(drafting)), keys="", testId="doors-draft")
           QuietLine(text=(job.doors.length > 0 ? "Drafts to personalise before you send. Fill in anything in [brackets]. Drafting again replaces these." : "Short messages to reach a person at the company, each by a different way in. If you noted who you know there, the first is written to them."), testId="doors-hint")
       if job.gaps.length > 0
         Section(testId="job-gaps")
@@ -620,26 +633,28 @@ component ResumeFlags
             StrongLine(text=f.text, testId=`resume-flag-${f.id}`)
           else
             Line(text=f.text, testId=`resume-flag-${f.id}`)
-          for item, n in f.items key=`${n}`
+          for item, n in f.items key=item
             QuietLine(text=item, testId=`resume-flag-${f.id}-item-${n}`)
 
 // The resume written for a job, as a document, with its flags beside it.
 component ResumeScreen
   props
     job: Job
+    work: WorkItem[]
     wide: bool
     back: action
     edit: action
   derive flagged = job.flags.length > 0 or job.skimConclusion != ""
   derive resumeBusy = readingNow(job) or writingNow(job)
+  derive writingIt = workStatus(work, "write-resume", job.id, job.resumeStatus)
   view
     WidePage(testId="resume")
       Section(testId="resume-top")
         Action(label="Back to the job", press=back, disabled=false, keys="", testId="resume-back")
       Section(testId="resume-head")
         QuietLine(text=`${jobRef(job.id)}. Written for ${jobName(job.title, job.company)}, from your record.`, testId="resume-for")
-        if writingNow(job)
-          WorkLine(word=statusWord("work", job.resumeStatus), place="", text="Writing this resume again. Usually a few minutes. This is the last version.", testId="resume-writing")
+        if inHand(writingIt)
+          WorkLine(word=statusWord("work", writingIt), place=workPlace(work, "write-resume", job.id), text=`Writing this resume again.${stageFor(work, "write-resume", job.id)} ${usuallyFor(work, "write-resume", job.id)} This is the last version.`, testId="resume-writing")
         Actions(testId="resume-actions")
           Action(label="Edit", press=edit, disabled=resumeBusy, keys="", testId="resume-edit")
           if job.pdf != ""

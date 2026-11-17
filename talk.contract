@@ -3,6 +3,7 @@
 // owner's words in the heavy weight): no bubbles and no fills. The entry field is at the bottom. A reply being
 // written is one slow-work line. The data and the actions are the root's (app.contract).
 use Page, Section, Title, Line, QuietLine, FailLine, Prose, Numbered, Bulleted, Action, MainAction, DangerAction, WorkLine, Actions, statusWord, look, lookMeasure, lookGutter, lookTight from "./look.contract"
+use WorkItem, durationWords, workStatus, inHand from "./activity.contract"
 
 // One message of the conversation. status is done | queued | running | failed (a reply being written); added lists
 // the facts a reply put in the record.
@@ -33,6 +34,10 @@ fn questionsLabel(n: number): string = n == 0 ? "Questions" : n >= 30 ? "Questio
 component TalkScreen
   props
     talk: Talk
+    // The slow work in view (activity.contract): a reply's status word comes from it as soon as it changes.
+    work: WorkItem[]
+    // How long a reply usually takes, from the activity list; -1 until enough replies have been written to say.
+    usual: number
     failed: bool
     loadError: string
     draft: string
@@ -76,8 +81,8 @@ component TalkScreen
               QuietLine(text=(m.mine ? "You" : "Studio"), testId=`talk-${m.id}-who`)
               if m.mine
                 Prose(text=m.body, strong=true, testId=`talk-${m.id}`)
-              else if m.status == "queued" or m.status == "running"
-                WorkLine(word=statusWord("work", m.status), place="", text="Writing a reply. It appears here when it is done.", testId=`talk-${m.id}`)
+              else if inHand(workStatus(work, "write-reply", m.id, m.status))
+                WorkLine(word=statusWord("work", workStatus(work, "write-reply", m.id, m.status)), place="", text=(usual < 0 ? "Writing a reply. It appears here when it is done." : `Writing a reply. Usually ${durationWords(usual)}. It appears here when it is done.`), testId=`talk-${m.id}`)
               else if m.status == "failed"
                 FailLine(text=`No reply was written. ${m.note}`, testId=`talk-${m.id}`)
               else

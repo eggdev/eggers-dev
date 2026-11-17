@@ -10,6 +10,35 @@ test "home says in one line that nothing needs you on an empty database"
   expect tree missing "home-count"
   expect tree missing "home-keys"
 
+test "with nothing waiting or running, an open screen asks for nothing again until it is opened again"
+  clock data
+  expect state activity.busy == false
+  tap "nav-jobs"
+  clock settle
+  clock data
+  // From here every request to the server fails: one asked in the next minute would show as a failed load.
+  fail fetch "http://127.0.0.1:8787"
+  clock +60000
+  clock data
+  expect state jobsError == ""
+  expect state activityError == ""
+  // Opening the list again asks for it again, and that request is the one that fails.
+  tap "nav-home"
+  clock settle
+  tap "nav-jobs"
+  clock settle
+  clock data
+  expect state jobsError == "The studio can’t be reached right now. Try again in a moment."
+  pass fetch "http://127.0.0.1:8787"
+  tap "nav-home"
+  clock settle
+  tap "nav-jobs"
+  clock settle
+  clock +1
+  clock data
+  expect state jobsError == ""
+  expect state activityError == ""
+
 test "a source is added from the empty record, waits to be read, refuses a repeat repository in words, and is deleted after asking"
   clock data
   tap "nav-record"
@@ -84,7 +113,8 @@ test "facts are in the record with no review step; a role shows its reference an
   request POST "/facts" {"roleId": 1, "kind": "project", "text": "Built the billing export service.", "detail": "Finance closed the month by hand. Designed and built the export in Go.", "skills": "Go, Postgres", "evidence": "a1b2c3 billing/export.go"}
   request POST "/facts" {"roleId": 1, "kind": "accomplishment", "text": "Cut checkout latency.", "metric": "900 ms to 210 ms", "evidence": "resume bullet"}
   request POST "/facts" {"kind": "skill", "text": "TypeScript"}
-  clock +5000
+  // Nothing is polled while no work runs: written elsewhere, the facts show once the screen is opened again.
+  reload
   clock data
   expect state bank.facts.length == 3
   expect tree missing "bank-add"
@@ -158,14 +188,15 @@ test "the profile is asked for, shows as being written, then shows the document 
   expect text "profile-writing" == "Writing your profile from 2 facts. Usually a few minutes."
   expect text "profile-writing-status" == "Waiting"
   request POST "/profile/save" {"body": "# Professional profile\n\n## Summary\n\nI build billing systems.", "gaps": ["What did the billing export replace, and who used it?"]}
-  clock +5000
+  // While work waits, the activity list is asked for every 10 seconds; the profile's writing has ended, so it loads again.
+  clock +10000
   clock data
   expect tree has "profile-body"
   expect text "gap-0" == "What did the billing export replace, and who used it?"
   expect state profile.stale == false
   expect enabled "profile-rewrite"
   request POST "/facts" {"roleId": 1, "kind": "responsibility", "text": "Ran the on-call rotation."}
-  clock +5000
+  reload
   clock data
   expect state profile.stale == true
   tap "sub-direction"
@@ -278,7 +309,8 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   tap "job-back"
   clock settle
   request POST "/jobs/1/result" {"title": "Staff Engineer, Billing", "company": "Globex", "place": "Remote", "verdict": "A strong fit on leadership and Go.", "requirements": [{"text": "Experience leading engineers", "need": "must", "coverage": "strong", "evidence": "Led five engineers on the billing export at Acme.", "roles": ["role:1"]}, {"text": "Go in production", "need": "must", "coverage": "partial", "evidence": "Go is shown on one project.", "roles": ["role:1"]}, {"text": "Experience with Kafka", "need": "nice", "coverage": "none", "evidence": "Nothing in the bank shows Kafka."}], "strengths": ["Led the billing export team."], "risks": ["No Kafka."], "changes": ["Moved the billing export to the top, since the posting centres on billing."], "gaps": ["Have you run Kafka or another queue in production?"], "terms": ["Go", "Kafka"], "knockouts": [{"question": "Are you authorised to work in the US?", "answer": "unknown", "note": "The bank doesn’t say."}], "resume": "# Ada Example\n\n## Summary\n\nStaff engineer who builds billing systems in Go."}
-  clock +5000
+  // The reading ended: the next look at the activity list (every 10 seconds while work waits) loads the list again.
+  clock +10000
   clock data
   expect text "job-1-ref" == "J-001"
   expect text "job-1-span" == "Added today · Fit 64"
@@ -299,7 +331,7 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   expect text "job-verdict" == "A strong fit on leadership and Go."
   // What to look at on the resume is worked out when the questions are next checked (here, by Home's list).
   request GET "/queue"
-  clock +5000
+  reload
   clock data
   expect text "job-flags-head" == "What to look at"
   expect text "job-flag-0" == "The resume lists no job under Experience, and your record has jobs."
@@ -546,7 +578,7 @@ test "system opens from the main line and shows both of its screens: the public 
   clock settle
   expect text "sub-current" == "Public page"
 
-test "the main line goes to each of the five places and marks the current one"
+test "the main line goes to each of the six places and marks the current one"
   clock data
   expect text "nav-current" == "Home"
   tap "nav-record"
@@ -561,6 +593,11 @@ test "the main line goes to each of the five places and marks the current one"
   clock settle
   expect state nav.tab == "talk"
   expect text "nav-current" == "Talk"
+  tap "nav-activity"
+  clock settle
+  expect state nav.tab == "activity"
+  expect text "nav-current" == "Activity"
+  expect text "activity-title" == "Activity"
   tap "nav-system"
   clock settle
   expect state nav.tab == "publicPage"
@@ -669,3 +706,153 @@ test "two roles that both say Present carry the overlap marker, which leads to H
   clock data
   clock settle
   expect state nav.tab == "home"
+
+test "activity opens from the main line; a posting being read is a row with its stage and status word, and no spinner; a failed one says why, is tried again, and is dismissed"
+  request POST "/jobs" {"url": "https://jobs.example.com/initech/platform-engineer", "posting": ""}
+  request POST "/test/work" {"kind": "read-posting", "id": 2, "to": "running", "stage": "Fetching the posting"}
+  clock data
+  tap "nav-activity"
+  clock settle
+  // Opening a screen asks for the activity list again, a moment after it shows.
+  clock +1
+  clock data
+  expect text "nav-current" == "Activity"
+  expect state activity.busy == true
+  expect text "work-read-posting-2" == "Reading the posting for J-002"
+  expect text "work-read-posting-2-status" == "Running"
+  expect text "work-read-posting-2-stage" == "Fetching the posting"
+  expect text "work-read-posting-2-usual" == "Usually a few minutes"
+  expect tree missing "work-read-posting-2-place"
+  expect tree missing "activity-loading"
+  // A source added earlier still waits for the worker: Waiting, always with its place.
+  expect text "work-read-source-2-status" == "Waiting"
+  expect tree has "work-read-source-2-place"
+  // The reading fails: the next look at the list (every 10 seconds while work waits) shows it, in red, with why.
+  request POST "/test/work" {"kind": "read-posting", "id": 2, "to": "failed", "note": "The page asked for a sign-in."}
+  clock +10000
+  clock data
+  expect text "work-read-posting-2-status" == "Failed"
+  expect text "work-read-posting-2-reason" == "The page asked for a sign-in."
+  expect text "work-read-posting-2-retry" == "Try again"
+  tap "work-read-posting-2-retry"
+  clock data
+  expect text "work-read-posting-2-status" == "Waiting"
+  expect tree has "work-read-posting-2-place"
+  expect tree missing "work-read-posting-2-retry"
+  request POST "/test/work" {"kind": "read-posting", "id": 2, "to": "failed", "note": "The page asked for a sign-in."}
+  clock +10000
+  clock data
+  tap "work-read-posting-2-dismiss"
+  clock data
+  expect tree missing "work-read-posting-2"
+  // The job's own page says the same thing: its reading failed.
+  tap "nav-jobs"
+  clock settle
+  clock data
+  tap "job-2"
+  clock settle
+  clock data
+  expect text "job-status" == "Reading failed. The page asked for a sign-in."
+
+test "home says what finished since the owner was here, once, and not after a reload"
+  clock data
+  reload
+  clock data
+  expect tree missing "home-digest"
+  request POST "/test/work" {"kind": "read-posting", "id": 2, "to": "running"}
+  request POST "/test/work" {"kind": "read-posting", "id": 2, "to": "done"}
+  // Work still waits, so the activity list is asked for again within 10 seconds, and the finished reading is announced.
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect text "home-digest-head" == "Since you were here"
+  expect text "home-digest-0" == "The posting for J-002 was read."
+  tap "nav-activity"
+  clock settle
+  clock +1
+  clock data
+  expect text "activity-digest" == "Since you were here: the posting for J-002 was read."
+  expect state activity.done.0 .subject == "2"
+  expect state activity.done.0 .status == "done"
+  reload
+  clock data
+  expect tree missing "activity-digest"
+  tap "nav-home"
+  clock settle
+  clock data
+  expect tree missing "home-digest"
+
+test "a job page's status word changes from Waiting to Reading when its reading starts, with no navigation"
+  request POST "/jobs" {"url": "https://jobs.example.com/hooli/platform-lead", "posting": ""}
+  clock data
+  tap "nav-jobs"
+  clock settle
+  clock data
+  tap "job-3"
+  clock settle
+  clock +1
+  clock data
+  expect text "job-status-status" == "Waiting"
+  expect text "job-title-status" == "New"
+  request POST "/test/work" {"kind": "read-posting", "id": 3, "to": "running", "stage": "Fetching the posting"}
+  // Work waits, so the activity list is asked for within 10 seconds; the reading has started, so the job loads again.
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect text "job-status-status" == "Running"
+  expect text "job-status" == "Fetching the posting. Usually a few minutes."
+  expect text "job-title-status" == "Reading"
+
+test "with the resume open, its PDF appears once the resume is written and printed, with no navigation"
+  at "/job/3/resume"
+  request POST "/test/work" {"kind": "read-posting", "id": 3, "to": "done"}
+  request POST "/test/work" {"kind": "write-resume", "id": 3, "to": "running", "stage": "Printing the PDF and checking it"}
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect text "resume-writing-status" == "Running"
+  expect text "resume-writing" == "Writing this resume again. Printing the PDF and checking it. Usually a few minutes. This is the last version."
+  expect tree missing "resume-pdf"
+  request POST "/test/work" {"kind": "write-resume", "id": 3, "to": "done", "resume": "# Ada Example\n\n## Summary\n\nStaff engineer who builds platforms."}
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect tree missing "resume-writing"
+  expect text "resume-pdf" == "Get the PDF"
+
+test "when the activity list can't be had, the last answer stands and is asked for again; after three failures one line says so"
+  clock data
+  expect state activity.busy == true
+  fail fetch "http://127.0.0.1:8787/activity"
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  // The last answer stands: work is still in hand, so the list is still asked for.
+  expect state activity.busy == true
+  expect state activityFails == 1
+  expect tree missing "studio-down-line"
+  clock +30000
+  clock data
+  clock +1
+  clock data
+  expect state activityFails == 2
+  expect tree missing "studio-down-line"
+  clock +30000
+  clock data
+  clock +1
+  clock data
+  expect state activityFails == 3
+  expect text "studio-down-line" == "The studio can’t be reached right now. It will try again."
+  expect state activity.busy == true
+  pass fetch "http://127.0.0.1:8787/activity"
+  clock +60000
+  clock data
+  clock +1
+  clock data
+  expect state activityFails == 0
+  expect tree missing "studio-down-line"

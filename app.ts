@@ -154,15 +154,10 @@ const sources: Sources = {
         skills: text(f.skills), evidence: text(f.evidence), source: text(f.source), added: text(f.added), edited: f.edited === true })),
     };
   },
-  // A waiting source's place: the worker reads one source at a time, the oldest first, so what is ahead of it is the
-  // one being read and every older one still waiting (-1 when it is not waiting).
-  loadSources: async (): Promise<Result<'loadSources'>> => {
-    const list = rows(await get('/sources')).map((s) => ({ id: text(s.id), kind: text(s.kind), title: text(s.title), detail: text(s.detail),
-      status: text(s.status), note: text(s.note), facts: typeof s.facts === 'number' ? s.facts : 0 }));
-    const ahead = (s: { id: string; status: string }) => s.status !== 'queued' ? -1
-      : list.filter((x) => x.status === 'running' || (x.status === 'queued' && Number(x.id) < Number(s.id))).length;
-    return { loaded: true, items: list.map((s) => ({ ...s, ahead: ahead(s) })) };
-  },
+  // A waiting source's place in line comes from the activity log (loadActivity), as every slow-work line's does.
+  loadSources: async (): Promise<Result<'loadSources'>> => ({ loaded: true,
+    items: rows(await get('/sources')).map((s) => ({ id: text(s.id), kind: text(s.kind), title: text(s.title), detail: text(s.detail),
+      status: text(s.status), note: text(s.note), facts: typeof s.facts === 'number' ? s.facts : 0 })) }),
   loadInbox: async (): Promise<Result<'loadInbox'>> => {
     const b = (await get('/inbox')) as { folder?: unknown; files?: unknown };
     return { folder: text(b.folder), files: rows(b.files).map((f) => text(f)) };
@@ -204,7 +199,8 @@ const sources: Sources = {
       doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
       requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, need: text(r.need) || (r.must === true ? 'must' : 'nice'), coverage: text(r.coverage), evidence: text(r.evidence), bestText: text(r.bestText), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
       // The serious flags first; the server keeps each severity's own order.
-      flags: rows(j.flags ?? []).map((f) => ({ id: text(f.id), kind: text(f.kind), severity: text(f.severity), text: text(f.text), items: list(f.items) }))
+      // A flag's items are keyed by their words on screen, so a line said twice is kept once.
+      flags: rows(j.flags ?? []).map((f) => ({ id: text(f.id), kind: text(f.kind), severity: text(f.severity), text: text(f.text), items: [...new Set(list(f.items))] }))
         .sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity)),
       skimConclusion: text(obj(j.skim)?.conclusion) };
   },
@@ -336,6 +332,20 @@ const sources: Sources = {
     }
   },
   readSource: ([source]) => write('POST', `/sources/${id(source)}/read`),
+  // Slow work (GET /activity, lib/activity.ts): what waits, runs, failed and finished, and the digest.
+  loadActivity: async (): Promise<Result<'loadActivity'>> => {
+    const a = (await get('/activity')) as Record<string, unknown>;
+    const work = (v: unknown) => rows(v ?? []).map((w) => ({ id: text(w.id), kind: text(w.kind), subject: text(w.subject), ref: text(w.ref), what: text(w.what), status: text(w.status),
+      ahead: typeof w.ahead === 'number' ? w.ahead : -1, stage: text(w.stage), since: num(w.since), took: typeof w.took === 'number' ? w.took : -1,
+      usual: typeof w.usual === 'number' ? w.usual : -1, reason: text(w.reason), link: text(w.link), endedAt: num(w.endedAt) }));
+    return { loaded: true, busy: a.busy === true, lastEnded: num(a.lastEnded), lastChanged: num(a.lastChanged), dueIn: num(a.dueIn),
+      changes: rows(a.changes ?? []).map((c) => ({ kind: text(c.kind), at: num(c.at) })), items: work(a.items), done: work(a.done),
+      digest: rows(a.digest ?? []).map((d) => ({ id: text(d.id), line: text(d.line), link: text(d.link), endedAt: num(d.endedAt) })) };
+  },
+  // Seen up to the end time of the latest digest line drawn.
+  markSeen: ([at]) => write('POST', '/activity/seen', { at }),
+  retryWork: ([work]) => write('POST', `/activity/${id(work)}/retry`),
+  dismissWork: ([work]) => write('POST', `/activity/${id(work)}/dismiss`),
   removeSource: ([source]) => write('DELETE', `/sources/${id(source)}`),
 };
 export const answer: Answer = (source, args, store, storage, native) => sources[source](args, store, storage, native);

@@ -336,10 +336,17 @@ export type Composed = { resume: string; changes: string[]; review?: Review; ter
 // it can (tidy). A version in which an entry matches nothing in the bank is never returned: the newest
 // version without such an entry is, and if there is none this throws FactsError and nothing is stored.
 // Set EGG_COUNCIL=off or EGG_SKIM=off to skip a review (a quick run, or a test).
-export async function compose(posting: string, pages: number, terms: string[], requirements: Requirement[] = []): Promise<Composed> {
+// `stage` hears where it has got to, in words for the Activity screen ("Being reviewed, round 2"); it changes nothing.
+export async function compose(posting: string, pages: number, terms: string[], requirements: Requirement[] = [], stage: (words: string) => void = () => {}): Promise<Composed> {
   // The skills list and the questions follow the bank. A failure there must never stop a resume.
   try { syncQuestions(Date.now()); } catch (e) { console.log(`  questions could not be checked: ${(e as Error).message}`); }
-  const supplied = suppliedResume(), roles = allRoles(), top = topRequirements(requirements), log = (l: string) => console.log(`  ${l}`);
+  // Each council round logs one "council:" line when its readers have scored; another round follows unless it passed.
+  let rounds = 0;
+  const supplied = suppliedResume(), roles = allRoles(), top = topRequirements(requirements), log = (l: string) => {
+    console.log(`  ${l}`);
+    if (l.startsWith('council:')) stage(`Being reviewed, round ${++rounds + 1}`);
+  };
+  stage('Writing the first draft');
   const r = await ask<{ resume: string; changes: string[]; questions: string[] }>({ cwd: INBOX, schema: WRITE_SCHEMA, tools: supplied ? ['Read'] : [], allow: supplied ? ['Read'] : [],
     timeoutMs: 25 * 60_000, model: process.env.EGG_JOB_MODEL ?? process.env.EGG_MODEL ?? 'opus',
     prompt: `${reading(posting, pages, supplied, true)}\n\n${brief(requirements, top, terms)}` });
@@ -347,10 +354,12 @@ export async function compose(posting: string, pages: number, terms: string[], r
   const putBack = new Set<string>(), words = bankText(), skills = bankSkills(), whole = JSON.stringify(bank());
   const fix = (text: string) => { const v = tidy(text, posting, pages, roles); for (const f of v.repaired) putBack.add(f.text); return v; };
   const draft = fix(r.resume);
+  if (process.env.EGG_COUNCIL !== 'off') stage('Being reviewed, round 1');
   // Scored as it will be sent: with its header, its true headings and its Skills line. No posting term is pasted in.
   const reviewed = process.env.EGG_COUNCIL === 'off' ? { resume: draft.resume, review: undefined } : await council(draft.resume, posting, whole, limits(pages), INBOX, log, directionForMaterials(),
     (text) => { const sent = tidy(text, posting, pages, roles).resume, t = termsOf(terms, sent, words, skills); return draftScore(sent, [...t.inResume, ...t.inBankOnly], pages, [...skills]); });
   const afterCouncil = fix(reviewed.resume);
+  if (process.env.EGG_SKIM !== 'off') stage('Checking what a reader sees in six seconds');
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
     rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, WRITING, `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages) });
   // The newest version first. One with an entry the bank does not have is passed over for the one before it.
@@ -366,13 +375,19 @@ export async function compose(posting: string, pages: number, terms: string[], r
 // Keeps what compose wrote on its job, as the worker does: the resume, and in the job's analysis the review, the
 // terms, the posting map, the skim, the writer's questions and what was repaired. False when the job is gone or
 // was asked for again while this one was being written: then nothing is kept and the next one is written.
+// The resume stays 'running' until its PDF is printed and checked (publish), and then finishWritten ends it: the
+// screens (and the activity list) then never see a resume as done before it can be sent.
 export function storeComposed(jobId: number, c: Composed, bankSig: string, now: number): boolean {
   const cur = db.query('SELECT analysis, resume_status, company, title FROM jobs WHERE id = ?').get(jobId) as { analysis: string; resume_status: string; company: string; title: string } | null;
   if (!cur || cur.resume_status !== 'running') return false;
   const analysis: Analysis = { ...(JSON.parse(cur.analysis) as Analysis), changes: c.changes, review: c.review, terms: c.terms, map: c.map, skim: c.skim, questions: c.questions, written: { sig: sigOf(c.resume), repairs: c.repairs } };
-  db.query("UPDATE jobs SET resume = ?, analysis = ?, edited = 0, resume_status = 'done', bank_sig = ?, updated_at = ? WHERE id = ?").run(c.resume, JSON.stringify(analysis), bankSig, now, jobId);
+  db.query('UPDATE jobs SET resume = ?, analysis = ?, edited = 0, bank_sig = ?, updated_at = ? WHERE id = ?').run(c.resume, JSON.stringify(analysis), bankSig, now, jobId);
   saveResume({ id: jobId, company: cur.company, title: cur.title }, c.resume);
   return true;
+}
+// The resume written and printed: it is done, unless it was asked for again meanwhile (then the next one is written).
+export function finishWritten(jobId: number): void {
+  db.query("UPDATE jobs SET resume_status = 'done' WHERE id = ? AND resume_status = 'running'").run(jobId);
 }
 
 // Both steps, one after the other: for the tools that read every job again.

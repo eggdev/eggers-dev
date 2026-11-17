@@ -1,4 +1,4 @@
-// Eggdev: the career studio. Five places on one main line (look.contract's MainLine), each its own stack.
+// Eggdev: the career studio. Six places on one main line (look.contract's MainLine), each its own stack.
 // Home: the things that need the person, one in focus (home.contract).
 // Record (record.contract and the Sources screens here): Experience, the roles and facts as records; Profile, one
 //   document written from the whole record, and the questions whose answers would strengthen it; Direction and
@@ -6,13 +6,17 @@
 //   went. What the person supplies is taken as true, so nothing waits for review.
 // Jobs (jobs.contract): the job list, one job as a record with its posting map, its resume as a document, adding a
 //   job, a posting found on the watchlist, and the watchlist. Talk (talk.contract): the conversation and its questions.
+// Activity (activity.contract): slow work in one list, and what finished since the owner last looked.
 // System: the Public page and the machine (backups and sign-in).
-// server.ts keeps it all; worker.ts does the slow reading and writing. All polled.
+// server.ts keeps it all; worker.ts does the slow reading and writing. Nothing is polled while nothing runs: each
+// screen loads its data when it opens and after the owner acts, and while work waits or runs the app asks only for
+// the activity list, every 10 seconds, while the tab is shown (activity.contract).
 use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
 use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
 use Bank, Overlap, Profile, Direction, Person, ExperienceScreen, RoleScreen, FactScreen, EditFactScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, roleName, factCount, plainLoadError from "./record.contract"
+use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
 font "Geist" = "assets/fonts/Geist.ttf"
@@ -40,6 +44,8 @@ routes nav
     companies "/jobs/companies"
   tab talk "/talk"
     questions "/talk/questions"
+  // Activity: slow work, one list.
+  tab activity "/activity"
   // System: the Public page at its root, the machine over it.
   tab publicPage "/system"
     system "/system/backups"
@@ -52,8 +58,6 @@ shape Source
   status: string
   note: string
   facts: number
-  // How many readings are ahead of it while it waits; -1 when it is not waiting.
-  ahead: number
 
 shape SourceList
   loaded: bool
@@ -169,10 +173,10 @@ shape Reply
   ok: bool
   error: string
 
-// A source's reading in one line, and where it waits (the data module counts what is ahead of it).
-fn sourceLine(s: Source): string = s.status == "queued" ? "Read in turn, one source at a time. Usually a few minutes each." : s.status == "running" ? "Being read now. Usually a few minutes; a repository can take longer." : s.status == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
+// A source's reading in one line. `state` is the activity list's (waiting | running) while it has the reading open,
+// else the source's own status; how long a reading usually takes comes from the same list (-1: not known yet).
+fn sourceLine(s: Source, state: string, usual: number): string = state == "queued" or state == "waiting" ? `Read in turn, one source at a time. Usually ${usualWords(usual)} each.` : state == "running" ? `Being read now. Usually ${usualWords(usual)}; a repository can take longer.` : state == "failed" ? `Reading failed. ${s.note}` : s.note != "" ? s.note : `Read. ${factCount(s.facts)} came from it.`
 fn sourceKind(k: string): string = k == "github" ? "Repository" : k == "repo" ? "Folder" : k == "file" ? "File" : "Pasted text"
-fn sourcePlace(s: Source): string = s.ahead < 0 ? "" : s.ahead == 0 ? "next" : `${s.ahead} ahead`
 fn companyCount(n: number): string = `${n} ${n == 1 ? "company" : "companies"}`
 fn loadError(code: string): string = code == "offline" ? "Can’t reach the server. Check that it’s running, then try again." : "The server couldn’t answer. Try again."
 // A failed read of the machine: the data module's own sentence, or the usual words for a lost connection.
@@ -192,6 +196,7 @@ fn machineLine(s: SystemStatus): string = s.machine == "running" ? "Running" : s
 
 component App
   members "./home.contract"
+  members "./activity.contract"
   state kind = "text"
   state draftTitle = ""
   state draftText = ""
@@ -237,22 +242,30 @@ component App
   // The company the remove alert is asking about.
   state aimedCompany = ""
   state aimedCompanyName = ""
-  resource bank = loadBank() as shape Bank else empty()
-  resource lib = loadSources() as shape SourceList else empty()
-  resource inbox = loadInbox() as shape Inbox else empty()
-  resource profile = loadProfile() as shape Profile else empty()
-  resource notes = loadDirection() as shape Direction else empty()
-  resource me = loadPerson() as shape Person else empty()
-  resource talk = loadTalk() as shape Talk else empty()
+  // Each screen's data is asked for while that screen shows, and again each time it opens; a screen not shown asks
+  // nothing and keeps what it last showed. Nothing is asked on a timer (activity.contract says when work is).
+  derive topName = top(nav).name
+  derive bankShown = topName == "bank" or topName == "role" or topName == "fact" or topName == "edit"
+  derive sourcesShown = topName == "sources" or topName == "source"
+  derive talkShown = topName == "talk" or topName == "questions"
+  resource bank = loadBank() when bankShown as shape Bank else empty()
+  resource lib = loadSources() when sourcesShown as shape SourceList else empty()
+  resource inbox = loadInbox() when topName == "add" as shape Inbox else empty()
+  resource profile = loadProfile() when topName == "profile" as shape Profile else empty()
+  resource notes = loadDirection() when topName == "direction" as shape Direction else empty()
+  resource me = loadPerson() when topName == "details" as shape Person else empty()
+  resource talk = loadTalk() when talkShown as shape Talk else empty()
   state talkDraft = "" persist
   // What was sent, so the reply clears the composer only if nothing new was typed meanwhile.
   state talkSending = ""
-  resource hub = loadGithub() as shape Hub else empty()
-  resource jobs = loadJobs() as shape JobList else empty()
-  resource job = loadJob(selectedJob) as shape Job else empty()
-  resource leads = loadLeads() as shape LeadList else empty()
-  resource lead = loadLead(selectedLead) as shape LeadDetail else empty()
-  resource companies = loadCompanies() as shape CompanyList else empty()
+  // Listing every repository can take a while: only while GitHub is chosen in the Add sheet.
+  resource hub = loadGithub() when topName == "add" and kind == "github" as shape Hub else empty()
+  resource jobs = loadJobs() when topName == "jobs" as shape JobList else empty()
+  resource job = loadJob(selectedJob) when selectedJob != "" as shape Job else empty()
+  // The found postings, on the job list and on the Watchlist (which says when a check is running).
+  resource leads = loadLeads() when topName == "jobs" or topName == "companies" as shape LeadList else empty()
+  resource lead = loadLead(selectedLead) when selectedLead != "" as shape LeadDetail else empty()
+  resource companies = loadCompanies() when topName == "companies" as shape CompanyList else empty()
   resource viewport = exactViewport() as shape Viewport else empty()
   // Only the root reads the window; the new-look screens are told whether it is wide (two columns, a ledger).
   derive wide = viewport.width >= lookNarrow()
@@ -264,38 +277,40 @@ component App
   // The open questions about two roles that both say Present, read while Experience or a role is shown.
   derive onExperience = top(nav).name == "bank" or top(nav).name == "role"
   resource overlaps = loadOverlaps() when onExperience as shape Overlap[] else empty()
-  // What the worker reads before it writes the profile: every source waiting or being read, and a job being read.
-  derive profileAhead = lib.items.filter(x => x.status == "queued" or x.status == "running").length + jobs.items.filter(j => j.status == "running").length
-  mutation asked as shape Reply refreshes profile
+  // Slow work started here is in the activity list at once: each write that asks for work reads the list again.
+  mutation asked as shape Reply refreshes profile, activity
   mutation notesSaved as shape Reply refreshes notes then afterNotes
   mutation personSaved as shape Reply refreshes me, job then afterPerson
-  mutation talkSent as shape Reply refreshes talk then afterTalk
-  mutation talkAsked as shape Reply refreshes talk then afterAsk
+  mutation talkSent as shape Reply refreshes talk, activity then afterTalk
+  mutation talkAsked as shape Reply refreshes talk, activity then afterAsk
   mutation talkCleared as shape Reply refreshes talk
-  mutation savedFact as shape Reply refreshes bank, profile then afterSaveFact
-  mutation removedFact as shape Reply refreshes bank, profile then afterRemoveFact
-  mutation roleSaved as shape Reply refreshes bank, overlaps then afterRoleSave
-  mutation added as shape Reply refreshes lib, inbox, hub then afterAdd
-  mutation reread as shape Reply refreshes lib
-  mutation jobAdded as shape Reply refreshes jobs then afterJobAdd
-  mutation jobReread as shape Reply refreshes jobs, job
-  mutation doorsAsked as shape Reply refreshes job
-  mutation jobRemoved as shape Reply refreshes jobs then afterRemoveJob
+  // A change to the record can make the studio write unsent resumes again by itself a few minutes later: the
+  // activity list is read once more, so the app knows when (activity.contract, dueIn).
+  mutation savedFact as shape Reply refreshes bank, profile, activity then afterSaveFact
+  mutation removedFact as shape Reply refreshes bank, profile, activity then afterRemoveFact
+  mutation roleSaved as shape Reply refreshes bank, overlaps, activity then afterRoleSave
+  mutation added as shape Reply refreshes lib, inbox, hub, activity then afterAdd
+  mutation reread as shape Reply refreshes lib, activity
+  mutation jobAdded as shape Reply refreshes jobs, activity then afterJobAdd
+  mutation jobReread as shape Reply refreshes jobs, job, activity
+  mutation doorsAsked as shape Reply refreshes job, activity
+  mutation jobRemoved as shape Reply refreshes jobs, activity then afterRemoveJob
   mutation outcomeSaved as shape Reply refreshes job, jobs
   mutation rowOutcome as shape Reply refreshes jobs, job
   mutation contactSaved as shape Reply refreshes job
-  mutation lengthSet as shape Reply refreshes job, jobs
-  mutation resumeAsked as shape Reply refreshes job, jobs
+  mutation lengthSet as shape Reply refreshes job, jobs, activity
+  mutation resumeAsked as shape Reply refreshes job, jobs, activity
   mutation resumeSaved as shape Reply refreshes job then afterResume
-  mutation leadTaken as shape Reply refreshes leads, jobs then afterTakeLead
+  mutation leadTaken as shape Reply refreshes leads, jobs, activity then afterTakeLead
   mutation leadDismissed as shape Reply refreshes leads then afterDismissLead
   mutation companyAdded as shape Reply refreshes companies then afterCompany
   mutation companyRemoved as shape Reply refreshes companies, leads
-  mutation checkAsked as shape Reply refreshes leads
-  mutation removedSource as shape Reply refreshes lib, bank, profile then afterRemoveSource
+  mutation checkAsked as shape Reply refreshes leads, activity
+  mutation removedSource as shape Reply refreshes lib, bank, profile, activity then afterRemoveSource
   derive selectedFact = match stack(nav).filter(e => e.name == "fact").at(-1) { case some(e) => e.params.id, case none => "" }
   derive selectedJob = match stack(nav).filter(e => e.name == "job" or e.name == "resume" or e.name == "editResume").at(-1) { case some(e) => e.params.id, case none => "" }
   derive jobsError = match failure(jobs) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive activityError = match failure(activity) { case some(f) => plainLoadError(f.code), case none => "" }
   derive jobAddError = match jobAdded { case some(r) => r.error, case none => "" }
   derive rereadJobError = pending(jobReread) ? "" : match jobReread { case some(r) => r.error, case none => "" }
   derive removeJobError = pending(jobRemoved) ? "" : match jobRemoved { case some(r) => r.error, case none => "" }
@@ -322,7 +337,8 @@ component App
   derive shownLeads = leads.items.filter(l => (not freshOnly or l.fresh) and `${l.title} ${l.company}`.toLowerCase().includes(jobQuery.trim().toLowerCase()))
   derive selectedLead = match stack(nav).filter(e => e.name == "lead").at(-1) { case some(e) => e.params.id, case none => "" }
   derive companyError = pending(companyAdded) ? "" : match companyAdded { case some(r) => r.error, case none => "" }
-  derive checking = leads.status == "queued" or leads.status == "running"
+  // A check of the watchlist waits or runs: from the activity list once it has answered, else from the found postings.
+  derive checking = activity.loaded ? kindInHand(activity, "check-watchlist") : leads.status == "queued" or leads.status == "running"
   derive checkError = pending(checkAsked) ? "" : match checkAsked { case some(r) => r.error, case none => "" }
   derive companiesError = match failure(companies) { case some(f) => plainLoadError(f.code), case none => "" }
   derive leadsError = match failure(leads) { case some(f) => plainLoadError(f.code), case none => "" }
@@ -370,7 +386,7 @@ component App
   resource time = exactTime() as shape Clock else empty()
   derive onPublic = top(nav).name == "publicPage"
   derive onSystem = top(nav).name == "system"
-  // Neither page is in the main poll: each loads when it opens, and System polls on its own while open.
+  // Each loads when it opens. While a sign-in waits for the owner, System asks for its status every 3 seconds.
   resource pub = loadPublic() when onPublic as shape PublicText else empty()
   resource live = loadLive() when onPublic as shape PublicLive else empty()
   resource sys = loadSystem() when onSystem as shape SystemStatus else empty()
@@ -418,15 +434,9 @@ component App
   derive backupReply = pending(backedUp) ? "" : match backedUp { case some(r) => (r.ok ? r.note : r.error), case none => "" }
   derive backupFailed = match backedUp { case some(r) => not r.ok, case none => false }
 
-  task poll mount
-    every(5000, pull)
-  // A reply takes a few seconds: look for it more often than the rest while one is being written.
-  task talkPoll mount
-    every(1500, pullTalk)
-  // System: its status every 15 seconds while it is open, every 3 while a sign-in waits for the person.
-  task systemPoll when onSystem
-    every(15000, pullSystem)
-  task loginPoll when onSystem and loginWaiting
+  // System: its status when it opens and after each action; every 3 seconds only while a sign-in waits for the
+  // owner and the tab is shown.
+  task loginPoll when onSystem and loginWaiting and tabShown
     every(3000, pullSystem)
   task publicTick when onPublic
     every(30000, tickClock)
@@ -435,11 +445,8 @@ component App
   action pullSystem
     ticked = performanceNow()
     refresh sys
-  action pullTalk
-    if talk.busy
-      talkAct = ""
-      refresh talk
 
+  // Loads the shown screen again (Try again, a return to the tab): a resource whose screen is not shown asks nothing.
   action pull
     refresh bank
     refresh lib
@@ -448,6 +455,7 @@ component App
     refresh job
     refresh leads
     refresh talk
+    refresh activity
   // Moving to another tab or record puts away the errors of what was tried before.
   // Leaving Home sends what is held there.
   action pick(name: string)
@@ -880,7 +888,13 @@ component App
         NavTab(label="Record", current=inRecord, quiet=false, far=false, controls="panel-bank", press=pick("bank"), testId="nav-record")
         NavTab(label="Jobs", current=(nav.tab == "jobs"), quiet=false, far=false, controls="panel-jobs", press=pick("jobs"), testId="nav-jobs")
         NavTab(label="Talk", current=(nav.tab == "talk"), quiet=false, far=false, controls="panel-talk", press=pick("talk"), testId="nav-talk")
+        NavTab(label="Activity", current=(nav.tab == "activity"), quiet=false, far=false, controls="panel-activity", press=pick("activity"), testId="nav-activity")
         NavTab(label="System", current=inSystem, quiet=true, far=true, controls="panel-publicPage", press=openPublic, testId="nav-system")
+      // The activity list could not be had three times in a row (the studio restarting, the network gone): one line,
+      // under the main line, until it answers again.
+      if activityDown
+        SubBar(testId="studio-down")
+          Line(text="The studio can’t be reached right now. It will try again.", testId="studio-down-line")
       // The second line of a place that holds several screens, drawn once, under the main line.
       if inRecord
         SubBar(testId="subnav")
@@ -896,7 +910,7 @@ component App
               if e.name == "home"
                 column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="home-scroll" flex=1 min-height=0
-                    HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome)
+                    HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome, digest=shownDigest)
               if e.name == "bank"
                 column navigationKey=`${e.id}` navigationScroll="bank-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
                   scroll id="bank-scroll" flex=1 min-height=0
@@ -925,10 +939,10 @@ component App
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0
-                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=profileAhead, write=writeProfile, ask=askQuestion, add=openAdd, retry=pull)
+                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=workAhead(activity.items, "write-profile", "1"), usual=workUsual(activity.items, "write-profile", "1"), state=workStatus(activity.items, "write-profile", "1", profile.status), write=writeProfile, ask=askQuestion, add=openAdd, retry=pull)
               if e.name == "talk"
                 column navigationKey=`${e.id}` navigationScroll=(talk.loaded and talk.messages.length > 0 ? "transcript" : "talk-scroll") navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
-                  TalkScreen(talk=talk, failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
+                  TalkScreen(talk=talk, work=activity.items, usual=kindUsual(activity, "write-reply"), failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
               if e.name == "questions"
                 column navigationKey=`${e.id}` navigationScroll="questions-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="questions-scroll" flex=1 min-height=0
@@ -947,6 +961,10 @@ component App
                       DirectionScreen(body=notes.body, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
                     else
                       RecordWait(title="Direction", waiting=(not failed(notes)), message="Your direction notes couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="direction-wait")
+              if e.name == "activity"
+                column navigationKey=`${e.id}` navigationScroll="activity-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="activity-scroll" flex=1 min-height=0
+                    ActivityScreen(activity=activity, failed=failed(activity), loadError=activityError, digest=shownDigest, acted=actedWork, error=workError, busy=(pending(workRetried) or pending(workDismissed)), wide=wide, retry=retryWork, dismiss=dismissWork, reload=pullActivity)
               // The public collection: written, saved and published here, each only by the person's own press.
               if e.name == "publicPage"
                 column navigationKey=`${e.id}` navigationScroll="public-scroll" position="absolute" inset=0 background-color="look.paper"
@@ -1094,14 +1112,14 @@ component App
                     if not job.loaded or job.id != e.params.id
                       RecordWait(title="Job", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=back, testId="job-wait")
                     else
-                      JobScreen(job=job, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength)
+                      JobScreen(job=job, work=activity.items, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength)
               if e.name == "resume"
                 column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-scroll" flex=1 min-height=0
                     if not job.loaded or job.id != e.params.id
                       RecordWait(title="Resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
                     else
-                      ResumeScreen(job=job, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
+                      ResumeScreen(job=job, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
               if e.name == "editResume"
                 column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-editor-scroll" flex=1 min-height=0
@@ -1147,7 +1165,7 @@ component App
                       else
                         Section(testId="sources-list")
                           for s in lib.items key=s.id
-                            Record(code="", name=s.title, href=`/source/${s.id}`, strong=false, dates="", extent=(s.status == "done" ? factCount(s.facts) : sourceKind(s.kind)), word=statusWord("work", s.status), showWord=(s.status != "done"), place=sourcePlace(s), provenance="", wide=wide, testId=`source-${s.id}`)
+                            Record(code="", name=s.title, href=`/source/${s.id}`, strong=false, dates="", extent=(s.status == "done" ? factCount(s.facts) : sourceKind(s.kind)), word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), showWord=(workStatus(activity.items, "read-source", s.id, s.status) != "done"), place=workPlace(activity.items, "read-source", s.id), provenance="", wide=wide, testId=`source-${s.id}`)
               if e.name == "source"
                 column navigationKey=`${e.id}` navigationScroll="source-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="source-scroll" flex=1 min-height=0
@@ -1159,19 +1177,19 @@ component App
                           Action(label="Back to Sources", press=back, disabled=false, keys="", testId="source-back")
                         Section(testId="source-head")
                           Title(text=s.title, testId="source-title")
-                          if s.status == "failed"
-                            FailLine(text=sourceLine(s), testId="source-status")
-                          else if s.status == "queued" or s.status == "running"
-                            WorkLine(word=statusWord("work", s.status), place=sourcePlace(s), text=sourceLine(s), testId="source-status")
+                          if inHand(workStatus(activity.items, "read-source", s.id, s.status))
+                            WorkLine(word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), place=workPlace(activity.items, "read-source", s.id), text=sourceLine(s, workStatus(activity.items, "read-source", s.id, s.status), workUsual(activity.items, "read-source", s.id)), testId="source-status")
+                          else if s.status == "failed"
+                            FailLine(text=sourceLine(s, s.status, -1), testId="source-status")
                           else
-                            Line(text=sourceLine(s), testId="source-status")
+                            Line(text=sourceLine(s, s.status, -1), testId="source-status")
                           Labelled(label=sourceKind(s.kind), value=s.detail, testId="source-what")
                         Section(testId="source-actions")
                           if actedSource == s.id and (lastSourceAct == "remove" ? removeSourceError : rereadError) != ""
                             FailLine(text=(lastSourceAct == "remove" ? removeSourceError : rereadError), testId="source-error")
-                          Action(label="Read again", press=readAgain, disabled=(pending(reread) or s.status == "queued" or s.status == "running"), keys="", testId="source-read")
+                          Action(label="Read again", press=readAgain, disabled=(pending(reread) or inHand(workStatus(activity.items, "read-source", s.id, s.status))), keys="", testId="source-read")
                           DangerAction(label="Delete source", press=askRemoveSource, disabled=false, testId="source-delete")
-                          QuietLine(text=(s.status == "queued" or s.status == "running" ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited."), testId="source-hint")
+                          QuietLine(text=(inHand(workStatus(activity.items, "read-source", s.id, s.status)) ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited."), testId="source-hint")
               if e.name == "add"
                 column navigationKey=`${e.id}` navigationScroll="add-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="add-scroll" flex=1 min-height=0

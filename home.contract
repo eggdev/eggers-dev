@@ -7,7 +7,8 @@
 // and the next item takes the focus. Undo puts the item back and sends nothing. The held answer is sent when the
 // time ends, when the owner answers the next item, or when they leave Home. If it is refused, the item comes
 // back in focus with the refusal under it, in red. A snooze is held the same way.
-use Page, Section, Title, Line, StrongLine, QuietLine, FailLine, Indented, Numbered, Action, MainAction, GoTo, ValueField, lookNarrow from "./look.contract"
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Numbered, Action, MainAction, GoTo, ValueField, lookNarrow from "./look.contract"
+use DigestItem, sentence from "./activity.contract"
 
 // One thing that needs the owner. kind: timeline | linkedin | skill (a question raised from their data), talk
 // (a question open in Talk), quiet (an application with no reply in 14 days). choices are a raised question's;
@@ -45,7 +46,8 @@ fn inputHint(kind: string): string = kind == "month" ? "Year and month, like 202
 members App
   derive onHome = top(nav).name == "home"
   resource homeList = loadQueue() when onHome as shape Queue else empty()
-  mutation answerSent as shape Sent queue refreshes homeList, bank then afterAnswer
+  // An answer changes the record: the activity list is read again, so the app knows when resumes will be written again.
+  mutation answerSent as shape Sent queue refreshes homeList, bank, activity then afterAnswer
   mutation snoozeSent as shape Sent queue refreshes homeList then afterSnooze
   // The item in focus, by key ("" for the first). A choice picked that needs a value, and that value.
   state focusKey = ""
@@ -188,6 +190,8 @@ component HomeScreen
     snooze: action
     undo: action
     retry: action
+    // What finished since the owner last looked (activity.contract), one line each, shown once.
+    digest: DigestItem[]
   view
     Page(testId="home")
       Title(text="Home", testId="home-title")
@@ -232,3 +236,11 @@ component HomeScreen
               Action(label=i.text, press=focusItem(i.key), disabled=false, keys="", testId=`home-item-${i.key}`)
         if wide and items.length > 0
           QuietLine(text="1 2 3 to answer · S to snooze · Z to undo", testId="home-keys")
+      if digest.length > 0
+        Section(testId="home-digest")
+          SectionHead(text="Since you were here", testId="home-digest-head")
+          for d, i in digest key=d.id
+            if d.link != ""
+              GoTo(label=sentence(d.line), href=d.link, testId=`home-digest-${i}`)
+            else
+              Line(text=sentence(d.line), testId=`home-digest-${i}`)

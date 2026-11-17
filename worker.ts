@@ -8,7 +8,7 @@ import { applyExtraction, associate, bankSignature, db, type SourceRow } from '.
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
-import { assess, compose, FactsError, fetchPosting, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
+import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
 import { lastAnswerAt, rewriteDue } from './lib/raised.ts';
@@ -16,6 +16,8 @@ import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
 import { draft } from './lib/outreach.ts';
+// The log of slow work follows the status columns by itself; the worker adds only where a piece has got to.
+import { setStage } from './lib/activity.ts';
 
 // A source left running by a worker that died goes back in the queue.
 db.run("UPDATE sources SET status = 'queued', note = '' WHERE status = 'running'");
@@ -71,7 +73,9 @@ async function readJob(job: JobRow) {
   db.query("UPDATE jobs SET status = 'running', note = '' WHERE id = ?").run(job.id);
   console.log(`reading job ${job.id}`);
   try {
+    if (job.posting.trim() === '') setStage('read-posting', job.id, 'Fetching the posting');
     const posting = job.posting.trim() !== '' ? job.posting : await fetchPosting(job.url);
+    setStage('read-posting', job.id, 'Weighing it against your record');
     if (job.posting.trim() === '') db.query('UPDATE jobs SET posting = ? WHERE id = ?').run(posting, job.id);
     const a = await assess(posting, job.resume);
     if (!db.query('SELECT id FROM jobs WHERE id = ?').get(job.id)) return;
@@ -97,10 +101,18 @@ void (async () => {
     const wroteFrom = bankSignature();
     try {
       // The writer is given the posting map from the first reading: its requirements, each with its strongest evidence.
-      const c = await compose(job.posting, job.pages, JSON.parse(job.terms_raw || '[]') as string[], job.analysis ? (JSON.parse(job.analysis) as Analysis).requirements ?? [] : []);
+      const c = await compose(job.posting, job.pages, JSON.parse(job.terms_raw || '[]') as string[], job.analysis ? (JSON.parse(job.analysis) as Analysis).requirements ?? [] : [], (words) => setStage('write-resume', job.id, words));
       // Gone, or asked for again while this one was being written (a re-read, another length): this one is dropped and the next is written.
       if (!storeComposed(job.id, c, wroteFrom, Date.now())) continue;
-      await publish(job.id);
+      // The text is kept now; the resume is done only once its PDF is printed and checked. If that fails, the text
+      // stays, and the resume says it failed and why (the PDF is printed again when it is next asked for).
+      setStage('write-resume', job.id, 'Printing the PDF and checking it');
+      try { await publish(job.id); } catch (e) {
+        db.query("UPDATE jobs SET resume_status = 'failed', resume_note = ? WHERE id = ? AND resume_status = 'running'").run(`The resume was written, but its PDF couldn’t be made. ${(e as Error).message}`, job.id);
+        console.log(`  resume for job ${job.id} written; printing failed: ${(e as Error).message}`);
+        continue;
+      }
+      finishWritten(job.id);
       console.log(`  resume for job ${job.id} written and printed`);
       await prune(inData('inbox')).then((n) => console.log(`  ${n} open questions already answered, closed`)).catch(() => {});
     } catch (e) {

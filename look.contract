@@ -160,7 +160,7 @@ component QuietLine
     text: string
     testId: string
   view
-    text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
+    text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" overflow-wrap="break-word" testId=testId
 
 // Running text kept as written: its line breaks stay (a posting, a message). `strong` sets it in the heavy weight.
 component Prose
@@ -329,10 +329,10 @@ component RecordName
     testId: string
   view
     if href != ""
-      link href=href align-self="flex-start" testId=testId
-        text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink"
+      link href=href align-self="flex-start" max-width="100%" testId=testId
+        text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" overflow-wrap="break-word"
     else
-      text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" testId=testId
+      text name font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
 
 // A record at the head of its own page: the reference number, the name as the page's title, then the record's
 // second line and its provenance. testIds as Record's.
@@ -465,6 +465,66 @@ component WorkLine
           text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-place`
       text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
       text text font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" testId=testId
+
+// The widths of an activity row's columns on a wide window: when, how long it usually takes, and its status word
+// with its place ("Waiting, 12 ahead"). Each holds its longest words at text size.
+fn lookWhenWidth(): string = `${look().textSize * 10 / 16}rem`
+fn lookUsualWidth(): string = `${look().textSize * 11 / 16}rem`
+fn lookStatusWidth(): string = `${look().textSize * 9.5 / 16}rem`
+
+// Slow work as one row (DESIGN.md, the pattern "Activity row"): what it is, its stage, when it was asked for or
+// started, how long it usually takes, and its status word (Waiting with its place). On a wide window the parts stand
+// in aligned columns, in tabular figures; on a narrow one they are stacked lines. A failed row gives its reason in
+// red under what it is. `href` links what it is to what it made ("" for none). Actions (Try again) go in the slot.
+// testIds: what is `testId`; then `-stage`, `-when`, `-usual`, `-status`, `-place` and `-reason`.
+component ActivityRow
+  props
+    what: string
+    href: string
+    stage: string
+    started: string
+    usual: string
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    place: string
+    reason: string
+    wide: bool
+    testId: string
+  slot
+  view
+    if wide
+      row align-items="baseline" gap=lookGutter() testId=`${testId}-row`
+        column flex=1 min-width=0 gap=lookTight()
+          RecordName(name=what, href=href, strong=false, testId=testId)
+          if stage != ""
+            QuietLine(text=stage, testId=`${testId}-stage`)
+          if reason != ""
+            FailLine(text=reason, testId=`${testId}-reason`)
+          children
+        text started width=lookWhenWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-when`
+        text usual width=lookUsualWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-usual`
+        row width=lookStatusWidth() flex-shrink=0 align-items="baseline" flex-wrap="wrap"
+          Status(word=word, needsYou=false, testId=`${testId}-status`)
+          if place != ""
+            text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-place`
+    else
+      column gap=lookTight() testId=`${testId}-row`
+        RecordName(name=what, href=href, strong=false, testId=testId)
+        row align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+          row align-items="baseline" flex-wrap="wrap"
+            Status(word=word, needsYou=false, testId=`${testId}-status`)
+            if place != ""
+              text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-place`
+          if stage != ""
+            text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+            text stage font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-stage`
+        row align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+          text started font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-when`
+          if usual != ""
+            text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+            text usual font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" testId=`${testId}-usual`
+        if reason != ""
+          FailLine(text=reason, testId=`${testId}-reason`)
+        children
 
 // The main line: the places of the studio as plain words, flush left, with a hairline under it and no fill. It is
 // the root's tab bar drawn by the app (`appearance="none"`), so each place keeps its own stack. Its tabs are

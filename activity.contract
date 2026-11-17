@@ -1,0 +1,299 @@
+// Activity: slow work in one list (DESIGN.md rule 8, the patterns "Activity row" and "Digest"). Reading a source or a
+// posting, writing a resume, the profile or a reply in Talk, drafting messages and checking the watchlist each take
+// minutes; each is a row here with its stage and how long that kind of work usually takes. What finished since the
+// owner last looked is said once, in a "Since you were here" line, here and on Home.
+//
+// The data is one answer from the server (GET /activity, lib/activity.ts), and it is also how the app knows when to ask:
+// - While anything waits or runs, and the tab is shown, it asks for this answer and nothing else: every 10 seconds,
+//   every 2 while a reply in Talk is being written.
+// - While nothing does, or the tab is hidden, it asks nothing. The one exception: when the answer says the studio will
+//   start work by itself soon (unsent resumes written again after the record changed), it asks once at that time.
+// - When a piece of work is asked for, starts or ends, only the data of that kind of work is loaded again; each
+//   slow-work line takes its status word, place and stage from this answer, so no screen waits for its own data.
+// - Each screen loads its own data when it opens (each resource in app.contract asks only while its screen shows), and
+//   opening a screen, returning to the tab, or an action that changes the record asks for this answer once.
+// - When this answer cannot be had, the last one stands: it is asked for again after 30 seconds, and after three
+//   failures in a row one line says so and it is asked for every 60 seconds.
+use WidePage, Section, WideSection, Title, SectionHead, Line, QuietLine, FailLine, Action, Actions, ActivityRow, RecordList, statusWord from "./look.contract"
+
+// One piece of slow work. kind: read-source | read-posting | write-resume | draft-messages | write-profile |
+// write-reply | check-watchlist. subject: the source's, job's or message's id ("1" for the profile and the
+// watchlist). status: waiting | running | done | failed. ahead: how many pieces are before it in its line while it
+// waits (-1 otherwise). since: milliseconds since it was asked for (waiting), started (running) or ended. took: how
+// long a finished run took, usual: how long its kind usually takes; -1 when not known. link: where what it made is.
+shape WorkItem
+  id: string
+  kind: string
+  subject: string
+  ref: string
+  what: string
+  status: string
+  ahead: number
+  stage: string
+  since: number
+  took: number
+  usual: number
+  reason: string
+  link: string
+  endedAt: number
+
+// A line of the digest: what finished since the owner last looked ("the resume for J-021 is ready"), and when it ended.
+shape DigestItem
+  id: string
+  line: string
+  link: string
+  endedAt: number
+
+// When a kind of work last changed: asked for, started, ended or put away.
+shape WorkChange
+  kind: string
+  at: number
+
+// items: what waits or runs (running first, then by place), then what failed and was not tried again or put away.
+// done: the last 20 that finished well. lastChanged: the latest of changes. dueIn: milliseconds until the studio is
+// expected to start work by itself, when that is within 20 minutes; else 0.
+shape Activity
+  loaded: bool
+  busy: bool
+  lastEnded: number
+  lastChanged: number
+  changes: WorkChange[]
+  dueIn: number
+  items: WorkItem[]
+  done: WorkItem[]
+  digest: DigestItem[]
+
+// Whether the page is shown: "visible" or "hidden" (another tab, a minimized window).
+shape PageShown
+  visibilityState: string
+
+shape WorkReply
+  ok: bool
+  error: string
+
+fn many(n: number, word: string): string = `${n} ${word}${n == 1 ? "" : "s"}`
+// A duration in the fewest words: "under a minute", "9 min", "2 hours".
+fn durationWords(ms: number): string = ms < 60000 ? "under a minute" : ms < 5400000 ? `${round(ms / 60000)} min` : many(round(ms / 3600000), "hour")
+// How long a kind of work usually takes; "a few minutes" until enough of it has finished to say (never a guess).
+fn usualWords(ms: number): string = ms < 0 ? "a few minutes" : durationWords(ms)
+fn agoWords(ms: number): string = ms < 60000 ? "just now" : ms < 3600000 ? `${floor(ms / 60000)} min ago` : ms < 86400000 ? `${many(floor(ms / 3600000), "hour")} ago` : `${many(floor(ms / 86400000), "day")} ago`
+fn whenWords(w: WorkItem): string = w.status == "waiting" ? `Asked ${agoWords(w.since)}` : w.status == "running" ? `Started ${agoWords(w.since)}` : w.status == "done" ? `Finished ${agoWords(w.since)}` : `Ended ${agoWords(w.since)}`
+fn usualLine(w: WorkItem): string = w.status == "done" ? (w.took >= 0 ? `Took ${durationWords(w.took)}` : "") : w.status == "failed" ? "" : `Usually ${usualWords(w.usual)}`
+// Where a waiting piece stands in its line: "next" or "2 ahead"; "" when it is not waiting.
+fn placeWords(w: WorkItem): string = w.status != "waiting" or w.ahead < 0 ? "" : w.ahead == 0 ? "next" : `${w.ahead} ahead`
+
+// The work that waits or runs on one thing, for the slow-work lines on its own screen (a source, a job, the profile):
+// a list of one, or empty. The lines take their status word, place, stage and usual duration from it, so every
+// screen says what Activity says, and says it as soon as the activity list knows.
+fn workOn(items: WorkItem[], kind: string, subject: string): WorkItem[] = items.filter(w => w.kind == kind and w.subject == subject and (w.status == "waiting" or w.status == "running"))
+// The state a slow-work line shows: the open row's (waiting | running), else the thing's own status (`own`).
+fn workStatus(items: WorkItem[], kind: string, subject: string, own: string): string = match first(workOn(items, kind, subject)) { case some(w) => w.status, case none => own }
+// Whether a state is slow work in hand: waiting or running, or the thing's own words for them.
+fn inHand(state: string): bool = state == "waiting" or state == "queued" or state == "running"
+fn workPlace(items: WorkItem[], kind: string, subject: string): string = match first(workOn(items, kind, subject)) { case some(w) => placeWords(w), case none => "" }
+fn workUsual(items: WorkItem[], kind: string, subject: string): number = match first(workOn(items, kind, subject)) { case some(w) => w.usual, case none => -1 }
+fn workStage(items: WorkItem[], kind: string, subject: string): string = match first(workOn(items, kind, subject)) { case some(w) => w.stage, case none => "" }
+fn workAhead(items: WorkItem[], kind: string, subject: string): number = match first(workOn(items, kind, subject)) { case some(w) => w.ahead, case none => -1 }
+// The usual duration of a kind of work, from any piece of it in view; -1 when none is.
+fn kindUsual(a: Activity, kind: string): number = match first(a.items.concat(a.done).filter(w => w.kind == kind)) { case some(w) => w.usual, case none => -1 }
+// Whether a kind of work waits or runs at all (the watchlist's check).
+fn kindInHand(a: Activity, kind: string): bool = a.items.filter(w => w.kind == kind and (w.status == "waiting" or w.status == "running")).length > 0
+
+// The digest as one line, and one of its lines as a sentence.
+fn digestLine(ds: DigestItem[]): string = `Since you were here: ${ds.map(d => d.line).join(" · ")}.`
+fn sentence(s: string): string = s == "" ? "" : `${s.slice(0, 1).toUpperCase()}${s.slice(1)}.`
+
+members App
+  resource activity = loadActivity() as shape Activity else empty()
+  resource shown = exactPage() as shape PageShown else empty()
+  derive tabShown = shown.visibilityState != "hidden"
+  derive onActivity = top(nav).name == "activity"
+  // When the work last changed, as last handled (-1 before the first answer): the kinds that changed after it are the
+  // data to load again.
+  state changedSeen = -1
+  derive changedKinds = changedSeen < 0 ? [] : activity.changes.filter(c => c.at > changedSeen).map(c => c.kind)
+  // A reply in Talk is short: while one waits or runs, the list is asked for every 2 seconds instead of 10.
+  derive replyInHand = kindInHand(activity, "write-reply")
+  // The answers that could not be had in a row (the last answer stands meanwhile), and the line said after three.
+  state activityFails = 0
+  derive activityDown = failed(activity) and activityFails >= 3
+  // When the studio is expected to start work by itself, on this page's clock (0: nothing expected).
+  state dueAt = 0
+  state tabWasHidden = false
+  // The digest as drawn while Home or Activity is open: it stays there after it has been marked seen, and goes when
+  // the owner moves to another place.
+  state shownDigest: DigestItem[] = []
+  derive newDigest = activity.digest.filter(d => not shownDigest.map(x => x.id).includes(d.id))
+  // The failed row last tried again or put away, and the refusal, said on that row.
+  state actedWork = ""
+  mutation seenSent as shape WorkReply
+  mutation workRetried as shape WorkReply refreshes activity then afterRetry
+  mutation workDismissed as shape WorkReply refreshes activity
+  state lastWorkAct = ""
+  derive retryWorkError = pending(workRetried) ? "" : match workRetried { case some(r) => r.error, case none => "" }
+  derive dismissWorkError = pending(workDismissed) ? "" : match workDismissed { case some(r) => r.error, case none => "" }
+  derive workError = lastWorkAct == "retry" ? retryWorkError : lastWorkAct == "dismiss" ? dismissWorkError : ""
+
+  // While something waits or runs, and the tab is shown: this answer every 10 seconds (2 for a reply), nothing else.
+  task workPoll when activity.busy and tabShown and not failed(activity) and not replyInHand
+    every(10000, pullActivity)
+  task replyPoll when replyInHand and tabShown and not failed(activity)
+    every(2000, pullActivity)
+  // The answer could not be had: the last one stands. Again after 30 seconds; after three failures, every 60.
+  task failNoted when failed(activity) and activityFails == 0
+    after(1, noteFailure)
+  task failRetry when failed(activity) and not pending(activity) and activityFails > 0 and activityFails < 3 and tabShown and (activity.busy or not activity.loaded)
+    every(30000, retryActivity)
+  task failSlow when failed(activity) and not pending(activity) and activityFails >= 3 and tabShown
+    every(60000, retryActivity)
+  task failCleared when not failed(activity) and not pending(activity) and activityFails > 0
+    after(1, clearFailures)
+  // A piece of work was asked for, started, ended or put away: the data of its kind is loaded again, and nothing more.
+  task workChanged when activity.loaded key=activity.lastChanged
+    after(1, reloadChanged)
+  // The studio will start work by itself soon: noted on this page's clock, and asked for once at that time.
+  task dueNoted when activity.dueIn > 0 key=activity.dueIn
+    after(1, noteDue)
+  task dueDropped when activity.loaded and activity.dueIn == 0 and dueAt > 0
+    after(1, dropDue)
+  task dueWatch when dueAt > 0 and tabShown and not activity.busy
+    every(5000, checkDue)
+  task tabHid when not tabShown
+    after(1, markHidden)
+  task tabBack when tabWasHidden and tabShown
+    after(1, backToTab)
+  task screenOpened when activity.loaded key=top(nav).id
+    after(1, openedScreen)
+  task digestTaken when (onHome or onActivity) and newDigest.length > 0
+    after(1, takeDigest)
+  task digestPut when not onHome and not onActivity and shownDigest.length > 0
+    after(1, putDigest)
+
+  action pullActivity
+    refresh activity
+  action noteFailure
+    activityFails = 1
+  action retryActivity
+    activityFails = activityFails + 1
+    refresh activity
+  action clearFailures
+    activityFails = 0
+  action reloadChanged
+    if changedKinds.includes("read-source") or changedKinds.includes("write-reply")
+      refresh bank
+    if changedKinds.includes("read-source")
+      refresh lib
+    // A source read with new facts asks for the profile to be written again.
+    if changedKinds.includes("read-source") or changedKinds.includes("write-profile")
+      refresh profile
+    if changedKinds.includes("read-posting") or changedKinds.includes("write-resume")
+      refresh jobs
+    if changedKinds.includes("read-posting") or changedKinds.includes("write-resume") or changedKinds.includes("draft-messages")
+      refresh job
+    if changedKinds.includes("write-reply")
+      refresh talk
+    if changedKinds.includes("check-watchlist")
+      refresh leads
+      refresh companies
+    if changedKinds.length > 0
+      refresh homeList
+    changedSeen = activity.lastChanged
+  action noteDue
+    dueAt = performanceNow() + activity.dueIn + 5000
+  action dropDue
+    dueAt = 0
+  action checkDue
+    if performanceNow() >= dueAt
+      dueAt = 0
+      refresh activity
+  action markHidden
+    tabWasHidden = true
+  // Back to the tab: this answer once, and the shown screen's data (a resource whose screen is not shown asks nothing).
+  action backToTab
+    tabWasHidden = false
+    refresh homeList
+    refresh companies
+    refresh notes
+    refresh me
+    pull()
+  // Another screen: this answer again, so its slow-work lines and whether to keep asking are up to date. (It runs once
+  // at launch too, a moment after the first answer: one request more, which a launch skipped by a latch would lose
+  // whenever the owner moves before that moment.)
+  action openedScreen
+    refresh activity
+  // The digest is drawn, then marked seen up to its latest line, so it is not announced again.
+  action takeDigest
+    let all = shownDigest.concat(newDigest)
+    shownDigest = all
+    send seenSent = markSeen(match first(sortBy(all, d => d.endedAt, "desc")) { case some(d) => d.endedAt, case none => 0 })
+  action putDigest
+    shownDigest = []
+  action retryWork(id: string)
+    actedWork = id
+    lastWorkAct = "retry"
+    send workRetried = retryWork(id)
+  action afterRetry
+    pull()
+  action dismissWork(id: string)
+    actedWork = id
+    lastWorkAct = "dismiss"
+    send workDismissed = dismissWork(id)
+
+// The Activity screen: the digest first, then what runs and waits, what failed, and what finished.
+component ActivityScreen
+  props
+    activity: Activity
+    failed: bool
+    loadError: string
+    digest: DigestItem[]
+    acted: string
+    error: string
+    busy: bool
+    wide: bool
+    retry: action
+    dismiss: action
+    reload: action
+  derive now = activity.items.filter(w => w.status == "waiting" or w.status == "running")
+  derive broken = activity.items.filter(w => w.status == "failed")
+  view
+    WidePage(testId="activity")
+      Section(testId="activity-top")
+        Title(text="Activity", testId="activity-title")
+        if digest.length > 0
+          Line(text=digestLine(digest), testId="activity-digest")
+      if not activity.loaded
+        Section(testId="activity-wait")
+          if failed
+            FailLine(text=loadError, testId="activity-error")
+            Action(label="Try again", press=reload, disabled=false, keys="", testId="activity-retry")
+          else
+            QuietLine(text="Loading…", testId="activity-loading")
+      else
+        WideSection(testId="activity-now")
+          SectionHead(text="Now", testId="activity-now-head")
+          if now.length == 0
+            QuietLine(text="Nothing is running or waiting.", testId="activity-idle")
+          RecordList(testId="activity-now-rows")
+            for w in now key=w.id
+              ActivityRow(what=w.what, href=w.link, stage=w.stage, started=whenWords(w), usual=usualLine(w), word=statusWord("work", w.status), place=placeWords(w), reason="", wide=wide, testId=`work-${w.kind}-${w.subject}`)
+        if broken.length > 0
+          WideSection(testId="activity-failed")
+            SectionHead(text="Failed", testId="activity-failed-head")
+            RecordList(testId="activity-failed-rows")
+              for w in broken key=w.id
+                ActivityRow(what=w.what, href=w.link, stage="", started=whenWords(w), usual="", word=statusWord("work", w.status), place="", reason=w.reason, wide=wide, testId=`work-${w.kind}-${w.subject}`)
+                  if acted == w.id and error != ""
+                    FailLine(text=error, testId=`work-${w.kind}-${w.subject}-error`)
+                  Actions(testId=`work-${w.kind}-${w.subject}-actions`)
+                    if w.kind == "write-reply"
+                      QuietLine(text="Send your message again in Talk.", testId=`work-${w.kind}-${w.subject}-hint`)
+                    else
+                      Action(label="Try again", press=retry(w.id), disabled=busy, keys="", testId=`work-${w.kind}-${w.subject}-retry`)
+                    Action(label="Dismiss", press=dismiss(w.id), disabled=busy, keys="", testId=`work-${w.kind}-${w.subject}-dismiss`)
+        WideSection(testId="activity-done")
+          SectionHead(text="Finished", testId="activity-done-head")
+          if activity.done.length == 0
+            QuietLine(text="Nothing has finished yet.", testId="activity-none-done")
+          RecordList(testId="activity-done-rows")
+            for w in activity.done key=w.id
+              ActivityRow(what=w.what, href=w.link, stage="", started=whenWords(w), usual=usualLine(w), word=statusWord("work", w.status), place="", reason="", wide=wide, testId=`done-${w.id}`)

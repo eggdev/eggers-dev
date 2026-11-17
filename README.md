@@ -231,7 +231,11 @@ bucket, `eggers-studio-data`:
 - **Sleep.** After about 20 minutes with no request, no work in hand and nothing unsaved, the
   container stops. The keeper backs up anything unsaved before it exits. The next request starts
   the container again. That request waits until the app answers, up to about a minute. Once a
-  day, the container starts by itself, so the worker checks the job boards.
+  day, the container starts by itself, so the worker checks the job boards. An open tab does not
+  keep it awake: the app asks nothing while no work waits or runs (except once when the studio is
+  due to rewrite resumes by itself), and while some does it asks only for the activity list, every
+  10 seconds (2 while a reply in Talk is written), and nothing while the tab is hidden
+  (`activity.contract`, `lib/activity.ts`).
 
 The limits: a hard crash loses the changes made since the last backup, at most about 5 minutes of
 work. The first request after a sleep is slow, because the container restores the data first.
