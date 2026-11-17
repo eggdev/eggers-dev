@@ -17,10 +17,18 @@ export function savePerson(p: Partial<Person>, now: number) {
 
 // A web address as it reads on a resume: no scheme, no trailing slash.
 const bare = (s: string) => s.trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/\/+$/, '');
+// A phone number as a resume prints it. A ten-digit North American number, with or without a leading 1, is
+// written (XXX) XXX-XXXX. Any other number (one that starts with "+" and another country's code, or one of
+// another length) is printed as it was entered.
+export function phoneText(phone: string): string {
+  const typed = phone.trim(), digits = typed.replace(/\D/g, '');
+  const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  // Not North American: the wrong count of digits, an area code that starts with 0 or 1, letters (an extension), or "+" with another country's code.
+  if (ten.length !== 10 || !/^[2-9]/.test(ten) || /[a-z]/i.test(typed) || (typed.startsWith('+') && digits.length !== 11)) return typed;
+  return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
 export function contactLine(p = person()): string {
-  // A ten-digit number is written the way forms and parsers expect a US phone number.
-  const digits = p.phone.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''), phone = digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}` : p.phone.trim();
-  return [p.location.trim(), p.email.trim(), phone, bare(p.website), bare(p.github), bare(p.linkedin)].filter(Boolean).join(' · ');
+  return [p.location.trim(), p.email.trim(), phoneText(p.phone), bare(p.website), bare(p.github), bare(p.linkedin)].filter(Boolean).join(' · ');
 }
 
 // Puts the person's name and contact line at the top of a resume, in place of whatever stands

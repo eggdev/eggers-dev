@@ -1,0 +1,152 @@
+// Rule 7, the skills list: one row for each skill the bank's facts name, with what kind of thing it is and
+// whether the person would defend it in an interview. A resume's Skills section is written here, by code,
+// from this list alone, so nothing can reach it that is not a real tool, language or platform the person stands behind.
+//
+// - kind: tool | language | platform | other. Only the first three go on a resume. It is guessed here by
+//   rule (known names, then the words of the name, then how it is written) and the person can correct it.
+// - mark: confident | not-confident | '' (not yet marked). A skill marked not confident never appears.
+// - Until the person has reviewed the list once, skills not yet marked may appear, and each resume says its
+//   skills are not confirmed. After that review only skills marked confident appear, and a skill the bank
+//   gains later raises a question (lib/raised.ts). Marking a few skills is not a review: the person says
+//   when the list is reviewed, and it must then hold at least one skill they are confident in.
+import { db } from './db.ts';
+import { onAnswer, raise, type Raised } from './raised.ts';
+import { parseResume } from './resume.ts';
+
+db.run(`CREATE TABLE IF NOT EXISTS skills (
+  key TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'tool', mark TEXT NOT NULL DEFAULT '',
+  facts INTEGER NOT NULL DEFAULT 0, in_bank INTEGER NOT NULL DEFAULT 1, kind_set INTEGER NOT NULL DEFAULT 0, added_at INTEGER NOT NULL)`);
+db.run('CREATE TABLE IF NOT EXISTS skills_review (id INTEGER PRIMARY KEY CHECK (id = 1), reviewed_at INTEGER NOT NULL DEFAULT 0)');
+db.run('INSERT OR IGNORE INTO skills_review (id) VALUES (1)');
+
+export const KINDS = ['tool', 'language', 'platform', 'other'] as const;
+export const MARKS = ['confident', 'not-confident', ''] as const;
+export type Skill = { key: string; name: string; kind: string; mark: string; facts: number; in_bank: number; kind_set: number; added_at: number };
+// The most a Skills section holds: 25 on two pages (the rule's cap), 14 on one page (what one line takes).
+export const CAP = 25;
+export const capFor = (pages: number) => (pages === 1 ? 14 : CAP);
+
+const LANGUAGES = new Set(['python', 'javascript', 'typescript', 'go', 'golang', 'rust', 'java', 'kotlin', 'swift', 'c', 'c++', 'c#', 'ruby', 'php', 'sql', 'html', 'css', 'bash', 'shell', 'scala', 'r', 'elixir', 'erlang', 'dart', 'lua', 'perl', 'objective-c', 'haskell', 'clojure', 'solidity', 'matlab', 'powershell', 'zig', 'sass', 'scss', 'hcl', 'graphql', 'pl/sql', 't-sql', 'vba', 'groovy', 'f#', 'ocaml', 'julia', 'cobol', 'fortran', 'assembly', 'visual basic', 'apex']);
+const PLATFORMS = new Set(['aws', 'amazon web services', 'gcp', 'google cloud', 'google cloud platform', 'azure', 'microsoft azure', 'cloudflare', 'cloudflare workers', 'vercel', 'netlify', 'heroku', 'fly.io', 'render', 'digitalocean', 'kubernetes', 'linux', 'macos', 'ios', 'android', 'windows', 'salesforce', 'shopify', 'stripe', 'twilio', 'firebase', 'supabase', 'snowflake', 'databricks', 'github', 'gitlab', 'bitbucket', 'openai', 'anthropic', 'slack', 'hubspot', 'netsuite', 'wordpress', 'sharepoint', 'servicenow', 'workday', 'sap', 'oracle cloud', 'microsoft 365', 'google workspace', 'tailscale', 'expo', 'app store', 'google play']);
+// Tools whose names are written in lower case, or often are. Matched in lower case.
+const TOOLS = new Set(['git', 'npm', 'pnpm', 'yarn', 'bun', 'deno', 'node', 'node.js', 'nginx', 'apache', 'jq', 'curl', 'vim', 'neovim', 'emacs', 'make', 'cmake', 'gradle', 'maven', 'webpack', 'vite', 'rollup', 'esbuild', 'babel', 'eslint', 'prettier',
+  'jest', 'vitest', 'mocha', 'pytest', 'junit', 'cypress', 'playwright', 'selenium', 'terraform', 'ansible', 'pulumi', 'helm', 'docker', 'podman', 'redis', 'postgres', 'postgresql', 'mysql', 'mariadb', 'sqlite', 'mongodb', 'dynamodb',
+  'elasticsearch', 'kafka', 'rabbitmq', 'grpc', 'graphql', 'prometheus', 'grafana', 'datadog', 'sentry', 'jenkins', 'circleci', 'github actions', 'jira', 'figma', 'postman', 'react', 'vue', 'svelte', 'angular', 'next.js', 'express', 'fastapi', 'django',
+  'flask', 'rails', 'spring', 'laravel', 'pandas', 'numpy', 'pytorch', 'tensorflow', 'spark', 'airflow', 'dbt', 'tailwind', 'htmx', 'wrangler', 'zod', 'prisma', 'sqlalchemy', 'celery', 'tmux', 'ffmpeg', 'unpdf']);
+// Whole skills that are a method or an idea, however they are written. Matched in lower case.
+const CONCEPTS = new Set(['ci/cd', 'ci', 'cd', 'rest', 'restful', 'api', 'apis', 'rest api', 'rest apis', 'etl', 'elt', 'rag', 'tdd', 'bdd', 'ddd', 'oop', 'saas', 'paas', 'iaas', 'llm', 'llms', 'ai', 'ml', 'nlp', 'mvc', 'mvp', 'sso', 'oauth', 'seo', 'ux', 'ui', 'ui/ux', 'devops', 'sre', 'qa', 'crud', 'microservices', 'serverless', 'websockets', 'b2b', 'b2c', 'sdlc', 'okrs', 'kpis', 'agile', 'scrum', 'kanban']);
+// Words that practices, methods and soft skills are made of. A skill is one of those when every word of it is here
+// ("Team Management", "Machine Learning", "code review"). A product name that only holds such a word is not
+// ("React Testing Library", "AWS Systems Manager", "Spring Security"): its other words are names.
+const SOFT = new Set(('management leadership communication mentoring coaching training planning strategy process processes collaboration stakeholder stakeholders architecture design review reviews testing debugging documentation hiring interviewing analysis reliability scalability security performance optimization optimisation migration migrations integration integrations automation development engineering operations support teaching writing research modeling modelling monitoring observability deployment delivery enterprise teamwork roadmap roadmaps budgeting negotiation presentation presentations services pipelines pipeline systems system learning patterns pattern principles methodology methodologies practices '
+  + 'team teams project projects product public speaking people time change risk vendor client customer business technical software data machine deep cross functional strategic critical thinking problem solving code unit pair programming continuous improvement quality incident response release program agile lean user experience and of the in for').split(' '));
+
+// What kind of thing a skill is, from its name alone, in this order:
+// a known language, platform or tool; a known method or idea ("other"); a name made only of the words practices are
+// made of ("other"); then a name written as a product name is (a capital, a digit, a dot: "PostgreSQL", "Next.js",
+// "S3") is a tool, and one that reads as plain lower-case words is "other". The person can correct any of these.
+export function kindOf(name: string): string {
+  const low = name.trim().toLowerCase();
+  if (LANGUAGES.has(low)) return 'language';
+  if (PLATFORMS.has(low)) return 'platform';
+  if (TOOLS.has(low)) return 'tool';
+  if (CONCEPTS.has(low)) return 'other';
+  const words = low.split(/[^a-z0-9+#.]+/).filter(Boolean);
+  if (words.length > 0 && words.every((w) => SOFT.has(w))) return 'other';
+  return /[A-Z0-9.+#]/.test(name.trim()) ? 'tool' : 'other';
+}
+
+const reviewedAt = () => (db.query('SELECT reviewed_at FROM skills_review WHERE id = 1').get() as { reviewed_at: number }).reviewed_at;
+export const reviewed = () => reviewedAt() > 0;
+export const reviewedOn = reviewedAt; // when the person last reviewed the list (ms), 0 before the first review
+export const allSkills = () => db.query('SELECT * FROM skills WHERE in_bank = 1 ORDER BY facts DESC, name COLLATE NOCASE').all() as Skill[];
+
+// Brings the list in step with the bank: a skill a fact names is added (not yet marked), one no fact names any
+// more is kept with its mark but set aside, and each skill's count of facts is taken again. After the first
+// review, each skill the bank gained since and that is still not marked is asked about.
+export function syncSkills(now: number): void {
+  const seen = new Map<string, { name: string; n: number; spellings: Map<string, number> }>();
+  for (const f of db.query('SELECT skills FROM facts ORDER BY id').all() as { skills: string }[]) {
+    for (const raw of f.skills.split(',').map((x) => x.trim()).filter(Boolean)) {
+      const s = seen.get(raw.toLowerCase()) ?? { name: raw, n: 0, spellings: new Map() };
+      s.n++; s.spellings.set(raw, (s.spellings.get(raw) ?? 0) + 1);
+      seen.set(raw.toLowerCase(), s);
+    }
+  }
+  db.transaction(() => {
+    db.run('UPDATE skills SET in_bank = 0, facts = 0');
+    for (const [key, s] of seen) {
+      // The spelling most facts use is the one shown.
+      const name = [...s.spellings].sort((a, b) => b[1] - a[1])[0][0];
+      db.query('INSERT OR IGNORE INTO skills (key, name, kind, added_at) VALUES (?, ?, ?, ?)').run(key, name, kindOf(name), now);
+      db.query('UPDATE skills SET name = ?, facts = ?, in_bank = 1 WHERE key = ?').run(name, s.n, key);
+    }
+  })();
+  const since = reviewedAt();
+  raise('skill', since === 0 ? [] : allSkills().filter((s) => s.mark === '' && s.kind !== 'other' && s.added_at > since).map((s) => ({ key: `skill:${s.key}`, about: `skill:${s.key}`, data: { skill: s.key },
+    text: `Your bank now names ${s.name} as a skill. Could you defend it in an interview? It stays off your resumes until you say.`, choices: ['Yes, I am confident in it', 'No, leave it off my resumes'] })), now);
+}
+onAnswer('skill', (q: Raised, choice: number) => { db.query('UPDATE skills SET mark = ? WHERE key = ?').run(choice === 0 ? 'confident' : 'not-confident', String(q.data.skill ?? '')); return ''; });
+
+export const NONE_CONFIDENT = 'Mark at least one tool, language or platform as one you are confident in before you confirm the list. Nothing was saved.';
+// The person's marks for many skills at once, and, only when `review` is true, that they have now reviewed the list.
+// Once the list is reviewed, only skills marked confident go on a resume. So a review is refused, and so is any
+// change after one, that would leave no skill to show: a resume would then lose its whole Skills section.
+// Returns how many marks were set, or `refused` with the reason, in which case nothing was saved.
+export function markSkills(marks: { name: string; mark?: string; kind?: string }[], review: boolean, now: number): { marked: number; refused?: string } {
+  let marked = 0;
+  try {
+    db.transaction(() => {
+      for (const m of marks) {
+        const key = String(m.name ?? '').trim().toLowerCase();
+        if (key === '') continue;
+        if (typeof m.mark === 'string' && (MARKS as readonly string[]).includes(m.mark)) marked += db.query('UPDATE skills SET mark = ? WHERE key = ?').run(m.mark, key).changes;
+        if (typeof m.kind === 'string' && (KINDS as readonly string[]).includes(m.kind)) db.query('UPDATE skills SET kind = ?, kind_set = 1 WHERE key = ?').run(m.kind, key);
+      }
+      if ((review || reviewed()) && !allSkills().some((s) => allowed(s, true))) throw new Error(NONE_CONFIDENT);
+      if (review) db.query('UPDATE skills_review SET reviewed_at = ? WHERE id = 1').run(now);
+    })();
+  } catch (e) { if ((e as Error).message === NONE_CONFIDENT) return { marked: 0, refused: NONE_CONFIDENT }; throw e; }
+  return { marked };
+}
+
+const mentions = (text: string, name: string) => [...text.matchAll(new RegExp(`(?:^|[^a-z0-9+#])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9+#])`, 'g'))];
+// Whether a skill may be on a resume now: a tool, language or platform, not marked "not confident", and marked
+// confident once the list has been reviewed.
+export const allowed = (s: Skill, isReviewed = reviewed()) => s.in_bank === 1 && s.kind !== 'other' && s.mark !== 'not-confident' && (!isReviewed || s.mark === 'confident');
+
+// The skills for one resume, in order: first those the posting names (the most named first), then those the
+// writer chose for this posting (`prefer`, in its order), then those the most facts show. Never more than the cap.
+// Every item comes from the skills list, so a phrase lifted from the posting cannot get in.
+export function resumeSkills(posting: string, pages: number, prefer: string[] = [], list = allSkills(), isReviewed = reviewed()): string[] {
+  const low = posting.toLowerCase(), want = prefer.map((p) => p.trim().toLowerCase());
+  const rank = (s: Skill) => { const hits = mentions(low, s.key); const at = want.indexOf(s.key); return { hits: hits.length, first: hits[0]?.index ?? Infinity, at: at < 0 ? Infinity : at }; };
+  return list.filter((s) => allowed(s, isReviewed)).map((s) => ({ s, r: rank(s) }))
+    .sort((a, b) => b.r.hits - a.r.hits || a.r.first - b.r.first || a.r.at - b.r.at || b.s.facts - a.s.facts || a.s.name.localeCompare(b.s.name))
+    .slice(0, capFor(pages)).map((x) => x.s.name);
+}
+
+// Writes a resume's Skills section from the list: one line, in the order above. Used on a resume a model wrote, never on the person's own edit.
+export function withSkills(resume: string, posting: string, pages: number): string {
+  const lines = resume.split('\n'), at = lines.findIndex((l) => /^##\s+(?:technical\s+|core\s+)?skills\s*$/i.test(l.trim()));
+  const skills = resumeSkills(posting, pages, at < 0 ? [] : parseResume(resume).skills);
+  if (at < 0) {
+    if (skills.length === 0) return resume;
+    const before = lines.findIndex((l) => /^##\s+education\b/i.test(l.trim())), block = ['## Skills', '', skills.join(', '), ''];
+    if (before < 0) return `${resume.trimEnd()}\n\n${block.join('\n')}`;
+    lines.splice(before, 0, ...block);
+    return lines.join('\n');
+  }
+  let end = lines.findIndex((l, i) => i > at && /^##\s/.test(l));
+  if (end < 0) end = lines.length;
+  // With no skill that may be shown, the section the writer made is taken out: nothing in it was confirmed.
+  lines.splice(at, end - at, ...(skills.length ? ['## Skills', '', skills.join(', '), ...(end < lines.length ? [''] : [])] : []));
+  return lines.join('\n').trimEnd();
+}
+
+// What is wrong with a resume's Skills section as it stands, in plain words: for the flags on a job (lib/checks.ts).
+export function skillProblems(listed: string[], pages: number): { over: number; cap: number; unconfirmed: boolean; notAllowed: string[] } {
+  const byKey = new Map((db.query('SELECT * FROM skills').all() as Skill[]).map((s) => [s.key, s])), isReviewed = reviewed();
+  const notAllowed = listed.filter((x) => { const s = byKey.get(x.trim().toLowerCase()); return !s || !allowed(s, isReviewed); });
+  return { over: Math.max(0, listed.length - capFor(pages)), cap: capFor(pages), unconfirmed: !isReviewed && listed.length > 0, notAllowed };
+}

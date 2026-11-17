@@ -19,15 +19,21 @@ export type Question = { text: string; from: string };
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
-// The open questions, the most useful first: what a resume's council could not get from the bank,
-// then what the profile wants, then what each job not yet sent wants. Answered ones are left out.
+// The open questions, the most useful first: what a resume's writer, council and six-second skim could not get
+// from the bank, then what the profile wants, then what each job not yet sent wants. Answered ones are left out.
+// The questions code raises from the person's own data (lib/raised.ts: job dates, LinkedIn differences, skills)
+// are not here. Each has set choices and an answer that changes the bank, so it is closed only by that answer
+// (POST /questions), never by this conversation or by a model's judgment that it was answered.
 export function openQuestions(limit = 30): Question[] {
   const done = new Set((db.query('SELECT question FROM answered').all() as { question: string }[]).map((r) => norm(r.question)));
   const out: Question[] = [], seen = new Set<string>();
   const add = (text: string, from: string) => { const k = norm(text); if (k === '' || done.has(k) || seen.has(k)) return; seen.add(k); out.push({ text: text.trim(), from }); };
   const jobs = db.query("SELECT company, title, analysis FROM jobs WHERE analysis != '' AND outcome = '' ORDER BY fit DESC").all() as { company: string; title: string; analysis: string }[];
-  const parsed = jobs.map((j) => { try { return { j, a: JSON.parse(j.analysis) as { gaps?: string[]; review?: { questions?: string[] } } }; } catch { return { j, a: {} as { gaps?: string[]; review?: { questions?: string[] } } }; } });
+  type Read = { gaps?: string[]; questions?: string[]; review?: { questions?: string[] }; skim?: { questions?: string[] } };
+  const parsed = jobs.map((j) => { try { return { j, a: JSON.parse(j.analysis) as Read }; } catch { return { j, a: {} as Read }; } });
+  for (const { j, a } of parsed) for (const q of a.questions ?? []) add(q, `From writing your ${j.company} resume`);
   for (const { j, a } of parsed) for (const q of a.review?.questions ?? []) add(q, `From the review of your ${j.company} resume`);
+  for (const { j, a } of parsed) for (const q of a.skim?.questions ?? []) add(q, `From a six-second skim of your ${j.company} resume`);
   for (const g of ((db.query('SELECT gaps FROM profile WHERE id = 1').get() as { gaps: string } | null)?.gaps ?? '').split('\n')) add(g, 'From your profile');
   for (const { j, a } of parsed) for (const q of (a.gaps ?? []).slice(0, 3)) add(q, `For ${j.title} at ${j.company}`);
   return out.slice(0, limit);

@@ -1,12 +1,17 @@
 // The ingestion worker: `bun worker.ts`, beside server.ts on the standing machine. It takes
 // queued sources one at a time, has Claude Code read each (lib/ingest.ts), and writes what it
 // found into the bank; then it writes the profile from the bank (lib/profile.ts). The API never calls a model, so tests and the app stay fast without it.
+// It also keeps the questions that code raises for the person in step with the bank (lib/checks.ts): after each
+// source is read, and once when it starts. A LinkedIn export's positions are kept as data when it is read (lib/linkedin.ts).
 import { writeFileSync } from 'node:fs';
 import { applyExtraction, associate, bankSignature, db, type SourceRow } from './lib/db.ts';
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
-import { assess, compose, fetchPosting, publish, saveResume, type Analysis, type JobRow } from './lib/jobs.ts';
+import { assess, compose, FactsError, fetchPosting, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
+import { syncQuestions } from './lib/checks.ts';
+import { positions, storePositions } from './lib/linkedin.ts';
+import { lastAnswerAt, rewriteDue } from './lib/raised.ts';
 import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
@@ -17,6 +22,14 @@ db.run("UPDATE sources SET status = 'queued', note = '' WHERE status = 'running'
 db.run("UPDATE profile SET status = 'queued', note = '' WHERE status = 'running'");
 db.run("UPDATE jobs SET status = 'queued', note = '' WHERE status = 'running'");
 db.run("UPDATE discovery SET status = 'queued' WHERE status = 'running'");
+
+// A LinkedIn export read before its positions were kept as data: they are taken from its stored text now, with no model.
+if (positions().length === 0) {
+  const old = db.query("SELECT id, body FROM sources WHERE kind = 'text' AND status = 'done' AND body LIKE '%## Positions.csv%' ORDER BY id DESC LIMIT 1").get() as { id: number; body: string } | null;
+  if (old) console.log(`kept ${storePositions(old.body, old.id, Date.now())} LinkedIn positions from an export read earlier`);
+}
+// The questions code raises (job dates, LinkedIn differences, skills) and the flags that read them, as the bank now stands.
+try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); }
 
 // The watchlist is checked when asked, and by itself once a day.
 const DAY = 86_400_000;
@@ -62,10 +75,10 @@ async function readJob(job: JobRow) {
     if (job.posting.trim() === '') db.query('UPDATE jobs SET posting = ? WHERE id = ?').run(posting, job.id);
     const a = await assess(posting, job.resume);
     if (!db.query('SELECT id FROM jobs WHERE id = ?').get(job.id)) return;
-    // What the last resume's review said stays with that resume until a new one is written.
+    // What the last resume's review, skim and flags said stays with that resume until a new one is written.
     const before = job.analysis ? (JSON.parse(job.analysis) as Analysis) : undefined;
     db.query("UPDATE jobs SET status = 'done', note = '', title = ?, company = ?, place = ?, fit = ?, analysis = ?, terms_raw = ?, resume_status = 'queued', resume_note = '', updated_at = ? WHERE id = ?")
-      .run(a.title || 'Untitled role', a.company, a.place, a.fit, JSON.stringify({ ...a.analysis, changes: before?.changes ?? [], review: before?.review }), JSON.stringify(a.terms), Date.now(), job.id);
+      .run(a.title || 'Untitled role', a.company, a.place, a.fit, JSON.stringify({ ...a.analysis, changes: before?.changes ?? [], review: before?.review, map: before?.map, skim: before?.skim, questions: before?.questions, written: before?.written, flags: before?.flags }), JSON.stringify(a.terms), Date.now(), job.id);
     console.log(`  fit ${a.fit}; resume queued`);
   } catch (e) {
     db.query("UPDATE jobs SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, job.id);
@@ -83,20 +96,18 @@ void (async () => {
     console.log(`writing the resume for job ${job.id}`);
     const wroteFrom = bankSignature();
     try {
-      const c = await compose(job.posting, job.pages, JSON.parse(job.terms_raw || '[]') as string[]);
-      const now = db.query('SELECT analysis, resume_status FROM jobs WHERE id = ?').get(job.id) as { analysis: string; resume_status: string } | null;
-      if (!now) continue;
-      // Asked for again while this one was being written (a re-read, another length): this one is dropped and the next is written.
-      if (now.resume_status !== 'running') continue;
-      const analysis = { ...(JSON.parse(now.analysis) as Analysis), changes: c.changes, review: c.review, terms: c.terms };
-      db.query("UPDATE jobs SET resume = ?, analysis = ?, edited = 0, resume_status = 'done', bank_sig = ?, updated_at = ? WHERE id = ?").run(c.resume, JSON.stringify(analysis), wroteFrom, Date.now(), job.id);
-      saveResume({ id: job.id, company: job.company, title: job.title }, c.resume);
+      // The writer is given the posting map from the first reading: its requirements, each with its strongest evidence.
+      const c = await compose(job.posting, job.pages, JSON.parse(job.terms_raw || '[]') as string[], job.analysis ? (JSON.parse(job.analysis) as Analysis).requirements ?? [] : []);
+      // Gone, or asked for again while this one was being written (a re-read, another length): this one is dropped and the next is written.
+      if (!storeComposed(job.id, c, wroteFrom, Date.now())) continue;
       await publish(job.id);
       console.log(`  resume for job ${job.id} written and printed`);
       await prune(inData('inbox')).then((n) => console.log(`  ${n} open questions already answered, closed`)).catch(() => {});
     } catch (e) {
       // The signature is kept on a failure too, so a resume that cannot be written is not asked for again on every pass.
       db.query("UPDATE jobs SET resume_status = 'failed', resume_note = ?, bank_sig = ? WHERE id = ?").run((e as Error).message, wroteFrom, job.id);
+      // A version that named a job the bank does not have is never stored. The earlier resume stands, and says why.
+      if (e instanceof FactsError) keepEarlier(job.id, (e as Error).message);
       console.log(`  resume failed: ${(e as Error).message}`);
     }
   }
@@ -111,7 +122,9 @@ if (process.env.EGG_AUTO_RESUME !== 'off') void (async () => {
     await Bun.sleep(5000);
     const sig = bankSignature();
     if (sig !== seen) { seen = sig; since = Date.now(); continue; }
-    if (Date.now() - since < QUIET) continue;
+    // Also held back for a while after the person's last answer to a raised question, so one sitting of answers
+    // (each can change a role) causes one rewrite, not one for each answer (ANSWER_HOLD_MS in lib/raised.ts).
+    if (!rewriteDue(Date.now(), since, QUIET, lastAnswerAt())) continue;
     const n = db.query("UPDATE jobs SET resume_status = 'queued', resume_note = '' WHERE outcome = '' AND status = 'done' AND resume != '' AND edited = 0 AND resume_status IN ('', 'done', 'failed') AND bank_sig != ?").run(sig).changes;
     if (n) console.log(`the bank changed: ${n} unsent resume${n === 1 ? '' : 's'} queued to be written again`);
   }
@@ -164,12 +177,16 @@ for (;;) {
     // Deleted while it was being read: keep nothing.
     if (!db.query('SELECT id FROM sources WHERE id = ?').get(source.id)) continue;
     const n = applyExtraction(source.id, found, Date.now());
+    // A LinkedIn export's positions are also kept as rows, to compare with the roles (a text with none changes nothing).
+    if (source.kind === 'text') { const kept = storePositions(source.body, source.id, Date.now()); if (kept) console.log(`  ${kept} LinkedIn positions kept`); }
     // File a repository's project under the employer whose organisation or name it carries.
     if (source.kind === 'github') associate((await hub()).login);
     db.query("UPDATE sources SET status = 'done', note = ? WHERE id = ?").run(n === 0 ? 'Nothing new was found in it.' : '', source.id);
     // New facts make the profile out of date: write it again once the queue is empty.
     if (n > 0) db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
     console.log(`  ${n} facts added`);
+    // New roles, dates or skills can raise or settle a question for the person.
+    try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`  questions could not be checked: ${(e as Error).message}`); }
   } catch (e) {
     db.query("UPDATE sources SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, source.id);
     console.log(`  failed: ${(e as Error).message}`);

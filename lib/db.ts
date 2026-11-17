@@ -46,6 +46,12 @@ for (const column of ["detail TEXT NOT NULL DEFAULT ''"]) {
 for (const column of ["standing TEXT NOT NULL DEFAULT ''", "reach TEXT NOT NULL DEFAULT ''", 'part_of INTEGER']) {
   try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
 }
+// What the person says about a role so its dates read true on a resume (RESUME-RULES.md, rule 4). note is one
+// line of context ("Ran alongside the Acme job, evenings only."); label is Contract or Part-time. Both are
+// printed with the role. An end date is the `end` column above. Empty means the person has not said.
+for (const column of ["note TEXT NOT NULL DEFAULT ''", "label TEXT NOT NULL DEFAULT ''"]) {
+  try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
+}
 // The profile: one document written from the whole bank (lib/profile.ts). status is
 // none | queued | running | done | failed; signature is the bank's when it was written.
 db.run(`CREATE TABLE IF NOT EXISTS profile (
@@ -98,11 +104,14 @@ for (const column of ['posted_at INTEGER NOT NULL DEFAULT 0', "salary TEXT NOT N
 try { db.run('ALTER TABLE jobs ADD COLUMN applied_at INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 
 // Changes whenever anything the profile is written from changes: a fact's wording, result, skills,
-// category or filing, or a role's title, dates or kind of work. It is how a profile is known to be out of date.
+// category or filing, or a role's title, dates, kind of work, note or label. It is how a profile is known to be out of date.
 export const bankSignature = () => {
   const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all();
   const roles = db.query('SELECT id, company, title, start, end, standing, reach, part_of FROM roles ORDER BY id').all();
-  return new Bun.CryptoHasher('sha256').update(JSON.stringify([facts, roles])).digest('hex').slice(0, 24);
+  // A role's note and label count only once one is set, so a bank that has none keeps the signature it had
+  // before these columns existed, and no resume is written again for nothing.
+  const said = db.query("SELECT id, note, label FROM roles WHERE note != '' OR label != '' ORDER BY id").all();
+  return new Bun.CryptoHasher('sha256').update(JSON.stringify(said.length ? [facts, roles, said] : [facts, roles])).digest('hex').slice(0, 24);
 };
 
 // A role that came with a job title is taken to be an employer until the person says otherwise;
@@ -137,7 +146,7 @@ export function associate(login = ''): number {
 export const KINDS = ['accomplishment', 'project', 'responsibility', 'skill', 'education', 'other'] as const;
 export type Kind = (typeof KINDS)[number];
 
-export type RoleRow = { id: number; company: string; title: string; start: string; end: string; location: string; summary: string; standing: string; reach: string; part_of: number | null };
+export type RoleRow = { id: number; company: string; title: string; start: string; end: string; location: string; summary: string; standing: string; reach: string; part_of: number | null; note: string; label: string };
 export type SourceRow = { id: number; kind: 'text' | 'file' | 'repo' | 'github'; title: string; body: string; author: string; status: string; note: string; created_at: number };
 
 export type Extraction = {

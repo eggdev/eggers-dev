@@ -36,7 +36,16 @@ export function llmBackend(env: Env = process.env): Backend {
 // True when this call goes to Codex: always under EGG_LLM=codex, else only for a "gpt" model.
 export const usesCodex = (model: string, env: Env = process.env) => llmBackend(env) === 'codex' || model === 'gpt' || model.startsWith('gpt:');
 
-export async function ask<T>({ prompt, schema, cwd, tools = [], allow = [], timeoutMs = 300_000, model = process.env.EGG_MODEL ?? 'sonnet', effort }: Ask): Promise<T> {
+// A stand-in for the model, for tests: while one is set, every call is answered by it and no command is
+// started. Nothing outside a test sets it. With none set, a call made under `bun test` is refused, so a
+// test can never reach a real model by mistake.
+let standIn: ((call: Ask) => unknown) | undefined;
+export function fakeAsk(answer?: (call: Ask) => unknown): void { standIn = answer; }
+
+export async function ask<T>(call: Ask): Promise<T> {
+  if (standIn) return (await standIn(call)) as T;
+  if (process.env.NODE_ENV === 'test') throw new Error('A test asked a model with no stand-in set (fakeAsk in lib/llm.ts).');
+  const { prompt, schema, cwd, tools = [], allow = [], timeoutMs = 300_000, model = process.env.EGG_MODEL ?? 'sonnet', effort } = call;
   if (usesCodex(model)) return askCodex<T>({ prompt, schema, cwd, tools, timeoutMs, model, effort });
   const args = ['claude', '-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema),
     '--strict-mcp-config', '--setting-sources', '', '--no-session-persistence', '--model', model, ...(effort ? ['--effort', effort] : []),

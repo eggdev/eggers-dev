@@ -4,8 +4,12 @@
 // against counting a version number as a result, its word budget, and its four weighted parts.
 //
 // One thing is not taken from it: a bullet is never asked to carry a number. This app's rule is
-// that a number may always be left out and never made up (lib/writing.ts), so the share of bullets
+// that a number is never made up and an incidental one stays out (lib/writing.ts), so the share of bullets
 // with a measured result is reported and scored, but only the penalties are handed to the reviser.
+//
+// Tense follows the role (RESUME-RULES.md, rule 11): a bullet under the current role opens in the present
+// tense, one under a past role in the past tense. The resume is read with the one parser (lib/resume.ts).
+import { parseResume } from './resume.ts';
 
 export type Flag = { quote: string; why: string; fix: string };
 export type Part = { label: string; weight: number; score: number };
@@ -15,30 +19,38 @@ export type Bullets = { count: number; measured: number; score: number; flags: F
 const NOT_RESULTS = [/\b(?:Python|Java|Angular|Node(?:\.js)?|React|Vue|Go|Ruby|PHP|Swift|ES|v)\s*\d+(?:\.\d+)*/gi, /\b(?:Port\s*\d{2,5}|HTTP\s*[1-5]\d{2}|IPv[46]|HTTP\/[123])\b/gi, /\b(?:ISO\s*\d{4,5}|SOC\s*[123]|RFC\s*\d{3,5}|WCAG\s*\d(?:\.\d)?|OAuth\s*\d)\b/gi];
 const COUNTED = /\d|\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozens?|hundreds?|thousands?|millions?|billions?|half|double[ds]?|tripled?)\b/i;
 const OUTCOME = /\b(?:zero\s+(?:downtime|data\s+loss|incidents?)|first-ever|from\s+scratch|patent\s+granted|acquired by)\b/i;
-const DUTY = /^(?:responsible for|assisted (?:in|with)|helped (?:to|with)\b|worked (?:on|with)|participated in|tasked with|duties included|involved in|served as|acted as|technical lead (?:for|on|of)|tech lead (?:for|on|of))/i;
+const DUTY = /^(?:responsible for|assist(?:s|ed)? (?:in|with)|help(?:s|ed)? (?:to|with)\b|work(?:s|ed)? (?:on|with)|participate[sd]? in|tasked with|duties included?|involved in|serve[sd]? as|act(?:s|ed)? as|technical lead (?:for|on|of)|tech lead (?:for|on|of))/i;
 const VERBS = new Set(['built', 'led', 'won', 'wrote', 'ran', 'cut', 'drove', 'grew', 'made', 'took', 'set', 'rebuilt', 'taught', 'sold', 'brought', 'kept', 'found', 'gave', 'began', 'chose', 'held', 'put', 'sent', 'got', 'did', 'rewrote', 'oversaw', 'spoke', 'stood']);
 const METHOD = /\b(?:by|with|using|through|in|on|from)\s+[A-Z][\w.+#-]+|\bso (?:that\s)?\w+/;
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean);
 // "As sole engineer, shipped Ledgerly…" leads with "shipped".
 const lead = (b: string) => (/^(?:As|While|With|After|In|On)\b[^,]{0,40},\s*([\w-]+)/.exec(b)?.[1] ?? words(b)[0] ?? '').toLowerCase().replace(/[.,:;]+$/, '');
+// Present-tense openers, for the current role. A word outside this list still counts when it reads as one (see present).
+const PRESENT = new Set(['build', 'lead', 'win', 'write', 'run', 'drive', 'grow', 'make', 'take', 'rebuild', 'teach', 'sell', 'bring', 'keep', 'find', 'give', 'begin', 'choose', 'hold', 'send', 'get', 'do', 'rewrite', 'oversee', 'speak', 'stand',
+  'manage', 'design', 'develop', 'maintain', 'own', 'ship', 'create', 'support', 'train', 'coach', 'mentor', 'deliver', 'implement', 'architect', 'operate', 'partner', 'define', 'automate', 'deploy', 'migrate', 'test', 'review', 'plan', 'coordinate', 'direct', 'guide', 'analyze', 'improve', 'reduce', 'launch', 'integrate', 'scale', 'advise', 'serve', 'handle', 'prototype', 'help', 'work', 'turn', 'move', 'replace', 'add', 'set up']);
+// Verbs that read the same in both tenses.
+const EITHER = new Set(['cut', 'set', 'put', 'read', 'hit', 'let', 'shut', 'spread', 'split', 'quit', 'cast']);
+const NOT_VERBS = new Set(['the', 'a', 'an', 'as', 'in', 'on', 'for', 'with', 'to', 'of', 'at', 'by', 'responsible', 'technical', 'tech', 'senior', 'sole', 'primary', 'key', 'main', 'member', 'part', 'various', 'multiple', 'several']);
 // "Tech-led" and "co-founded" are verbs too: the last part of a hyphenated opener decides.
-const acted = (verb: string) => { const last = verb.split('-').pop() ?? verb; return VERBS.has(verb) || VERBS.has(last) || /\w{2,}ed$/.test(last); };
+const last = (verb: string) => verb.split('-').pop() ?? verb;
+const past = (verb: string) => VERBS.has(verb) || VERBS.has(last(verb)) || /\w{2,}ed$/.test(last(verb));
+const base = (verb: string) => PRESENT.has(verb) || PRESENT.has(last(verb)) || PRESENT.has(last(verb).replace(/s$/, ''));
+const present = (verb: string) => EITHER.has(last(verb)) || base(verb) || (/^[a-z]+$/.test(last(verb)) && !past(verb) && !/ing$/.test(last(verb)) && !NOT_VERBS.has(last(verb)));
+// Whether a bullet opens with an action in the tense its role calls for.
+const acted = (verb: string, current: boolean) => (current ? present(verb) : past(verb));
+// A bullet in the wrong tense for its role: past under the current role, or a known present-tense verb under a past one.
+const slip = (verb: string, current: boolean) => !EITHER.has(last(verb)) && (current ? past(verb) : !past(verb) && base(verb));
 
-// The bullets of Experience and Projects, in order, each with the role it sits under.
-function bulletsOf(markdown: string): { role: string; text: string }[] {
-  const out: { role: string; text: string }[] = [];
-  let section = '', role = '';
-  for (const line of markdown.split('\n')) {
-    const h2 = /^##\s+(.*)/.exec(line), h3 = /^###\s+(.*)/.exec(line), b = /^\s*[-*]\s+(.*)/.exec(line);
-    if (h2) { section = h2[1].trim(); role = ''; } else if (h3) role = h3[1].trim();
-    else if (b && /^(Experience|Projects)$/i.test(section)) out.push({ role, text: b[1].trim() });
-  }
-  return out;
+// The bullets of Experience (and of Projects, in a resume written before that section was dropped), in order,
+// each with the role it sits under and whether that role is current.
+function bulletsOf(markdown: string): { role: string; text: string; current: boolean }[] {
+  const r = parseResume(markdown);
+  return [...r.experience, ...r.projects].flatMap((e) => e.bullets.map((text) => ({ role: e.heading, text, current: e.current })));
 }
 
-// Each bullet: (25 for an action verb + 45 for a measured result + 30 for a named method or tool) less
-// 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb.
+// Each bullet: (25 for an action verb in its role's tense + 45 for a measured result + 30 for a named method or
+// tool) less 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb.
 export function bullets(markdown: string, terms: string[] = []): Bullets {
   const all = bulletsOf(markdown), flags: Flag[] = [];
   // Whole words only, so "go" is not found in "going".
@@ -51,11 +63,12 @@ export function bullets(markdown: string, terms: string[] = []): Bullets {
     const low = b.text.toLowerCase(), method = METHOD.test(b.text) || named.some((t) => t.test(low));
     const run = i >= 2 && all[i - 1].role === b.role && all[i - 2].role === b.role && lead(all[i - 1].text) === verb && lead(all[i - 2].text) === verb;
     let penalty = 0;
-    if (duty) { penalty += 40; flags.push({ quote: b.text, why: 'It opens as a duty, not as something done.', fix: 'Open with what the person did, as a past-tense verb.' }); }
+    if (duty) { penalty += 40; flags.push({ quote: b.text, why: 'It opens as a duty, not as something done.', fix: `Open with what the person ${b.current ? 'does, as a present-tense verb' : 'did, as a past-tense verb'}.` }); }
+    else if (slip(verb, b.current)) flags.push({ quote: b.text, why: b.current ? 'It opens in the past tense, and this role is current.' : 'It opens in the present tense, and this role has ended.', fix: b.current ? 'Open it in the present tense (“Build”, “Lead”).' : 'Open it in the past tense (“Built”, “Led”).' });
     if (n > 35) { penalty += 25; flags.push({ quote: b.text, why: `It runs to ${n} words, past what a skim takes in.`, fix: 'Cut it to under 30 words, or split it if it says two things.' }); }
     if (run) { penalty += 15; flags.push({ quote: b.text, why: `It is the third bullet in a row to open with “${verb}”.`, fix: 'Open it with a different verb that is still exact.' }); }
     if (result) measured++;
-    total += Math.max(0, (!duty && acted(verb) ? 25 : 0) + (result ? 45 : 0) + (method ? 30 : 0) - penalty);
+    total += Math.max(0, (!duty && acted(verb, b.current) ? 25 : 0) + (result ? 45 : 0) + (method ? 30 : 0) - penalty);
   });
   return { count: all.length, measured, score: all.length ? Math.round(total / all.length) : 0, flags };
 }
@@ -89,7 +102,7 @@ export function draftScore(markdown: string, supported: string[], pages: number,
     { label: 'Word count', weight: WEIGHTS.density, score: room.score },
   ];
   const notes: string[] = [];
-  if (left.length) notes.push(`These terms from the posting are supported by the bank and missing from the resume: ${left.join(', ')}. Work each into the bullet whose work used it, or into Skills.`);
+  if (left.length) notes.push(`These terms from the posting are supported by the bank and missing from the resume: ${left.join(', ')}. Work each into the bullet whose work used it, beside its evidence. Never add them as a list.`);
   if (room.score < 100) notes.push(`It runs to about ${count} words. ${pages === 1 ? 'One page' : 'Two pages'} read well between ${room.low} and ${room.high}: ${count < room.low ? 'add stronger work from the bank' : 'cut the weakest bullets'}.`);
   if (b.score < 70) notes.push(`${b.count - b.measured} of ${b.count} bullets state no measured result. Where the bank holds a result or a number worth showing for that same work, show it, and name the tool or method where the bank names one. Where it holds none, leave the bullet as it is: never invent one.`);
   return { score: overall(parts), parts, notes };

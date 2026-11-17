@@ -11,7 +11,11 @@ import { type Door } from './lib/outreach.ts';
 import { hub } from './lib/github.ts';
 import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from './lib/discover.ts';
 import { INBOX } from './lib/ingest.ts';
-import { fitOf, publish, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { fitOf, publish, refreshSkills, reflagOpen, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { syncQuestions } from './lib/checks.ts';
+import { answer, openRaised, raisedByKey } from './lib/raised.ts';
+import { lf } from './lib/resume.ts';
+import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { type AtsCheck } from './lib/pdf.ts';
 import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
 
@@ -30,6 +34,9 @@ const pretty = (t: string) => t.replace(/(\w)'(\w)/g, '$1’$2').replace(/(^|[\s
 const deep = (v: unknown): unknown => typeof v === 'string' ? pretty(v) : Array.isArray(v) ? v.map(deep) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'id' ? x : deep(x)])) : v;
 const curly = <T extends Record<string, unknown>>(o: T, keys: string[]): T => ({ ...o, ...Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, deep(o[k])])) });
 const STUB = process.argv.includes('--stub-github');
+// After a change to a role, a skill or an answer: the questions code raises and the flags that read them are taken
+// again. A failure here is logged and never fails the request that made the change.
+const follow = () => { try { syncQuestions(Date.now()); reflagOpen(); } catch (e) { console.log(`questions could not be checked: ${(e as Error).message}`); } };
 
 const DAY = 86_400_000;
 // How long ago, in the fewest words: "today", "3 days ago", "2 months ago"; '' when unknown.
@@ -52,9 +59,10 @@ function bank() {
     FROM facts f LEFT JOIN sources s ON s.id = f.source_id ORDER BY f.id`).all() as FactRow[];
   const ids = new Set(roles.map((r) => r.id));
   const of = (f: FactRow) => (f.role_id !== null && ids.has(f.role_id) ? String(f.role_id) : '0');
+  // start, end, note and label are what the person can say about a role's dates (PATCH /roles/:id): end is YYYY-MM, '' for a current job.
   const groups = [...roles.map((r) => ({ id: String(r.id), name: r.title ? `${r.title}, ${r.company}` : r.company, period: period(r), standing: r.standing, reach: r.reach,
-    employer: r.title !== '', partOf: r.part_of === null ? '' : String(r.part_of), partOfName: roles.find((p) => p.id === r.part_of)?.company ?? '' })),
-    { id: '0', name: 'General', period: '', standing: '', reach: '', employer: false, partOf: '', partOfName: '' }];
+    employer: r.title !== '', partOf: r.part_of === null ? '' : String(r.part_of), partOfName: roles.find((p) => p.id === r.part_of)?.company ?? '', start: r.start, end: r.end, note: r.note ?? '', label: r.label ?? '' })),
+    { id: '0', name: 'General', period: '', standing: '', reach: '', employer: false, partOf: '', partOfName: '', start: '', end: '', note: '', label: '' }];
   return {
     roles: groups.filter((g) => facts.some((f) => of(f) === g.id)),
     // Every role, with or without facts, and "General": where a fact can be filed.
@@ -302,7 +310,14 @@ Bun.serve({ hostname, port, routes: {
         termsIn: a.terms?.inResume ?? [], termsBank: a.terms?.inBankOnly ?? [], termsMissing: a.terms?.missing ?? [],
         checks: (a.checks ?? []).map((c, i) => ({ id: String(i), question: c.question, answer: c.answer, note: c.note })),
         knockouts: (a.knockouts ?? []).map((k, i) => ({ id: String(i), question: k.question, answer: k.answer, note: k.note })),
-        requirements: a.requirements.map((r, i) => ({ id: String(i), text: r.text, must: r.need === 'must', coverage: r.coverage, evidence: r.evidence,
+        // What to look at on this resume, in plain words (lib/checks.ts), taken again whenever it is written or edited.
+        flags: (a.flags ?? []).map((f, i) => ({ id: String(i), kind: f.kind, severity: f.severity, text: f.text, items: f.items ?? [] })),
+        // The six-second skim (lib/skim.ts): null for a resume written before it existed.
+        skim: a.skim ? { conclusion: a.skim.conclusion, revisions: a.skim.revisions, questions: a.skim.questions, open: a.skim.open, top: a.skim.top.map((t, i) => ({ id: String(i), requirement: t.requirement, answered: t.answered, note: t.note })) } : null,
+        // The posting's top three requirements as the resume was written to answer them, each with its strongest evidence.
+        top: (a.map?.top ?? []).map((t, i) => ({ id: String(i), text: t.text, need: t.need, best: t.best, evidence: t.evidence })),
+        // need is must | nice | implied (an older reading has only the first two). best is the key of its strongest evidence, bestText that evidence in words.
+        requirements: a.requirements.map((r, i) => ({ id: String(i), text: r.text, must: r.need === 'must', need: r.need, coverage: r.coverage, evidence: r.evidence, best: r.best ?? '', bestText: r.bestText ?? '',
           basis: r.basis ?? '', counted: r.weight === undefined ? -1 : Math.round(r.weight * 100) })) }, ['verdict', 'strengths', 'risks', 'changes', 'gaps', 'seats', 'reviewChanges', 'checks', 'knockouts', 'requirements', 'resumeNote']));
     },
     // What became of it, in the person's words: the record that later searches learn from.
@@ -316,10 +331,12 @@ Bun.serve({ hostname, port, routes: {
       // The person's own edit of the resume: saved as written, then printed and checked again.
       if (typeof b.resume === 'string') {
         if (!b.resume.trim()) return send({ error: 'The resume can’t be empty.' }, 400);
-        db.query('UPDATE jobs SET resume = ?, edited = 1 WHERE id = ?').run(b.resume.trim(), id);
+        // Line endings are stored as plain ones: text pasted from Windows would otherwise read as having no bullets.
+        const edited = lf(b.resume).trim();
+        db.query('UPDATE jobs SET resume = ?, edited = 1 WHERE id = ?').run(edited, id);
         // The copy kept as a file beside the database follows the edit, so the file is never an older resume than the app's.
         const mine = db.query('SELECT id, company, title FROM jobs WHERE id = ?').get(id) as { id: number; company: string; title: string } | null;
-        if (mine) saveResume(mine, b.resume.trim());
+        if (mine) saveResume(mine, edited);
         await publish(id, !STUB);
         return send({ ok: true });
       }
@@ -485,16 +502,79 @@ Bun.serve({ hostname, port, routes: {
       return send({ ok: true, id: made.id }, 201);
     },
   },
-  // What kind of work a role or project was: the person's own word, used to weigh it as evidence.
+  // What kind of work a role or project was: the person's own word, used to weigh it as evidence. And what the
+  // person says so the role's dates read true on a resume: an end date, a one-line context note, a label.
+  // standing, reach and partOf go together, as before. end, note and label are each optional and may be sent alone.
   '/roles/:id': {
     OPTIONS: preflight,
     PATCH: async (req) => {
       const b = await req.json().catch(() => ({})), id = Number(req.params.id);
-      if (!db.query('SELECT id FROM roles WHERE id = ?').get(id)) return send({ error: 'That role is no longer in the bank.' }, 404);
-      if (!['', 'employer', 'own', 'contract', 'personal'].includes(b.standing) || !['', 'live', 'retired', 'never'].includes(b.reach)) return send({ error: 'Choose one of the listed kinds.' }, 400);
+      const role = db.query('SELECT start FROM roles WHERE id = ?').get(id) as { start: string } | null;
+      if (!role) return send({ error: 'That role is no longer in the bank.' }, 404);
+      const kind = b.standing !== undefined || b.reach !== undefined || b.partOf !== undefined, dates = b.end !== undefined || b.note !== undefined || b.label !== undefined;
+      if ((kind || !dates) && (!['', 'employer', 'own', 'contract', 'personal'].includes(b.standing) || !['', 'live', 'retired', 'never'].includes(b.reach))) return send({ error: 'Choose one of the listed kinds.' }, 400);
       const parent = str(b.partOf) === '' ? null : Number(b.partOf);
       if (parent !== null && (parent === id || !db.query("SELECT id FROM roles WHERE id = ? AND title != ''").get(parent))) return send({ error: 'Choose one of your employers.' }, 400);
-      db.query('UPDATE roles SET standing = ?, reach = ?, part_of = ? WHERE id = ?').run(b.standing, b.reach, parent, id);
+      const end = str(b.end), note = str(b.note), label = str(b.label);
+      if (b.end !== undefined && end !== '' && !/^\d{4}(-(0[1-9]|1[0-2]))?$/.test(end)) return send({ error: 'Give the end date as a year and a month, like 2023-06. Leave it empty for a job you hold now.' }, 400);
+      if (b.end !== undefined && end !== '' && role.start !== '' && end < role.start.slice(0, end.length)) return send({ error: 'That end date is before the job’s start date.' }, 400);
+      if (b.note !== undefined && (note.length > 200 || note.includes('\n'))) return send({ error: 'Keep the note to one line of at most 200 characters.' }, 400);
+      if (b.label !== undefined && !['', 'Contract', 'Part-time'].includes(label)) return send({ error: 'Choose Contract, Part-time or no label.' }, 400);
+      if (kind || !dates) db.query('UPDATE roles SET standing = ?, reach = ?, part_of = ? WHERE id = ?').run(b.standing, b.reach, parent, id);
+      if (b.end !== undefined) db.query('UPDATE roles SET end = ? WHERE id = ?').run(end, id);
+      if (b.note !== undefined) db.query('UPDATE roles SET note = ? WHERE id = ?').run(note, id);
+      if (b.label !== undefined) db.query('UPDATE roles SET label = ? WHERE id = ?').run(label, id);
+      // A changed role can settle a question about the timeline, or raise one, and changes the flags that read it.
+      follow();
+      return send({ ok: true });
+    },
+  },
+  // The skills list (lib/skills.ts): each skill the bank names, what kind of thing it is, and the person's mark.
+  // Only a tool, language or platform the person stands behind goes on a resume.
+  '/skills': {
+    OPTIONS: preflight,
+    GET: () => {
+      syncSkills(Date.now());
+      const isReviewed = reviewed();
+      return send({ reviewed: isReviewed, reviewedAt: reviewedOn(), cap: CAP,
+        skills: allSkills().map((s) => ({ name: s.name, kind: s.kind, mark: s.mark, facts: s.facts, shown: allowed(s, isReviewed) })) });
+    },
+    // Marks for many skills at once: {marks: [{name, mark?, kind?}], reviewed?}. Marking alone is not a review and
+    // changes no stored resume. The list counts as reviewed only when "reviewed" is true, and that is refused (400,
+    // nothing saved) while no tool, language or platform is marked confident, because a reviewed list shows only those.
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      if (!Array.isArray(b.marks)) return send({ error: 'Send the skills to mark.' }, 400);
+      syncSkills(Date.now());
+      const got = markSkills(b.marks, b.reviewed === true, Date.now());
+      if (got.refused) return send({ error: got.refused }, 400);
+      // Once the list is reviewed, resumes not yet sent take their Skills line from it, with no model. One the person
+      // edited is left as it is. Before the review, no stored resume is touched: the marks apply to the next one written.
+      const changed = reviewed() ? refreshSkills() : [];
+      follow();
+      void (async () => { for (const id of changed) await publish(id, !STUB).catch(() => {}); })();
+      return send({ ok: true, marked: got.marked, reviewed: reviewed(), updated: changed.length });
+    },
+  },
+  // The questions code raised for the person from their own data (lib/raised.ts): job dates, LinkedIn differences,
+  // new skills. Each has a stable key, and the choices the person may give. "inputs" says, choice by choice, what
+  // must be sent with it: "month" (YYYY-MM), "line" (one line of text) or "" (nothing).
+  '/questions': {
+    OPTIONS: preflight,
+    GET: () => { follow(); return send({ questions: openRaised().map((q) => {
+      const actions = (q.data.actions as { field?: string; value?: string }[] | undefined) ?? [];
+      return { key: q.key, kind: q.kind, text: q.text, choices: q.choices, about: q.about, inputs: q.choices.map((_, i) => (actions[i]?.value !== undefined ? '' : actions[i]?.field === 'end' ? 'month' : actions[i]?.field === 'note' ? 'line' : '')) };
+    }) }); },
+    // An answer: the question's key, the number of the choice (from 0), and the value that choice needs, if any.
+    POST: async (req) => {
+      const b = await req.json().catch(() => ({}));
+      const kind = raisedByKey(str(b.key))?.kind ?? '';
+      const refused = answer(str(b.key), Number(b.choice), str(b.value), Date.now());
+      if (refused) return send({ error: refused }, 400);
+      // Only an answer about a skill changes the skills list, so only that one writes Skills lines again.
+      const changed = kind === 'skill' ? refreshSkills() : [];
+      follow();
+      void (async () => { for (const id of changed) await publish(id, !STUB).catch(() => {}); })();
       return send({ ok: true });
     },
   },

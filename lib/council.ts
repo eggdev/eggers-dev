@@ -4,10 +4,12 @@
 // 10 with none below 7, or after three rewrites, and keeps the best version it saw. Nothing here
 // adds a fact: the reviser has only the bank. A reader that cannot be reached gives no score and
 // is named as such. No other model is put in its seat.
+// The readers and the reviser are given the owner's resume rules (lib/writing.ts), so no reader asks for
+// what a rule forbids and the reviser cannot trade a rule for a higher score.
 import { bullets, REQUIRED } from './ats.ts';
 import { ASKED } from './db.ts';
 import { ask } from './llm.ts';
-import { BULLETS, SIGNAL, WRITING } from './writing.ts';
+import { BULLETS, ENTRIES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
 
 // score is -1 when the reader gave none. scores holds every round's, in order.
 export type Seat = { seat: string; model: string; score: number; note: string; scores: number[] };
@@ -50,7 +52,7 @@ Be strict. An 8 means you looked for a weak line and found none worth changing.
 
 Do not ask for anything that is not on the page to be invented. Do not object to the section names or the plain layout: applicant tracking systems need them. Do not object to length unless it clearly runs past its page limit.
 
-Job titles, employers, dates, places and the order of roles are facts of the person's history. They cannot change, so never list them as problems and never lower your score for them.
+Job titles, employers, dates, places, the labels beside the dates (Contract, Part-time, Own company, Personal project) and the order of roles are facts of the person's history. They cannot change, so never list them as problems and never lower your score for them. The Skills line is written from the person's own confirmed list, so do not ask for a skill to be added to it. The resume follows the rules at the end of this message: never ask for something they forbid (a longer summary, a Projects section, a bullet for an old role that has one, a title reworded).
 
 Score the page, not the candidate. Whether the person has what the posting asks is measured elsewhere, as their fit. A requirement the page does not show (a language, a clearance, years of management) is not a problem with the resume and must not lower your score: no rewrite can add it. Lower your score only for what the page does badly with what it has: a weak or vague line, the wrong order, a strong point buried, wording that needs a second read. The same holds for the person's own wishes below, where they give any: score the page as written within them.${wishes ? `\n\nThe person's own wishes for their resume:\n<wishes>\n${wishes}\n</wishes>` : ''}
 
@@ -59,6 +61,10 @@ ${SIGNAL}
 ${WRITING}
 
 ${BULLETS}
+
+${SUMMARY}
+
+${ENTRIES}
 
 The posting:
 <posting>
@@ -77,19 +83,27 @@ const revise = (resume: string, readings: { seat: string; r: Reading }[], postin
   prompt: `You are revising a resume written for one job posting, after three readers reviewed it. Fix what they flagged and return the whole resume.
 
 Rules that outrank the readers:
-- The bank below is everything known about the person. Never invent, round up or infer a number, title, date, technology or outcome. A number you show is exactly as the bank has it. You may always leave one out.
-- When a bullet is cut, replace it with stronger work from the bank for the same role if the bank has some that answers the posting. If it has none, the role simply has fewer bullets.
-- Keep the Markdown structure exactly: "# Name" and the contact line as they are, then only these sections: Summary, Experience, Projects, Skills, Education. Roles stay as "### Title, Company" with the line of dates and place under them. Do not change a title, company, date or place.
-- Keep the posting's own terms wherever the bank honestly supports them.
+- The bank below is everything known about the person. Never invent, round up or infer a number, title, date, technology or outcome. A number you show is exactly as the bank has it.
+- When a bullet is cut, replace it with stronger work from the bank for the same role if the bank has some that answers the posting. If it has none, the role has fewer bullets, and a role left with none goes on the Earlier experience line or is left out.
+- Keep the Markdown structure exactly: "# Name" and the contact line as they are, then the sections the rules below allow. Each entry keeps its heading, its dates line, its "Previously" lines and its context lines exactly as they are. Do not change a title, company, date, label or place.
+- Keep the posting's own terms inside the bullets whose work used them, wherever the bank honestly supports them. Never add them as a list.
+- Leave the Skills line as it is: it is written from the person's own confirmed list.
 - ${limits}
 - Where two readers disagree, side with the one whose change makes the page clearer to a stranger.
-${wishes ? `- The person's own wishes for their resume outrank the readers. Keep what they ask to keep (an earlier career they value, a line of scope under a title, what leads each role), at the weight they give it. Keeping something is not leading with it: the Summary opens on the work that answers this posting, and an earlier career stays a short entry in its place in the order. Their wishes add no facts: every line still needs the bank.\n<wishes>\n${wishes}\n</wishes>` : ''}
+- The rules below outrank the readers and the person's wishes alike. Where a reader asks for something a rule forbids, leave it and do not make the change.
+${wishes ? `- The person's own wishes for their resume outrank the readers, and set emphasis only. Keep what they ask to keep (an earlier career they value, a line of scope under a title, what leads each role), at the weight they give it, as far as the rules below allow. Keeping something is not leading with it: the Summary opens on the work that answers this posting, and an earlier career stays a short entry in its place in the order. Their wishes add no facts: every line still needs the bank.\n<wishes>\n${wishes}\n</wishes>` : ''}
 
 ${SIGNAL}
+
+${METRICS}
 
 ${WRITING}
 
 ${BULLETS}
+
+${SUMMARY}
+
+${ENTRIES}
 
 "changes" lists what you changed, each in one plain sentence addressed to the person as "you" ("Cut the count of tests from the Stripe bullet: it read as small."), at most ten.
 
@@ -111,14 +125,16 @@ ${resume}
 The bank, as JSON:
 ${bank}` });
 
-// What a rule-based check of the bullets found (lib/ats.ts): duties, bullets past a skim's length, one verb three times running.
+// What a rule-based check of the bullets found (lib/ats.ts): duties, the wrong tense for the role, bullets past a skim's length, one verb three times running.
 // It never asks for a number: only the readers and the bank decide what is worth showing.
 const mechanical = (resume: string) => { const f = bullets(resume).flags.slice(0, 8); return f.length ? `\n\nA rule-based check of the bullets, with no score:\n${f.map((x) => `- "${x.quote}": ${x.why} Fix: ${x.fix}`).join('\n')}` : ''; };
 
 const mean = (xs: number[]) => Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10;
 const clamp = (n: number) => Math.max(1, Math.min(10, Math.round(n * 2) / 2));
 
-export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser): Promise<{ resume: string; review: Review }> {
+// `most` is how many rewrites it may make. With 0 the readers only score the text, and it comes back as it went in
+// (for a resume the person edited, which is never rewritten).
+export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES): Promise<{ resume: string; review: Review }> {
   let resume = draft.trim(), best = { resume, score: 0, seats: [] as Seat[], changes: [] as string[], parser: -1 };
   const changes: string[] = [], history = SEATS.map(() => [] as number[]);
   let questions: string[] = [];
@@ -141,7 +157,7 @@ export async function council(draft: string, posting: string, bank: string, limi
     const p = parser?.(resume), ready = !p || p.score >= REQUIRED, bestReady = best.parser < 0 || best.parser >= REQUIRED;
     if (p) log(`parser score ${p.score}${ready ? '' : `, short of ${REQUIRED}`}`);
     if (best.score === 0 || (ready && !bestReady) || (ready === bestReady && score > best.score)) best = { resume, score, seats, changes: [...changes], parser: p?.score ?? -1 };
-    if ((passes(score, seats) && ready) || rewrites === MAX_REWRITES) return done(rewrites);
+    if ((passes(score, seats) && ready) || rewrites >= most) return done(rewrites);
     const heard = readings.filter((x): x is typeof x & { r: Reading } => x.r !== undefined).map((x) => ({ seat: x.seat, r: x.r }));
     const short = p && !ready ? `\n\nA rule-based score of the page stands at ${p.score} of 100 and must reach ${REQUIRED}. What holds it down:\n${p.notes.map((n) => `- ${n}`).join('\n')}` : '';
     const next = await revise(resume, heard, posting, bank, limits, cwd, wishes, short);

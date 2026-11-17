@@ -1,8 +1,10 @@
 // A resume as a PDF that both a person and an applicant tracking system read cleanly: one column,
 // real text in a common font, standard section names, no tables, images, columns or text boxes.
 // Chrome prints it from plain HTML, then the PDF's text is read back, the way a parser would, to
-// check that nothing was lost and that the sections and the posting's terms are really in the file.
+// check that nothing was lost, that the section headers, the role headings and the bullets come in the
+// Markdown's order (the parse test, readingOrder in lib/resume.ts), and that the posting's terms are in the file.
 import { bullets, density, overall, type Part, REQUIRED, unreadable, WEIGHTS } from './ats.ts';
+import { readingOrder } from './resume.ts';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,7 +72,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 // CHROME first, then the macOS apps, then the names Linux packages use.
-const chrome = () => [process.env.CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium',
+export const chrome = () => [process.env.CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium',
   ...['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'].map((n) => Bun.which(n))]
   .find((p): p is string => typeof p === 'string' && p !== '' && existsSync(p));
 
@@ -108,17 +110,16 @@ async function print(markdown: string, scale: number, companies: string[]): Prom
 // What a parser gets from the file. Each line is a plain statement the person can act on.
 // score is the four parts weighed (lib/ats.ts); a check made before the parts were scored has neither.
 export type AtsCheck = { ok: boolean; pages: number; lines: { label: string; ok: boolean; note: string }[]; score?: number; parts?: Part[]; required?: number };
-const SECTIONS = ['Summary', 'Experience', 'Skills', 'Education'];
-export async function atsCheck(pdf: Uint8Array, markdown: string, terms: { inResume: string[]; inBankOnly: string[]; missing: string[] }, pages = 2, tools: string[] = []): Promise<AtsCheck> {
+// `companies` are the employers' names as the bank has them, as for resumeHtml: they part a heading's title from its company.
+export async function atsCheck(pdf: Uint8Array, markdown: string, terms: { inResume: string[]; inBankOnly: string[]; missing: string[] }, pages = 2, tools: string[] = [], companies: string[] = []): Promise<AtsCheck> {
   const doc = await getDocumentProxy(pdf.slice());
   const { totalPages, text } = await extractText(doc, { mergePages: true });
   const read = (Array.isArray(text) ? text.join(' ') : text).replace(/\s+/g, ' ');
+  const order = readingOrder(markdown, read, companies), found = order.headers;
   const words = (s: string) => s.replace(/[#*_`>|-]/g, ' ').split(/\s+/).filter((w) => w.length > 3);
   const want = words(markdown), got = new Set(words(read));
   const kept = want.length === 0 ? 1 : want.filter((w) => got.has(w)).length / want.length;
   const has = (t: string) => read.toLowerCase().includes(t.toLowerCase());
-  const order = SECTIONS.map((s) => read.indexOf(s)).filter((i) => i >= 0);
-  const found = SECTIONS.filter((s) => read.includes(s));
   const total = terms.inResume.length + terms.inBankOnly.length + terms.missing.length, lost = terms.inResume.filter((t) => !has(t));
   const odd = unreadable(read), count = read.split(' ').filter(Boolean).length, room = density(count, pages);
   // A bullet names its method when it names one of the posting's terms or a tool the bank holds.
@@ -126,17 +127,19 @@ export async function atsCheck(pdf: Uint8Array, markdown: string, terms: { inRes
   // The top third of the file is what a recruiter's first glance takes in: the posting's terms should be there.
   const top = read.slice(0, Math.ceil(read.length * 0.3)).toLowerCase(), up = terms.inResume.filter((t) => top.includes(t.toLowerCase()));
   const lines = [
-    { label: 'Text reads back', ok: kept > 0.97, note: kept > 0.97 ? 'Every word in the resume is in the file as real text, in reading order.' : `Only ${Math.round(kept * 100)}% of the words read back from the file. Something in it is not plain text.` },
+    { label: 'Text reads back', ok: kept > 0.97, note: kept > 0.97 ? 'Every word in the resume is in the file as real text.' : `Only ${Math.round(kept * 100)}% of the words read back from the file. Something in it is not plain text.` },
+    { label: 'Reading order', ok: order.ok, note: order.ok ? 'The name, the section headers, each role and each bullet read back in the order you wrote them.' : [order.missing.length ? `Not found in the file: ${order.missing.slice(0, 4).join(', ')}${order.missing.length > 4 ? ` and ${order.missing.length - 4} more` : ''}.` : '', order.moved.length ? `Read back out of order: ${order.moved.slice(0, 4).join(', ')}${order.moved.length > 4 ? ` and ${order.moved.length - 4} more` : ''}.` : ''].filter(Boolean).join(' ') },
     { label: 'Length', ok: totalPages <= pages, note: `${totalPages} ${totalPages === 1 ? 'page' : 'pages'}.${totalPages > pages ? ` It was meant to fit ${pages === 1 ? 'one page' : 'two pages'}: cut a few bullets in Edit Resume.` : ''}` },
-    { label: 'Standard sections', ok: found.includes('Experience') && found.includes('Skills') && order.every((v, i) => i === 0 || v > order[i - 1]), note: found.length ? `Found, in order: ${found.join(', ')}.` : 'No standard section names were found.' },
+    { label: 'Standard sections', ok: found.includes('Experience') && found.includes('Skills'), note: found.length ? `Found, in order: ${found.join(', ')}.` : 'No standard section names were found.' },
     { label: 'Contact details', ok: /[\w.+-]+@[\w-]+\.[\w.]+/.test(read.slice(0, 400)), note: /[\w.+-]+@[\w-]+\.[\w.]+/.test(read.slice(0, 400)) ? 'An email address is at the top.' : 'No email address near the top. Add one to the first line under your name.' },
-    { label: 'Posting’s terms', ok: lost.length === 0 && terms.inBankOnly.length === 0, note: total === 0 ? 'The posting’s terms were not listed.' : `${terms.inResume.length - lost.length} of ${total} are in the file.${terms.inBankOnly.length ? ` Your bank supports ${terms.inBankOnly.join(', ')}, which the resume leaves out.` : ''}${terms.missing.length ? ` Not in your bank, so not added: ${terms.missing.join(', ')}.` : ''}` },
+    // A term the bank supports and the resume leaves out is named, not held against the file: a keyword goes into a bullet beside its evidence or not at all.
+    { label: 'Posting’s terms', ok: lost.length === 0, note: total === 0 ? 'The posting’s terms were not listed.' : `${terms.inResume.length - lost.length} of ${total} are in the file.${terms.inBankOnly.length ? ` Your bank supports ${terms.inBankOnly.join(', ')}, which the resume leaves out. Each belongs in the bullet whose work used it, if it is added.` : ''}${terms.missing.length ? ` Not in your bank, so not added: ${terms.missing.join(', ')}.` : ''}` },
     { label: 'Characters', ok: odd === 0, note: odd === 0 ? 'Every character is one a parser can index.' : `${odd} ${odd === 1 ? 'character has' : 'characters have'} no readable meaning in the file, so the words around ${odd === 1 ? 'it' : 'them'} can’t be searched.` },
     { label: 'Word count', ok: room.score === 100, note: `${count} words. ${pages === 1 ? 'One page' : 'Two pages'} read well between ${room.low} and ${room.high.toLocaleString('en-US')}.` },
     { label: 'Top of page one', ok: up.length >= Math.min(3, terms.inResume.length), note: terms.inResume.length === 0 ? 'The posting’s terms were not listed.' : `${up.length} of the posting’s ${terms.inResume.length} terms in the resume are in its top third${up.length ? `: ${up.slice(0, 6).join(', ')}` : ''}.` },
-    { label: 'Bullets', ok: b.flags.length === 0, note: b.count === 0 ? 'No bullets were found under Experience or Projects.' : `${b.measured} of ${b.count} state a measured result.${b.flags.length ? ` ${b.flags.length} to fix: ${b.flags.slice(0, 3).map((f) => `“${f.quote.split(' ').slice(0, 6).join(' ')}…” ${f.why}`).join(' ')}` : ' None opens as a duty, runs long or repeats its opening verb.'}` },
+    { label: 'Bullets', ok: b.flags.length === 0, note: b.count === 0 ? 'No bullets were found under Experience.' : `${b.measured} of ${b.count} state a measured result.${b.flags.length ? ` ${b.flags.length} to fix: ${b.flags.slice(0, 3).map((f) => `“${f.quote.split(' ').slice(0, 6).join(' ')}…” ${f.why}`).join(' ')}` : ' None opens as a duty, runs long or repeats its opening verb.'}` },
   ];
-  const structure = ['Text reads back', 'Length', 'Standard sections', 'Contact details', 'Characters'].map((l) => lines.find((x) => x.label === l)!.ok);
+  const structure = ['Text reads back', 'Reading order', 'Length', 'Standard sections', 'Contact details', 'Characters'].map((l) => lines.find((x) => x.label === l)!.ok);
   const parts: Part[] = [
     // Of the posting's terms the bank supports, the share that reads back from the file.
     { label: 'Supported terms', weight: WEIGHTS.terms, score: terms.inResume.length + terms.inBankOnly.length === 0 ? 100 : Math.round(((terms.inResume.length - lost.length) / (terms.inResume.length + terms.inBankOnly.length)) * 100) },
