@@ -867,25 +867,29 @@ component TreeList
       children
 
 // The list and the opened item beside it (on a window `lookBeside()` wide and more): two columns that each scroll on
-// their own, so the list keeps its place while an item opens and closes. The caller puts a `BesideList` then a
-// `BesidePane` in it.
+// their own, so the list keeps its place while an item opens and closes. The caller puts a `BesideList` then, when
+// `beside`, a `BesidePane` in it. On a narrower window (`beside` false) it holds the list alone, as a page: the same
+// frame for both, so what is in the list is drawn at one place in the app's code, not once for each layout.
 component Beside
   props
+    beside: bool
     testId: string
   slot
   view
-    row flex=1 min-height=0 align-items="stretch" max-width=`${look().measure * 2 + 6}rem` color="look.ink" font-family="'Geist', system-ui" testId=testId
+    row flex=1 min-height=0 align-items="stretch" max-width=(beside ? `${look().measure * 2 + 6}rem` : "none") color="look.ink" font-family="'Geist', system-ui" testId=testId
       children
 
-// The list's column: the page's title, its controls and the tree. `scrollId` names its scroller for the route.
+// The list's column: the page's title, its controls and the tree. `scrollId` names its scroller for the route. When
+// not `beside`, it is as wide as a page.
 component BesideList
   props
+    beside: bool
     scrollId: string
     testId: string
   slot
   view
-    scroll id=scrollId flex=5 min-width=0 min-height=0
-      column padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" testId=testId
+    scroll id=scrollId flex=(beside ? 5 : 1) min-width=0 min-height=0
+      column max-width=(beside ? "none" : lookMeasure()) padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" testId=testId
         children
 
 // The opened item's column, beside the list, with a hairline between them.

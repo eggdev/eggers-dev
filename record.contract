@@ -385,27 +385,21 @@ component ExperienceScreen
   derive listed = sortBy(shownProjects.filter(p => s.projectsOf == "all" or (s.projectsOf == "side" ? p.place != "role" : p.roleId == s.projectsOf) or justChain.includes(`project:${p.id}`)), p => p.start, "desc")
   derive factOrder = s.sortDesc ? sortBy(shownFacts, f => sortValue(tree, f, s.sortKey), "desc") : sortBy(shownFacts, f => sortValue(tree, f, s.sortKey))
   view
-    if s.beside
-      Beside(testId="bank-beside")
-        BesideList(scrollId=scrollId, testId="bank")
-          ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource, toggleQuestions=toggleQuestions, clearDerived=clearDerived)
-          if tree.loaded
-            HowYouWork(lines=tree.derived, filter=s.derivedFilter, lastRejected=s.lastRejected, show=showDerived, clear=clearDerived, judge=judgeLine)
-          if tree.loaded
-            ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
+    // One frame for both layouts, so the list (and the opened item under its row) is drawn at one place in the code.
+    // On a wide window the opened item has a column of its own beside the list.
+    Beside(beside=s.beside, testId=(s.beside ? "bank-beside" : "bank-frame"))
+      BesideList(beside=s.beside, scrollId=scrollId, testId="bank")
+        ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource, toggleQuestions=toggleQuestions, clearDerived=clearDerived)
+        if tree.loaded
+          HowYouWork(lines=tree.derived, filter=s.derivedFilter, lastRejected=s.lastRejected, show=showDerived, clear=clearDerived, judge=judgeLine)
+        if tree.loaded
+          ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
+      if s.beside
         BesidePane(label="The opened item", testId="bank-pane")
           if s.open == ""
             QuietLine(text="Open a role, a project or a fact on the left. It opens here, and the list stays.", testId="pane-none")
           else
             ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-    else
-      scroll id=scrollId flex=1 min-height=0
-        Page(testId="bank")
-          ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource, toggleQuestions=toggleQuestions, clearDerived=clearDerived)
-          if tree.loaded
-            HowYouWork(lines=tree.derived, filter=s.derivedFilter, lastRejected=s.lastRejected, show=showDerived, clear=clearDerived, judge=judgeLine)
-          if tree.loaded
-            ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
 
 // A fact's value for the Facts view's sort: an empty value sorts after the rest.
 fn sortValue(t: Tree, f: TreeFact, key: string): string = key == "fact" ? f.text.toLowerCase() : key == "number" ? (f.metric == "" ? "~" : f.metric.toLowerCase()) : key == "role" ? (factRole(t, f) == "" ? "~" : factRole(t, f).toLowerCase()) : key == "project" ? factGroup(t, f).toLowerCase() : f.ref
@@ -462,7 +456,57 @@ component ExpHead
             Line(text=`Nothing matches “${s.q.trim()}”.`, testId="bank-none")
             Action(label="Clear the search", press=search(""), disabled=false, keys="", testId="bank-clear")
 
-// The list, as the view reads it. On a narrow window the open item is drawn under its own row.
+// ---------- The list, as rows ----------
+// Each view's list is built as data: its sections, each with its rows in order. The screen then draws every section
+// with one loop and every row with one loop, so the opened item, drawn under its own row on a narrow window, stands at
+// one place in the view and not once for every level of every view. kind: item (a role, project, Day to day or fact),
+// more ("Show all 14") or none (an empty list's line). group: the group a "more" row opens.
+shape ExpRow
+  key: string
+  kind: string
+  code: string
+  name: string
+  href: string
+  strong: bool
+  quiet: bool
+  sub: string
+  mark: string
+  level: number
+  rule: bool
+  testId: string
+  overlaps: string[]
+  group: string
+
+shape ExpSection
+  id: string
+  rows: ExpRow[]
+
+fn itemRow(key: string, code: string, name: string, href: string, strong: bool, quiet: bool, sub: string, mark: string, level: number, rule: bool, testId: string, overlaps: string[]): ExpRow = ExpRow(key=key, kind="item", code=code, name=name, href=href, strong=strong, quiet=quiet, sub=sub, mark=mark, level=level, rule=rule, testId=testId, overlaps=overlaps, group="")
+fn moreRow(level: number, label: string, group: string, testId: string): ExpRow = ExpRow(key=`more:${group}`, kind="more", code="", name=label, href="", strong=false, quiet=false, sub="", mark="", level=level, rule=false, testId=testId, overlaps=[], group=group)
+fn noneRow(text: string, testId: string): ExpRow = ExpRow(key=`none:${testId}`, kind="none", code="", name=text, href="", strong=false, quiet=false, sub="", mark="", level=0, rule=false, testId=testId, overlaps=[], group="")
+fn firstId(fs: TreeFact[]): string = match first(fs) { case some(f) => f.id, case none => "" }
+fn firstProject(ps: TreeProject[]): string = match first(ps) { case some(p) => p.id, case none => "" }
+fn firstRole(rs: TreeRole[]): string = match first(rs) { case some(r) => r.id, case none => "" }
+// A fact's row under a project, Day to day, a side project or General (the Roles and Projects views).
+fn factRow(f: TreeFact, view: string, level: number, s: ExpState): ExpRow = itemRow(`fact:${f.id}`, f.ref, f.text, hrefOf(view, `fact:${f.id}`), false, false, factSub(f), justMark(`fact:${f.id}`, s), level, false, `fact-${f.id}`, [])
+// A project's facts in the Roles view, the first few, and "Show all" past them.
+fn projectFactRows(p: TreeProject, shown: TreeFact[], level: number, s: ExpState): ExpRow[] = shownIn(shown.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just).map(f => factRow(f, "roles", level, s)).concat(shown.filter(x => x.projectId == p.id).length > experienceLook().factsShown and s.q.trim() == "" ? [moreRow(level, moreLabel(shown.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll), `project:${p.id}`, `more-project-${p.id}`)] : [])
+// One role in the Roles view: its row, and once it is open, its projects (each with its facts once open), then Day to day.
+fn roleRows(t: Tree, r: TreeRole, rule: bool, overlaps: Overlap[], shownProjects: TreeProject[], shown: TreeFact[], expanded: string[], s: ExpState): ExpRow[] = [itemRow(`role:${r.id}`, r.ref, r.title, hrefOf("roles", `role:${r.id}`), true, false, roleSub(t, r), justMark(`role:${r.id}`, s), 0, rule, `role-${r.id}`, othersOf(overlaps, r.id))].concat(expanded.includes(`role:${r.id}`) ? shownProjects.filter(x => x.place == "role" and x.roleId == r.id).map(p => [itemRow(`project:${p.id}`, p.ref, p.title, hrefOf("roles", `project:${p.id}`), true, false, projectSub(t, p, "roles"), justMark(`project:${p.id}`, s), 1, false, `project-${p.id}`, [])].concat(expanded.includes(`project:${p.id}`) ? projectFactRows(p, shown, 2, s) : [])).flat().concat([itemRow(`day:${r.id}`, "", `${dayName(r)} · ${factCount(dayFacts(t, r.id).length)}`, hrefOf("roles", `day:${r.id}`), false, true, "", "", 1, false, `day-${r.id}`, [])]).concat(expanded.includes(`day:${r.id}`) ? shownIn(shown.filter(x => x.roleId == r.id and x.projectId == ""), `day:${r.id}`, s.shownAll, s.q.trim(), s.just).map(f => factRow(f, "roles", 2, s)).concat(dayFacts(t, r.id).length > experienceLook().factsShown and s.q.trim() == "" ? [moreRow(2, moreLabel(dayFacts(t, r.id), `day:${r.id}`, s.shownAll), `day:${r.id}`, `more-day-${r.id}`)] : []) : []) : [])
+// A side project or a repository nobody placed: its row, and once it is open, its facts.
+fn sideRows(t: Tree, ps: TreeProject[], shown: TreeFact[], expanded: string[], s: ExpState): ExpRow[] = ps.map(p => [itemRow(`project:${p.id}`, p.ref, p.title, hrefOf("roles", `project:${p.id}`), true, false, projectSub(t, p, "roles"), justMark(`project:${p.id}`, s), 0, p.id != firstProject(ps), `project-${p.id}`, [])].concat(expanded.includes(`project:${p.id}`) ? shownIn(shown.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just).map(f => factRow(f, "roles", 1, s)) : [])).flat()
+// The Roles view's sections: Roles, Side projects, then Not placed yet and General when they hold anything.
+fn rolesSections(t: Tree, shownRoles: TreeRole[], overlaps: Overlap[], shownProjects: TreeProject[], shown: TreeFact[], sides: TreeProject[], unplaced: TreeProject[], general: TreeFact[], expanded: string[], s: ExpState): ExpSection[] = [
+  ExpSection(id="roles", rows=shownRoles.map(r => roleRows(t, r, r.id != firstRole(shownRoles), overlaps, shownProjects, shown, expanded, s)).flat().concat(t.roles.length == 0 ? [noneRow("No role yet. Add a role.", "roles-none")] : [])),
+  ExpSection(id="sides", rows=sideRows(t, sides, shown, expanded, s).concat(t.projects.filter(p => p.place == "side").length == 0 ? [noneRow("No side project yet. Add a side project.", "sides-none")] : []))
+  ].concat(unplaced.length > 0 ? [ExpSection(id="unplaced", rows=sideRows(t, unplaced, shown, expanded, s))] : []).concat(general.length > 0 ? [ExpSection(id="general", rows=shownIn(general, "general", s.shownAll, s.q.trim(), s.just).map(f => factRow(f, "roles", 0, s)).concat(general.length > experienceLook().factsShown and s.q.trim() == "" ? [moreRow(0, moreLabel(general, "general", s.shownAll), "general", "more-general")] : []))] : [])
+// The Projects view: every project listed, newest first, each with its facts once open.
+fn projectsSection(t: Tree, listed: TreeProject[], shown: TreeFact[], expanded: string[], s: ExpState): ExpSection = ExpSection(id="projects", rows=listed.map(p => [itemRow(`project:${p.id}`, p.ref, p.title, hrefOf("projects", `project:${p.id}`), true, false, projectSub(t, p, "projects"), justMark(`project:${p.id}`, s), 0, p.id != firstProject(listed), `project-${p.id}`, [])].concat(expanded.includes(`project:${p.id}`) ? shown.filter(x => x.projectId == p.id).map(f => factRow(f, "projects", 1, s)) : [])).flat().concat(listed.length == 0 ? [noneRow("No project yet. Add a project.", "projects-none")] : []))
+// The Facts view: every fact, in the order chosen.
+fn factsSection(t: Tree, order: TreeFact[], s: ExpState): ExpSection = ExpSection(id="facts", rows=order.map(f => itemRow(`fact:${f.id}`, f.ref, f.text, hrefOf("facts", `fact:${f.id}`), false, false, joinParts([f.metric, factPlace(t, f)]), justMark(`fact:${f.id}`, s), 0, f.id != firstId(order), `fact-${f.id}`, [])).concat(order.length == 0 ? [noneRow("No fact yet. Add a fact.", "facts-none")] : []))
+
+// The list, as the view reads it: its sections (rolesSections and the others above) in one loop, their rows in another.
+// On a narrow window the open item is drawn under its own row, from the one place in the row loop.
 component ExpBody
   props
     tree: Tree
@@ -505,177 +549,66 @@ component ExpBody
     rejectProposal: action
     decideResult: action
   derive under = not s.beside
+  derive sections = s.view == "projects" ? [projectsSection(tree, listed, shownFacts, expanded, s)] : s.view == "facts" ? [factsSection(tree, factOrder, s)] : rolesSections(tree, shownRoles, overlaps, shownProjects, shownFacts, sides, unplaced, general, expanded, s)
   view
-    if s.view == "projects"
-      Section(testId="projects")
-        InlineField(label="Show the projects of")
-          select value=s.projectsOf change=filterProjects aria-label="Show the projects of" max-width="100%" testId="projects-of"
-            option "Every role" value="all"
-            for r in tree.roles key=r.id
-              option roleChoice(r) value=r.id
-            option "Side projects" value="side"
-        if s.adding == "projects"
-          AddProjectForm(noun="project", side=false, chooser=true, roles=tree.roles, home=newestRole(tree, s.projectsOf), error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("projects"), cancel=closeAdd)
+    for sec in sections key=sec.id
+      Section(testId=sec.id)
+        if sec.id == "projects"
+          InlineField(label="Show the projects of")
+            select value=s.projectsOf change=filterProjects aria-label="Show the projects of" max-width="100%" testId="projects-of"
+              option "Every role" value="all"
+              for r in tree.roles key=r.id
+                option roleChoice(r) value=r.id
+              option "Side projects" value="side"
+          if s.adding == "projects"
+            AddProjectForm(noun="project", side=false, chooser=true, roles=tree.roles, home=newestRole(tree, s.projectsOf), error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("projects"), cancel=closeAdd)
+          else
+            Action(label="Add a project", press=openAdd("projects"), disabled=false, keys="", testId="add-projects")
+        else if sec.id == "facts"
+          if s.adding == "facts"
+            AddFactForm(chooser=true, homes=factHomes(tree), home=newestHome(tree), error=s.madeError, busy=s.busy, save=addFact("facts"), cancel=closeAdd)
+          else
+            Action(label="Add a fact", press=openAdd("facts"), disabled=false, keys="", testId="add-facts")
+          InlineField(label="Sort by")
+            Choices(label="Sort by")
+              ChoiceWord(label="Ref", chosen=(s.sortKey == "ref"), press=sortFacts("ref"), testId="sort-ref")
+              ChoiceWord(label="Fact", chosen=(s.sortKey == "fact"), press=sortFacts("fact"), testId="sort-fact")
+              ChoiceWord(label="Number", chosen=(s.sortKey == "number"), press=sortFacts("number"), testId="sort-number")
+              ChoiceWord(label="Role", chosen=(s.sortKey == "role"), press=sortFacts("role"), testId="sort-role")
+              ChoiceWord(label="Project", chosen=(s.sortKey == "project"), press=sortFacts("project"), testId="sort-project")
+          QuietLine(text=`${factCount(factOrder.length)}, ${sortWords(s.sortKey, s.sortDesc)}. Choose ${sortName(s.sortKey)} again to turn it round.`, testId="sort-order")
+        else if sec.id == "roles"
+          SectionHead(text="Roles", testId="roles-head")
+          if s.adding == "roles"
+            AddRoleForm(error=s.madeError, split=s.madeSplit, busy=s.busy, wide=s.wide, save=addRole, cancel=closeAdd)
+          else
+            Action(label="Add a role", press=openAdd("roles"), disabled=false, keys="", testId="add-roles")
+        else if sec.id == "sides"
+          SectionHead(text="Side projects", testId="sides-head")
+          if s.adding == "sides"
+            AddProjectForm(noun="side project", side=true, chooser=false, roles=[], home="side", error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("sides"), cancel=closeAdd)
+          else
+            Action(label="Add a side project", press=openAdd("sides"), disabled=false, keys="", testId="add-sides")
+        else if sec.id == "unplaced"
+          SectionHead(text="Not placed yet", testId="unplaced-head")
+          QuietLine(text="Repositories the studio could not place. Open one and say which role it was for, or that it is your own side project.", testId="unplaced-hint")
         else
-          Action(label="Add a project", press=openAdd("projects"), disabled=false, keys="", testId="add-projects")
-        TreeList(testId="projects-list")
-          for p, i in listed key=p.id
-            TreeRow(code=p.ref, name=p.title, href=hrefOf("projects", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "projects"), mark=justMark(`project:${p.id}`, s), level=0, current=(s.open == `project:${p.id}`), rule=(i > 0), wide=s.wide, testId=`project-${p.id}`)
-            if under and s.open == `project:${p.id}`
-              UnderRow(level=0, label="The opened item", testId="under")
-                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-            if expanded.includes(`project:${p.id}`)
-              for f in shownFacts.filter(x => x.projectId == p.id) key=f.id
-                TreeRow(code=f.ref, name=f.text, href=hrefOf("projects", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=1, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
-                if under and s.open == `fact:${f.id}`
-                  UnderRow(level=1, label="The opened item", testId="under")
-                    ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-          if listed.length == 0
-            QuietLine(text="No project yet. Add a project.", testId="projects-none")
-    else if s.view == "facts"
-      Section(testId="facts")
-        if s.adding == "facts"
-          AddFactForm(chooser=true, homes=factHomes(tree), home=newestHome(tree), error=s.madeError, busy=s.busy, save=addFact("facts"), cancel=closeAdd)
-        else
-          Action(label="Add a fact", press=openAdd("facts"), disabled=false, keys="", testId="add-facts")
-        InlineField(label="Sort by")
-          Choices(label="Sort by")
-            ChoiceWord(label="Ref", chosen=(s.sortKey == "ref"), press=sortFacts("ref"), testId="sort-ref")
-            ChoiceWord(label="Fact", chosen=(s.sortKey == "fact"), press=sortFacts("fact"), testId="sort-fact")
-            ChoiceWord(label="Number", chosen=(s.sortKey == "number"), press=sortFacts("number"), testId="sort-number")
-            ChoiceWord(label="Role", chosen=(s.sortKey == "role"), press=sortFacts("role"), testId="sort-role")
-            ChoiceWord(label="Project", chosen=(s.sortKey == "project"), press=sortFacts("project"), testId="sort-project")
-        QuietLine(text=`${factCount(factOrder.length)}, ${sortWords(s.sortKey, s.sortDesc)}. Choose ${sortName(s.sortKey)} again to turn it round.`, testId="sort-order")
-        TreeList(testId="facts-list")
-          for f, i in factOrder key=f.id
-            TreeRow(code=f.ref, name=f.text, href=hrefOf("facts", `fact:${f.id}`), strong=false, quiet=false, sub=joinParts([f.metric, factPlace(tree, f)]), mark=justMark(`fact:${f.id}`, s), level=0, current=(s.open == `fact:${f.id}`), rule=(i > 0), wide=s.wide, testId=`fact-${f.id}`)
-            if under and s.open == `fact:${f.id}`
-              UnderRow(level=0, label="The opened item", testId="under")
-                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-          if factOrder.length == 0
-            QuietLine(text="No fact yet. Add a fact.", testId="facts-none")
-    else
-      Section(testId="roles")
-        SectionHead(text="Roles", testId="roles-head")
-        if s.adding == "roles"
-          AddRoleForm(error=s.madeError, split=s.madeSplit, busy=s.busy, wide=s.wide, save=addRole, cancel=closeAdd)
-        else
-          Action(label="Add a role", press=openAdd("roles"), disabled=false, keys="", testId="add-roles")
-        TreeList(testId="roles-list")
-          for r, i in shownRoles key=r.id
-            TreeRow(code=r.ref, name=r.title, href=hrefOf("roles", `role:${r.id}`), strong=true, quiet=false, sub=roleSub(tree, r), mark=justMark(`role:${r.id}`, s), level=0, current=(s.open == `role:${r.id}`), rule=(i > 0), wide=s.wide, testId=`role-${r.id}`)
-              for o in othersOf(overlaps, r.id) key=o
-                OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`role-${r.id}-overlap-${o}`)
-            if under and s.open == `role:${r.id}`
-              UnderRow(level=0, label="The opened item", testId="under")
-                ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-            if expanded.includes(`role:${r.id}`)
-              for p in shownProjects.filter(x => x.place == "role" and x.roleId == r.id) key=p.id
-                TreeRow(code=p.ref, name=p.title, href=hrefOf("roles", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "roles"), mark=justMark(`project:${p.id}`, s), level=1, current=(s.open == `project:${p.id}`), rule=false, wide=s.wide, testId=`project-${p.id}`)
-                if under and s.open == `project:${p.id}`
-                  UnderRow(level=1, label="The opened item", testId="under")
-                    ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-                if expanded.includes(`project:${p.id}`)
-                  for f in shownIn(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
-                    TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=2, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
-                    if under and s.open == `fact:${f.id}`
-                      UnderRow(level=2, label="The opened item", testId="under")
-                        ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-                  if shownFacts.filter(x => x.projectId == p.id).length > experienceLook().factsShown and s.q.trim() == ""
-                    TreeLine(level=2, wide=s.wide)
-                      Action(label=moreLabel(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll), press=showAll(`project:${p.id}`), disabled=false, keys="", testId=`more-project-${p.id}`)
-              TreeRow(code="", name=`${dayName(r)} · ${factCount(dayFacts(tree, r.id).length)}`, href=hrefOf("roles", `day:${r.id}`), strong=false, quiet=true, sub="", mark="", level=1, current=(s.open == `day:${r.id}`), rule=false, wide=s.wide, testId=`day-${r.id}`)
-              if under and s.open == `day:${r.id}`
-                UnderRow(level=1, label="The opened item", testId="under")
-                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-              if expanded.includes(`day:${r.id}`)
-                for f in shownIn(shownFacts.filter(x => x.roleId == r.id and x.projectId == ""), `day:${r.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
-                  TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=2, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
-                  if under and s.open == `fact:${f.id}`
-                    UnderRow(level=2, label="The opened item", testId="under")
-                      ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-                if dayFacts(tree, r.id).length > experienceLook().factsShown and s.q.trim() == ""
-                  TreeLine(level=2, wide=s.wide)
-                    Action(label=moreLabel(dayFacts(tree, r.id), `day:${r.id}`, s.shownAll), press=showAll(`day:${r.id}`), disabled=false, keys="", testId=`more-day-${r.id}`)
-          if tree.roles.length == 0
-            QuietLine(text="No role yet. Add a role.", testId="roles-none")
-      SidesSection(tree=tree, s=s, fact=fact, overlaps=overlaps, title="Side projects", projects=sides, shownFacts=shownFacts, expanded=expanded, testId="sides", close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-      if unplaced.length > 0
-        SidesSection(tree=tree, s=s, fact=fact, overlaps=overlaps, title="Not placed yet", projects=unplaced, shownFacts=shownFacts, expanded=expanded, testId="unplaced", close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-      if general.length > 0
-        Section(testId="general")
           SectionHead(text="General", testId="general-head")
           QuietLine(text="Facts that belong to no role, such as education and skills.", testId="general-hint")
-          TreeList(testId="general-list")
-            for f in shownIn(general, "general", s.shownAll, s.q.trim(), s.just) key=f.id
-              TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=0, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
-              if under and s.open == `fact:${f.id}`
-                UnderRow(level=0, label="The opened item", testId="under")
+        TreeList(testId=`${sec.id}-list`)
+          for row in sec.rows key=row.key
+            if row.kind == "more"
+              TreeLine(level=row.level, wide=s.wide)
+                Action(label=row.name, press=showAll(row.group), disabled=false, keys="", testId=row.testId)
+            else if row.kind == "none"
+              QuietLine(text=row.name, testId=row.testId)
+            else
+              TreeRow(code=row.code, name=row.name, href=row.href, strong=row.strong, quiet=row.quiet, sub=row.sub, mark=row.mark, level=row.level, current=(s.open == row.key), rule=row.rule, wide=s.wide, testId=row.testId)
+                for o in row.overlaps key=o
+                  OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`${row.testId}-overlap-${o}`)
+              if under and s.open == row.key
+                UnderRow(level=row.level, label="The opened item", testId="under")
                   ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-            if general.length > experienceLook().factsShown and s.q.trim() == ""
-              TreeLine(level=0, wide=s.wide)
-                Action(label=moreLabel(general, "general", s.shownAll), press=showAll("general"), disabled=false, keys="", testId="more-general")
-
-// The side projects (the owner's own), or the repositories nobody placed: the same rows, each with its facts once open.
-component SidesSection
-  props
-    tree: Tree
-    s: ExpState
-    fact: FactFull
-    overlaps: Overlap[]
-    title: string
-    projects: TreeProject[]
-    shownFacts: TreeFact[]
-    expanded: string[]
-    testId: string
-    close: action
-    home: action
-    openAdd: action
-    closeAdd: action
-    addProject: action
-    addFact: action
-    startEdit: action
-    stopEdit: action
-    saveRole: action
-    saveProject: action
-    saveFact: action
-    moveFact: action
-    askDelete: action
-    keepIt: action
-    remove: action
-    showAll: action
-    askProposals: action
-    keepProposal: action
-    editProposal: action
-    cancelProposal: action
-    keepEdited: action
-    rejectProposal: action
-    decideResult: action
-  derive under = not s.beside
-  view
-    Section(testId=testId)
-      SectionHead(text=title, testId=`${testId}-head`)
-      if testId == "sides"
-        if s.adding == "sides"
-          AddProjectForm(noun="side project", side=true, chooser=false, roles=[], home="side", error=s.madeError, busy=s.busy, wide=s.wide, save=addProject("sides"), cancel=closeAdd)
-        else
-          Action(label="Add a side project", press=openAdd("sides"), disabled=false, keys="", testId="add-sides")
-      else
-        QuietLine(text="Repositories the studio could not place. Open one and say which role it was for, or that it is your own side project.", testId=`${testId}-hint`)
-      TreeList(testId=`${testId}-list`)
-        for p, i in projects key=p.id
-          TreeRow(code=p.ref, name=p.title, href=hrefOf("roles", `project:${p.id}`), strong=true, quiet=false, sub=projectSub(tree, p, "roles"), mark=justMark(`project:${p.id}`, s), level=0, current=(s.open == `project:${p.id}`), rule=(i > 0), wide=s.wide, testId=`project-${p.id}`)
-          if under and s.open == `project:${p.id}`
-            UnderRow(level=0, label="The opened item", testId="under")
-              ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-          if expanded.includes(`project:${p.id}`)
-            for f in shownIn(shownFacts.filter(x => x.projectId == p.id), `project:${p.id}`, s.shownAll, s.q.trim(), s.just) key=f.id
-              TreeRow(code=f.ref, name=f.text, href=hrefOf("roles", `fact:${f.id}`), strong=false, quiet=false, sub=factSub(f), mark=justMark(`fact:${f.id}`, s), level=1, current=(s.open == `fact:${f.id}`), rule=false, wide=s.wide, testId=`fact-${f.id}`)
-              if under and s.open == `fact:${f.id}`
-                UnderRow(level=1, label="The opened item", testId="under")
-                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
-        if testId == "sides" and tree.projects.filter(p => p.place == "side").length == 0
-          QuietLine(text="No side project yet. Add a side project.", testId="sides-none")
 
 // What the Experience screen is showing and doing, as the root holds it. view: roles | projects | facts. open: the
 // item open, as a key ("role:4", "day:4", "project:12", "fact:142"; "" for none). just: the item just added or moved,

@@ -11,7 +11,8 @@
 //      loop, and a build for another API address breaks the running session.
 //   2. Build the screens from the repository root for the studio's API:
 //      API_BASE_URL=https://studio.eggers.dev/api bun exact.mjs web-build --out target/studio-dist
-//      Exact builds only into dist/ or target/ inside the app, so the build goes to target/ first.
+//      Exact builds only into dist/ or target/ inside the app, so the build goes to target/ first. Stop when the
+//      built app.js is over 8,000,000 bytes.
 //   3. Copy the build into studio/dist, leaving out its dot files (.exact-build.json, .exact/), and check that no
 //      private data came with it: no database, nothing from .data/ or resume/.
 //   4. wrangler deploy (with --dry-run: build the Worker bundle and the image, upload nothing, sign-in not needed).
@@ -28,6 +29,8 @@ const STUDIO = resolve(import.meta.dir, '..');
 const REPO = resolve(STUDIO, '..');
 const ORIGIN = 'https://studio.eggers.dev';
 const API = `${ORIGIN}/api`;
+// The largest built app.js this tool deploys (step 2).
+const MAX_APP_BYTES = 8_000_000;
 const BUILD = join(REPO, 'target', 'studio-dist');
 const DIST = join(STUDIO, 'dist');
 const DRY_RUN_OUT = join(STUDIO, '.wrangler', 'dry-run');
@@ -109,6 +112,14 @@ const build = JSON.parse(readFileSync(join(BUILD, '.exact-build.json'), 'utf8'))
 if (build.env?.API_BASE_URL?.value !== API) stop(`the build did not take API_BASE_URL=${API}. Nothing was deployed.`);
 for (const page of ['index.html', 'shell.html', 'routes.json']) {
   if (!existsSync(join(BUILD, page))) stop(`the build has no ${page}. Nothing was deployed.`);
+}
+// The screens' code is one file that every visit downloads and parses. The host refuses a file over 25 MiB, and it
+// stood at 4.6 MB when this check was added (it had grown to 27.7 MB when a component was drawn at too many places).
+if (!existsSync(join(BUILD, 'app.js'))) stop('the build has no app.js. Nothing was deployed.');
+const appBytes = statSync(join(BUILD, 'app.js')).size;
+if (appBytes > MAX_APP_BYTES) {
+  stop(`the built app.js is ${appBytes.toLocaleString('en-US')} bytes, more than the ${MAX_APP_BYTES.toLocaleString('en-US')} allowed. `
+    + 'Something in the screens is drawn at many more places than it needs (a component used in each branch of an if, or under each level of a list). Nothing was deployed.');
 }
 
 // 3. The build, without its dot files, into studio/dist (git ignores it).
