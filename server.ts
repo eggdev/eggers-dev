@@ -11,13 +11,14 @@ import { type Door } from './lib/outreach.ts';
 import { hub } from './lib/github.ts';
 import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from './lib/discover.ts';
 import { INBOX } from './lib/ingest.ts';
-import { fitOf, publish, refreshSkills, reflagOpen, saveResume, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { fitOf, publish, refreshDueSkills, refreshOneSkillsLine, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { answer, inputsOf, openRaised, raisedByKey } from './lib/raised.ts';
 import { QUIET_DAYS, queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
+import { markFromList, skillsView } from './lib/skillsview.ts';
 import { type AtsCheck } from './lib/pdf.ts';
 import { draftCollection, MAX_COLLECTION, readSaved, reviewNotes, saveCollection } from './lib/public.ts';
 import { activity, dismiss, failedRow, markSeen, stubStep, type Kind } from './lib/activity.ts';
@@ -376,7 +377,7 @@ const served = Bun.serve({ hostname, port, routes: {
       const o = j;
       const ats: AtsCheck | null = j.ats ? JSON.parse(j.ats) : null;
       const host = hostOf(j.url);
-      return send(curly({ ...jobFacts(j), posted: ago(j.posted_at), added: ago(j.created_at), posting: j.posting, id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
+      return send(curly({ ...jobFacts(j), skillsLine: skillsLineOf(j.id), posted: ago(j.posted_at), added: ago(j.created_at), posting: j.posting, id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
         atsOk: ats?.ok ?? false, atsScore: ats?.score ?? -1, atsRequired: ats?.required ?? 85, atsParts: (ats?.parts ?? []).map((x) => `${x.label} ${x.score} (counts ${x.weight}%)`).join(' · '), ats: (ats?.lines ?? []).map((l, i) => ({ id: String(i), label: l.label, ok: l.ok, note: l.note })),
         verdict: a.verdict, strengths: a.strengths, risks: a.risks, changes: a.changes, gaps: a.gaps, covered, asked: a.requirements.length,
         // weighed is false for a job read before evidence was weighed: its fit counts coverage alone.
@@ -434,6 +435,10 @@ const served = Bun.serve({ hostname, port, routes: {
       // The note is kept when only the outcome is sent (the list's picker). Marking it applied starts its fourteen days, and
       // picking Applied again restarts them. Saving a note alone (picked is not sent) leaves the clock as it is.
       if (typeof b.note === 'string') db.query('UPDATE jobs SET outcome_note = ? WHERE id = ?').run(b.note.trim(), id);
+      // A resume that goes out takes the skills list as it is now: while its Skills line waits for the quiet after a
+      // sitting of marks, this one job's line is written and printed first, with no model (lib/jobs.ts).
+      // A job whose stored data cannot be read is recorded as before, and said once in the log.
+      if (b.outcome !== '') { try { await refreshOneSkillsLine(id, (x) => publish(x, !STUB)); } catch (e) { console.log(`skills: the Skills line of job ${id} could not be written before it was sent: ${(e as Error).message}`); } }
       db.query("UPDATE jobs SET outcome = ?, applied_at = CASE WHEN ? = 'applied' AND (outcome != 'applied' OR ?) THEN ? WHEN ? = '' THEN 0 ELSE applied_at END WHERE id = ?").run(b.outcome, b.outcome, b.picked === true ? 1 : 0, Date.now(), b.outcome, id);
       return send({ ok: true });
     },
@@ -445,6 +450,11 @@ const served = Bun.serve({ hostname, port, routes: {
       const id = Number(req.params.id);
       let j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string } | null;
       if (!j || !j.resume) return send({ error: 'That job has no resume yet.' }, 404);
+      // The PDF the owner can send takes the skills list as it is now, also while the lines wait for the quiet: this one
+      // job's Skills line is written first (which drops its old PDF), with no model.
+      // A job whose stored data cannot be read is served as before, and said once in the log.
+      try { if (await refreshOneSkillsLine(id, async () => {})) j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string }; }
+      catch (e) { console.log(`skills: the Skills line of job ${id} could not be written before its PDF: ${(e as Error).message}`); }
       if (!j.pdf || !existsSync(j.pdf)) { await publish(id); j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string }; }
       if (!j.pdf || !existsSync(j.pdf)) return send({ error: 'The PDF couldn’t be printed on the server.' }, 500);
       // Sent as a file to save, not a page to view: a phone's browser then puts it in Downloads under its own name,
@@ -622,25 +632,31 @@ const served = Bun.serve({ hostname, port, routes: {
     OPTIONS: preflight,
     GET: () => {
       syncSkills(Date.now());
-      const isReviewed = reviewed();
-      return send({ reviewed: isReviewed, reviewedAt: reviewedOn(), cap: CAP,
+      const isReviewed = reviewed(), view = skillsView();
+      // The list as the Skills screen draws it (lib/skillsview.ts): when it was reviewed, how many skills are new since,
+      // and the skills in their groups, each with its facts and roles. `skills` is the plain list, as before.
+      // due: unsent resumes' Skills lines are behind the list until the worker writes them, after a quiet (lib/jobs.ts).
+      const due = skillsDue();
+      return send({ reviewed: isReviewed, reviewedAt: reviewedOn(), reviewedOn: view.reviewedOn, newCount: view.newCount, due: due.due, dueLine: due.line, cap: CAP, groups: view.groups,
         skills: allSkills().map((s) => ({ name: s.name, kind: s.kind, mark: s.mark, facts: s.facts, shown: allowed(s, isReviewed) })) });
     },
     // Marks for many skills at once: {marks: [{name, mark?, kind?}], reviewed?}. Marking alone is not a review and
     // changes no stored resume. The list counts as reviewed only when "reviewed" is true, and that is refused (400,
     // nothing saved) while no tool, language or platform is marked confident, because a reviewed list shows only those.
     POST: async (req) => {
-      const b = await req.json().catch(() => ({}));
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
       if (!Array.isArray(b.marks)) return send({ error: 'Send the skills to mark.' }, 400);
       syncSkills(Date.now());
-      const got = markSkills(b.marks, b.reviewed === true, Date.now());
+      // A mark for a skill Home asks about is that question's answer, so Home and the Skills screen agree.
+      const got = markFromList(b.marks, b.reviewed === true, Date.now());
       if (got.refused) return send({ error: got.refused }, 400);
-      // Once the list is reviewed, resumes not yet sent take their Skills line from it, with no model. One the person
-      // edited is left as it is. Before the review, no stored resume is touched: the marks apply to the next one written.
-      const changed = reviewed() ? refreshSkills() : [];
+      // Once the list is reviewed, resumes not yet sent take their Skills line from it, with no model; one the person
+      // edited is left as it is. That is done once a sitting of marks is over (lib/jobs.ts, refreshDueSkills, run by the
+      // worker), so here a change only records that the lines are due. Before the review nothing is due.
+      if (got.changed > 0 || b.reviewed === true) skillsChanged(Date.now());
       follow();
-      void (async () => { for (const id of changed) await publish(id, !STUB).catch(() => {}); })();
-      return send({ ok: true, marked: got.marked, reviewed: reviewed(), updated: changed.length });
+      return send({ ok: true, marked: got.marked, reviewed: reviewed(), due: skillsDue().due });
     },
   },
   // The questions code raised for the person from their own data (lib/raised.ts): job dates, LinkedIn differences,
@@ -656,10 +672,9 @@ const served = Bun.serve({ hostname, port, routes: {
       const kind = raisedByKey(str(b.key))?.kind ?? '';
       const refused = answer(str(b.key), Number(b.choice), str(b.value), Date.now(), typeof b.text === 'string' ? b.text : undefined);
       if (refused) return send({ error: refused }, 400);
-      // Only an answer about a skill changes the skills list, so only that one writes Skills lines again.
-      const changed = kind === 'skill' ? refreshSkills() : [];
+      // Only an answer about a skill changes the skills list, so only that one makes the Skills lines due (lib/jobs.ts).
+      if (kind === 'skill') skillsChanged(Date.now());
       follow();
-      void (async () => { for (const id of changed) await publish(id, !STUB).catch(() => {}); })();
       return send({ ok: true });
     },
   },
@@ -715,6 +730,8 @@ const served = Bun.serve({ hostname, port, routes: {
     const r = requestFor(roleId);
     return send({ ok: true, stored: storeProposals(roleId, checkProposals({ projects: b.projects }, r.facts, [...r.projects, ...r.rejected]), Date.now()) });
   } } } : {}),
+  // A test server only: the worker's pass over due Skills lines, as if the quiet were over, with no printing.
+  ...(STUB ? { '/test/skills-due': { OPTIONS: preflight, POST: async () => send({ ok: true, written: await refreshDueSkills(Date.now() + SKILLS_QUIET_MS, async () => {}) }) } } : {}),
   // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
   ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
     const b = await req.json().catch(() => ({}));

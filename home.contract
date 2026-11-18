@@ -133,6 +133,8 @@ members App
       heldLine = ""
   // Sends what is held, if anything: when its time ends, when the next item is answered, or when Home is left.
   action sendHeld
+    // A mark held on the Skills screen goes with it (skills.contract): every way of leaving a screen calls this.
+    sendSkillHeld()
     if heldKey != "" and heldWhat == "answer"
       send answerSent = answerQuestion(heldKey, heldChoice, heldText, heldValue)
     if heldKey != "" and heldWhat == "snooze"

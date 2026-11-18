@@ -246,7 +246,7 @@ const sources: Sources = {
       atsScore: typeof j.atsScore === 'number' ? j.atsScore : -1, atsRequired: typeof j.atsRequired === 'number' ? j.atsRequired : 85 })) }),
   // The job a route shows; none is selected while the list alone is on screen.
   loadJob: async ([job]): Promise<Result<'loadJob'>> => {
-    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', resumeLines: [], pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
+    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', resumeLines: [], pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, skillsLine: '', doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
     if (job === '') return none;
     const j = (await get(`/jobs/${id(job)}`)) as Record<string, unknown>;
     const list = (v: unknown) => rows(v ?? []).map((x) => text(x));
@@ -259,7 +259,7 @@ const sources: Sources = {
       weighed: j.weighed === true, termsIn: list(j.termsIn), termsBank: list(j.termsBank), termsMissing: list(j.termsMissing),
       checks: rows(j.checks ?? []).map((c) => ({ id: text(c.id), question: text(c.question), answer: text(c.answer), note: text(c.note) })),
       knockouts: rows(j.knockouts ?? []).map((k) => ({ id: text(k.id), question: text(k.question), answer: text(k.answer), note: text(k.note) })),
-      doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
+      doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, skillsLine: text(j.skillsLine), resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
       requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, need: text(r.need) || (r.must === true ? 'must' : 'nice'), coverage: text(r.coverage), evidence: text(r.evidence), bestText: text(r.bestText), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
       // The serious flags first; the server keeps each severity's own order.
       // A flag's items are keyed by their words on screen, so a line said twice is kept once.
@@ -320,6 +320,17 @@ const sources: Sources = {
   // With the place of the choice, the words the owner saw: an answer is refused when those words are no longer that choice.
   answerQuestion: async ([key, choice, text, value]): Promise<Result<'answerQuestion'>> => ({ ...(await write('POST', '/questions', { key, choice, text, value })), key }),
   snoozeQueueItem: async ([key]): Promise<Result<'snoozeQueueItem'>> => ({ ...(await write('POST', '/queue/snooze', { key })), key }),
+  // Skills (GET /skills, lib/skillsview.ts): the list in its groups, each skill with its facts and roles.
+  loadSkills: async (): Promise<Result<'loadSkills'>> => {
+    const s = (await get('/skills')) as Record<string, unknown>;
+    return { loaded: true, reviewed: s.reviewed === true, reviewedOn: text(s.reviewedOn), newCount: num(s.newCount), due: s.due === true, dueLine: text(s.dueLine),
+      groups: rows(s.groups).map((g) => ({ id: text(g.id), title: text(g.title), skills: rows(g.skills).map((x) => ({ key: text(x.key), id: text(x.id), name: text(x.name), kind: text(x.kind), mark: text(x.mark),
+        facts: num(x.facts), roles: num(x.roles), isNew: x.isNew === true, question: x.question === true, factList: rows(x.factList).map((f) => ({ id: text(f.id), ref: text(f.ref), text: text(f.text) })) })) })) };
+  },
+  // One mark; and the review, with the mark still held if there is one ("" for none).
+  markSkill: ([name, mark]) => write('POST', '/skills', { marks: [{ name, mark }] }),
+  // A mark goes with the review only while one is held (both given); "Not marked" is its word, "unmarked", never "".
+  reviewSkills: ([name, mark]) => write('POST', '/skills', { marks: name !== '' && mark !== '' ? [{ name, mark }] : [], reviewed: true }),
   sendTalk: ([body]) => write('POST', '/talk', { body }),
   askTalk: ([question]) => write('POST', '/talk', { question }),
   clearTalk: () => write('DELETE', '/talk'),

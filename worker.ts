@@ -9,7 +9,7 @@ import { syncProjects } from './lib/projects.ts';
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
-import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
+import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, refreshDueSkills, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
@@ -155,6 +155,17 @@ if (process.env.EGG_AUTO_RESUME !== 'off') void (async () => {
     if (!rewriteDue(Date.now(), since, QUIET, holdSince())) continue;
     const n = db.query("UPDATE jobs SET resume_status = 'queued', resume_note = '' WHERE outcome = '' AND status = 'done' AND resume != '' AND edited = 0 AND resume_status IN ('', 'done', 'failed') AND bank_sig != ?").run(sig).changes;
     if (n) console.log(`the bank changed: ${n} unsent resume${n === 1 ? '' : 's'} queued to be written again`);
+  }
+})();
+// The Skills lines of unsent resumes, once a sitting of marks on the skills list is over (lib/jobs.ts, refreshDueSkills):
+// no model, a few seconds of printing. The due state is in the database, so marks saved while this was stopped are done now.
+void (async () => {
+  for (;;) {
+    try {
+      const done = await refreshDueSkills(Date.now(), (id) => publish(id));
+      if (done.length) console.log(`skills: the Skills line of ${done.length} unsent resume${done.length === 1 ? '' : 's'} written again from the list`);
+    } catch (e) { console.log(`skills: the Skills lines could not be written again: ${(e as Error).message}`); }
+    await Bun.sleep(5000);
   }
 })();
 // Talk is answered beside everything else, so a reply never waits behind a long reading.

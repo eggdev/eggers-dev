@@ -209,6 +209,9 @@ shape Job
   resumeStatus: string
   resumeNote: string
   resumeStale: bool
+  // What the resume's Skills line waits for, in one line ("" for nothing): the list changed and it is not written yet,
+  // or it could not be written (lib/jobs.ts, skillsLineOf).
+  skillsLine: string
   doors: Door[]
   doorsStatus: string
   doorsNote: string
@@ -490,6 +493,8 @@ component JobScreen
             QuietLine(text=(job.edited ? "Your record changed after you edited this resume. Write it again to bring it up to date." : "Your record changed after this resume was written. It is written again by itself a few minutes after your last change."), testId="job-resume-stale")
           else if job.resume == ""
             QuietLine(text="No resume yet.", testId="job-resume-none")
+          if job.skillsLine != ""
+            QuietLine(text=job.skillsLine, testId="job-resume-skills")
           Actions(testId="job-resume-actions")
             if job.resume != ""
               GoTo(label="Read the resume", href=`/job/${job.id}/resume`, testId="job-resume")

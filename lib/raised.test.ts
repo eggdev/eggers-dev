@@ -131,7 +131,7 @@ test('a Talk reply and a prune never close a timeline, LinkedIn or skill questio
   role({ id: 2, company: 'Lantern Notes', title: 'Founder', start: '2023-06', standing: 'own' });
   fact(1, 'Built the console.', '', 'Go');
   syncSkills(now);
-  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, now + 1)).toEqual({ marked: 1 });
+  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, now + 1)).toMatchObject({ marked: 1 });
   fact(1, 'Moved the queue.', '', 'Redis');
   storePositions('## Positions.csv\nCompany Name,Title,Started On,Finished On\nHarborlight Systems,Head of Engineering,Mar 2021,\nLantern Notes,Founder,Jun 2023,\n', 1, now + 2);
   syncQuestions(now + 3);
@@ -173,7 +173,7 @@ test('for each kind, an answer whose words are no longer the choice at its place
   role({ id: 2, company: 'Lantern Notes', title: 'Founder', start: '2023-06', standing: 'own' });
   fact(1, 'Built the console.', '', 'Go');
   syncSkills(now);
-  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, now + 1)).toEqual({ marked: 1 });
+  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, now + 1)).toMatchObject({ marked: 1 });
   fact(1, 'Moved the queue.', '', 'Redis');
   storePositions('## Positions.csv\nCompany Name,Title,Started On,Finished On\nHarborlight Systems,Head of Engineering,Mar 2021,\nLantern Notes,Founder,Jun 2023,\n', 1, now + 2);
   syncQuestions(now + 3);

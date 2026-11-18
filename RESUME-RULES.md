@@ -136,9 +136,19 @@ drafts stay.
   current job), `note` (one line, at most 200 characters) and `label` ("", "Contract" or "Part-time"), each
   optional and each sendable alone. Answers `{ok}` or 400 `{error}`.
 - `GET /skills`: `{reviewed, reviewedAt, cap, skills: [{name, kind, mark, facts, shown}]}`.
-- `POST /skills` with `{marks: [{name, mark?, kind?}], reviewed?}`: `{ok, marked, reviewed, updated}`. The list
-  counts as reviewed only when `reviewed` is `true`. That is refused (400, nothing saved) while no tool, language
-  or platform is marked confident. Without a review, no stored resume changes.
+- `POST /skills` with `{marks: [{name, mark?, kind?}], reviewed?}`: `{ok, marked, reviewed, due}`. `mark` is
+  `confident`, `not-confident` or `unmarked`; an empty mark changes nothing, and an entry that is not an object is
+  skipped. A body that is not a JSON object is refused (400). The list counts as reviewed only when `reviewed` is
+  `true`. That is refused (400, nothing saved) while no tool, language or platform is marked confident. Without a
+  review, no stored resume changes. Once the list is reviewed, a mark, a change of kind or a review makes the Skills
+  lines of unsent resumes due (`due`); the worker writes them again from the list, with no model, once no mark has
+  been saved for two minutes (`refreshDueSkills()` in `lib/jobs.ts`), each job on its own. A mark for a skill Home asks
+  about is that question's answer, found by its words (`markFromList()` in `lib/skillsview.ts`); the answers and the
+  marks are saved together or not at all.
+- `GET /skills` also gives `reviewedOn`, `newCount`, `due`, `dueLine` and `groups`, the list as the Skills screen draws it.
+- `GET /jobs/:id` also gives `skillsLine`: what its Skills line waits for, in words. `GET /jobs/:id/resume.pdf`, and
+  `PATCH /jobs/:id` with an outcome, first write that job's Skills line from the list when it is due
+  (`refreshOneSkillsLine()` in `lib/jobs.ts`).
 - `GET /questions`: `{questions: [{key, kind, text, choices, about, inputs}]}`. `kind` is timeline, linkedin or
   skill. `inputs[i]` says what choice `i` needs: "month", "line" or "".
 - `POST /questions` with `{key, choice, value?}`: `{ok}` or 400 `{error}`. It applies the answer. A question is

@@ -1250,3 +1250,138 @@ test "drafts left out because of a number with no fact behind it are said on the
   clock data
   expect text "doors-note" == "One draft was left out. It used a number your record does not hold."
   expect tree missing "doors-error"
+
+test "skills opens from Record's second line and lists each skill with how many facts name it and in how many roles"
+  request POST "/facts" {"roleId": 1, "text": "Ran the invented store.", "skills": "Zephyrdb"}
+  request POST "/facts" {"roleId": 1, "text": "Tuned the invented store.", "skills": "Zephyrdb"}
+  request POST "/facts" {"roleId": 1, "text": "Sharded the invented store.", "skills": "Zephyrdb"}
+  tap "nav-record"
+  clock settle
+  tap "sub-skills"
+  clock settle
+  clock data
+  expect text "skills-title" == "Skills"
+  expect text "skills-standing" == "Not reviewed yet. Until you review this list, skills you have not marked can appear on a resume."
+  expect text "skills-tool-head" == "Tools"
+  expect tree missing "skills-new"
+  expect state skillsList.groups.0.skills.0 .name == "Zephyrdb"
+  expect text "skill-zephyrdb-name" == "Zephyrdb"
+  expect text "skill-zephyrdb-facts" == "3 facts in 1 role"
+  tap "skill-zephyrdb-facts"
+  expect text "skill-zephyrdb-facts" == "Hide the 3 facts"
+  tap "skill-zephyrdb-facts"
+  expect text "skill-zephyrdb-facts" == "3 facts in 1 role"
+
+test "on a wide window each skill is one row in columns, with the same pieces and testIds"
+  size 1280x800
+  at "/record/skills"
+  clock data
+  expect tree has "skill-zephyrdb-row"
+  expect text "skill-zephyrdb-name" == "Zephyrdb"
+  expect text "skill-zephyrdb-facts" == "3 facts in 1 role"
+  expect tree has "skill-zephyrdb-confident"
+  tap "skill-zephyrdb-facts"
+  expect tree has "skill-zephyrdb-list"
+
+test "a mark on the skills list is held with Undo, then saved; a tap on the mark it has does nothing"
+  at "/record/skills"
+  clock data
+  tap "skill-zephyrdb-unmarked"
+  expect tree missing "skills-held"
+  tap "skill-zephyrdb-confident"
+  expect text "skills-held" == "Marked Zephyrdb as Confident."
+  tap "skills-undo"
+  expect tree missing "skills-held"
+  clock +9000
+  clock data
+  expect state skillsList.groups.0.skills.0 .mark == ""
+  tap "skill-zephyrdb-confident"
+  clock +8001
+  clock data
+  clock settle
+  clock data
+  expect tree missing "skills-held"
+  expect state skillsList.groups.0.skills.0 .mark == "confident"
+
+test "the review is recorded; a skill the record gains after it shows first under its own head, and Home and the list agree"
+  at "/record/skills"
+  clock data
+  tap "skills-review"
+  clock data
+  clock settle
+  clock data
+  expect state skillsList.reviewed == true
+  expect state skillsList.newCount == 0
+  expect tree missing "skills-error"
+  // The review only makes the Skills lines of unsent resumes due; the worker writes them about 2 minutes later.
+  expect text "skills-due" == "Resumes that are not sent get the new list in about 2 minutes."
+  request POST "/facts" {"roleId": 1, "text": "Queued the invented jobs.", "skills": "Quillqueue"}
+  reload
+  clock data
+  expect state skillsList.newCount == 1
+  expect state skillsList.groups.0.id == "new"
+  expect text "skills-new-head" == "New since your last review"
+  expect text "skill-quillqueue-name" == "Quillqueue"
+  tap "nav-home"
+  clock settle
+  clock data
+  expect tree has "home-item-skill:quillqueue"
+  tap "nav-record"
+  clock settle
+  clock data
+  tap "skill-quillqueue-not-confident"
+  clock +8001
+  clock data
+  clock settle
+  clock data
+  expect state skillsList.groups.0.skills.0 .question == false
+  tap "nav-home"
+  clock settle
+  clock data
+  expect tree missing "home-item-skill:quillqueue"
+
+test "the review carries a mark only while one is held: a saved mark, and one undone, stay as they are"
+  at "/record/skills"
+  clock data
+  tap "skill-quillqueue-confident"
+  clock +8001
+  clock data
+  clock settle
+  clock data
+  // Saved more than 8 seconds before the review: the review leaves it as it is.
+  tap "skill-zephyrdb-not-confident"
+  clock +9000
+  clock data
+  clock settle
+  clock data
+  expect tree missing "skills-held"
+  tap "skills-review"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "skills-error"
+  expect state skillsList.newCount == 0
+  expect state skillsList.groups.0.skills.0 .name == "Zephyrdb"
+  expect state skillsList.groups.0.skills.0 .mark == "not-confident"
+  // Undone before the review: the stored mark stays.
+  tap "skill-zephyrdb-confident"
+  expect text "skills-held" == "Marked Zephyrdb as Confident."
+  tap "skills-undo"
+  tap "skills-review"
+  clock data
+  clock settle
+  clock data
+  expect state skillsList.groups.0.skills.0 .mark == "not-confident"
+  // Held when the review is made: it goes with the review, once.
+  tap "skill-zephyrdb-confident"
+  tap "skills-review"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "skills-held"
+  expect state skillsList.groups.0.skills.0 .mark == "confident"
+
+test "a job's page says when its Skills line waits for the skills list"
+  at "/job/3"
+  clock data
+  expect text "job-resume-skills" == "Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF."

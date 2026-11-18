@@ -1,0 +1,212 @@
+// Skills: the skills list of the owner's resume rule 7 (RESUME-RULES.md; lib/skills.ts, lib/skillsview.ts), reviewed in
+// one pass. Record's second line opens it, after Experience (/record/skills). The list comes from the server
+// (GET /skills): its groups (skills new since the last review first, then tools, languages, platforms and the rest),
+// each skill with how many facts name it and in how many roles, and its mark.
+//
+// A mark is one tap on a word: Confident, Not confident or Not marked (the back end's confident, not-confident and
+// nothing). As an answer on Home, it is held for 8 seconds, with Undo, and then sent; it is also sent when another
+// skill is marked, when the list is reviewed, or when the screen is left. A tap on the mark a skill has does nothing.
+// "I have reviewed this list" records the review (with any mark still held). No model is asked.
+use Page, Section, Title, SectionHead, Line, QuietLine, FailLine, Action, MainAction, GoTo, Choices, ChoiceWord, LedgerRow, Indented, look, lookTight from "./look.contract"
+
+shape SkillFact
+  id: string
+  ref: string
+  text: string
+
+// One skill. key: its key in the list (lower case); id: a plain form of it for test ids. mark: confident | not-confident
+// | "" (not marked). isNew: the record gained it after the last review. question: Home asks about it now.
+shape SkillRow
+  key: string
+  id: string
+  name: string
+  kind: string
+  mark: string
+  facts: number
+  roles: number
+  isNew: bool
+  question: bool
+  factList: SkillFact[]
+
+// A group of the list: new | tool | language | platform | other, with its head in words.
+shape SkillGroup
+  id: string
+  title: string
+  skills: SkillRow[]
+
+shape SkillList
+  loaded: bool
+  reviewed: bool
+  // When the list was last reviewed, in words ("3 Mar 2026"); "" before the first review.
+  reviewedOn: string
+  newCount: number
+  // Unsent resumes' Skills lines are behind the list until the worker writes them, about 2 minutes after the last mark;
+  // the line that says so ("" when they are not).
+  due: bool
+  dueLine: string
+  groups: SkillGroup[]
+
+// The reply to a mark or to the review: the refusal in words ("" when done).
+shape SkillReply
+  ok: bool
+  error: string
+
+// Where the list stands, in one line.
+fn skillsStanding(l: SkillList): string = not l.reviewed ? "Not reviewed yet. Until you review this list, skills you have not marked can appear on a resume." : l.newCount == 0 ? `Reviewed on ${l.reviewedOn}.` : `Reviewed on ${l.reviewedOn}. ${l.newCount == 1 ? "1 skill is" : `${l.newCount} skills are`} new since then.`
+fn markWord(m: string): string = m == "confident" ? "Confident" : m == "not-confident" ? "Not confident" : "Not marked"
+// The list's mark as the screen says it: "" (not marked) is "unmarked".
+fn markValue(m: string): string = m == "" ? "unmarked" : m
+// The mark a skill shows: the one held, else the last one sent and not yet read back, else the list's.
+fn shownMark(s: SkillRow, held: string, heldMark: string, sent: string[]): string = held == s.key ? heldMark : match sent.filter(x => x.startsWith(`${s.key}\n`)).at(-1) { case some(x) => x.slice(s.key.length + 1), case none => markValue(s.mark) }
+fn skillCounts(s: SkillRow): string = `${s.facts == 1 ? "1 fact" : `${s.facts} facts`} in ${s.roles == 0 ? "no role" : s.roles == 1 ? "1 role" : `${s.roles} roles`}`
+
+members App
+  derive onSkills = topName == "skills"
+  resource skillsList = loadSkills() when onSkills as shape SkillList else empty()
+  // A mark sent, or the review: the list and Home are read again (an answer there may have closed).
+  mutation skillMarked as shape SkillReply queue refreshes skillsList, homeList then afterSkillMarked
+  mutation skillsReviewed as shape SkillReply queue refreshes skillsList, homeList then afterSkillsReviewed
+  // The mark held for 8 seconds: the skill's key and name, and the mark; heldSkillSeq restarts the wait.
+  // A mark here is one of confident | not-confident | unmarked: "Not marked" is sent as its word, never as "".
+  // Wherever the held mark is put away, its name and mark go with it, so nothing stale is ever sent.
+  state heldSkill = ""
+  state heldSkillName = ""
+  state heldSkillMark = ""
+  state heldSkillSeq = 0
+  // The marks sent and not yet read back ("key" a line break "mark"), shown until the list is read again, so two marks
+  // sent one after the other never flicker back. The mark the review carried, put back on hold if the review is refused.
+  state sentMarks: string[] = []
+  state reviewHeld = ""
+  state reviewHeldName = ""
+  state reviewHeldMark = ""
+  // A refusal in words; the skill whose facts are open.
+  state skillError = ""
+  state openSkill = ""
+  task skillTimer when heldSkill != "" key=heldSkillSeq
+    after(8000, sendSkillHeld)
+
+  // A tap on a mark. On the mark the skill shows, nothing happens; back to the mark it had, the hold is put away.
+  action markSkillTap(key: string, name: string, mark: string, stored: string, shown: string)
+    if mark != shown
+      if heldSkill != key
+        sendSkillHeld()
+      skillError = ""
+      if mark == stored
+        heldSkill = ""
+        heldSkillName = ""
+        heldSkillMark = ""
+      else
+        heldSkill = key
+        heldSkillName = name
+        heldSkillMark = mark
+        heldSkillSeq = heldSkillSeq + 1
+  action undoSkill
+    heldSkill = ""
+    heldSkillName = ""
+    heldSkillMark = ""
+  // Sends what is held, if anything: when its time ends, another skill is marked, the list is reviewed or the screen left.
+  action sendSkillHeld
+    if heldSkill != ""
+      sentMarks = sentMarks.concat([`${heldSkill}\n${heldSkillMark}`])
+      send skillMarked = markSkill(heldSkillName, heldSkillMark)
+      heldSkill = ""
+      heldSkillName = ""
+      heldSkillMark = ""
+  action afterSkillMarked
+    match skillMarked
+      case some(r)
+        skillError = r.ok ? "" : `That mark wasn’t saved. ${r.error}`
+      case none
+        skillError = skillError
+    if not pending(skillMarked) and not pending(skillsReviewed)
+      sentMarks = []
+  // The review carries the mark held now, if there is one, and only then.
+  action reviewSkillList
+    skillError = ""
+    reviewHeld = heldSkill
+    reviewHeldName = heldSkillName
+    reviewHeldMark = heldSkillMark
+    if heldSkill != ""
+      sentMarks = sentMarks.concat([`${heldSkill}\n${heldSkillMark}`])
+    send skillsReviewed = reviewSkills(heldSkill != "" ? heldSkillName : "", heldSkill != "" ? heldSkillMark : "")
+    heldSkill = ""
+    heldSkillName = ""
+    heldSkillMark = ""
+  // A refused review puts the mark it carried back on hold, so the owner's tap is not lost.
+  action afterSkillsReviewed
+    match skillsReviewed
+      case some(r)
+        skillError = r.ok ? "" : r.error
+        if not r.ok and reviewHeld != ""
+          heldSkill = reviewHeld
+          heldSkillName = reviewHeldName
+          heldSkillMark = reviewHeldMark
+          heldSkillSeq = heldSkillSeq + 1
+      case none
+        skillError = skillError
+    reviewHeld = ""
+    reviewHeldName = ""
+    reviewHeldMark = ""
+    if not pending(skillMarked) and not pending(skillsReviewed)
+      sentMarks = []
+  action toggleSkillFacts(key: string)
+    openSkill = openSkill == key ? "" : key
+  action retrySkills
+    refresh skillsList
+
+// The Skills screen, drawn only with the shared pieces of look.contract. The list is data: one loop over its groups,
+// one over each group's skills.
+component SkillsScreen
+  props
+    list: SkillList
+    failedToLoad: bool
+    held: string
+    heldMark: string
+    heldName: string
+    sent: string[]
+    error: string
+    opened: string
+    reviewing: bool
+    // 640px and more: each skill one row in columns.
+    wide: bool
+    mark: action
+    undo: action
+    review: action
+    toggle: action
+    retry: action
+  view
+    Page(testId="skills")
+      Section(testId="skills-top")
+        Title(text="Skills", testId="skills-title")
+        if not list.loaded and failedToLoad
+          FailLine(text="This list couldn’t be loaded.", testId="skills-error-load")
+          Action(label="Try again", press=retry, disabled=false, keys="", testId="skills-retry")
+        else if not list.loaded
+          QuietLine(text="Loading your skills…", testId="skills-loading")
+        else
+          Line(text=skillsStanding(list), testId="skills-standing")
+          QuietLine(text="Only a tool, language or platform you are confident in goes on a reviewed resume. A mark is saved after a few seconds, and can be undone until then.", testId="skills-hint")
+          if held != ""
+            row align-items="baseline" flex-wrap="wrap" column-gap=8
+              Line(text=`Marked ${heldName} as ${markWord(heldMark)}.`, testId="skills-held")
+              Action(label="Undo", press=undo, disabled=false, keys="", testId="skills-undo")
+          if list.dueLine != ""
+            QuietLine(text=list.dueLine, testId="skills-due")
+          if error != ""
+            FailLine(text=error, testId="skills-error")
+          MainAction(label="I have reviewed this list", press=review, disabled=reviewing, keys="", testId="skills-review")
+      for g in list.groups key=g.id
+        Section(testId=`skills-${g.id}`)
+          SectionHead(text=g.title, testId=`skills-${g.id}-head`)
+          for s in g.skills key=s.key
+            column gap=lookTight() testId=`skill-${s.id}`
+              LedgerRow(name=s.name, count=(opened == s.key ? `Hide the ${s.facts == 1 ? "fact" : `${s.facts} facts`}` : skillCounts(s)), open=toggle(s.key), wide=wide, testId=`skill-${s.id}`)
+                Choices(label=`How you stand by ${s.name}`)
+                  ChoiceWord(label="Confident", chosen=(shownMark(s, held, heldMark, sent) == "confident"), press=mark(s.key, s.name, "confident", markValue(s.mark), shownMark(s, held, heldMark, sent)), testId=`skill-${s.id}-confident`)
+                  ChoiceWord(label="Not confident", chosen=(shownMark(s, held, heldMark, sent) == "not-confident"), press=mark(s.key, s.name, "not-confident", markValue(s.mark), shownMark(s, held, heldMark, sent)), testId=`skill-${s.id}-not-confident`)
+                  ChoiceWord(label="Not marked", chosen=(shownMark(s, held, heldMark, sent) == "unmarked"), press=mark(s.key, s.name, "unmarked", markValue(s.mark), shownMark(s, held, heldMark, sent)), testId=`skill-${s.id}-unmarked`)
+              // The facts open under the row.
+              if opened == s.key
+                Indented(testId=`skill-${s.id}-list`)
+                  for f in s.factList key=f.id
+                    GoTo(label=`${f.ref} ${f.text}`, href=path("fact", f.id), testId=`skill-${s.id}-fact-${f.id}`)

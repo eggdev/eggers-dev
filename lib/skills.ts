@@ -18,6 +18,17 @@ db.run(`CREATE TABLE IF NOT EXISTS skills (
   facts INTEGER NOT NULL DEFAULT 0, in_bank INTEGER NOT NULL DEFAULT 1, kind_set INTEGER NOT NULL DEFAULT 0, added_at INTEGER NOT NULL)`);
 db.run('CREATE TABLE IF NOT EXISTS skills_review (id INTEGER PRIMARY KEY CHECK (id = 1), reviewed_at INTEGER NOT NULL DEFAULT 0)');
 db.run('INSERT OR IGNORE INTO skills_review (id) VALUES (1)');
+// When a mark or a review last changed what a reviewed list puts on a resume (marked_at), and up to which such change the
+// worker has written the Skills lines of unsent resumes again (done_at): lib/jobs.ts, skillsChanged and refreshDueSkills.
+// Kept here, not in memory, so a worker that was stopped does the work when it next runs.
+db.run('CREATE TABLE IF NOT EXISTS skills_due (id INTEGER PRIMARY KEY CHECK (id = 1), marked_at INTEGER NOT NULL DEFAULT 0, done_at INTEGER NOT NULL DEFAULT 0)');
+db.run('INSERT OR IGNORE INTO skills_due (id) VALUES (1)');
+// A job whose Skills line could not be written: how many tries for which change (marked_at), when it was last tried
+// (last_at), whether its empty PDF was already printed once for that change (printed), and the note on it once left out.
+// Its row goes with the job.
+db.run("CREATE TABLE IF NOT EXISTS skills_due_jobs (job_id INTEGER PRIMARY KEY, tries INTEGER NOT NULL DEFAULT 0, marked_at INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', last_at INTEGER NOT NULL DEFAULT 0, printed INTEGER NOT NULL DEFAULT 0)");
+for (const column of ['last_at INTEGER NOT NULL DEFAULT 0', 'printed INTEGER NOT NULL DEFAULT 0']) { try { db.run(`ALTER TABLE skills_due_jobs ADD COLUMN ${column}`); } catch { /* already there */ } }
+db.run('CREATE TRIGGER IF NOT EXISTS skills_due_jobs_gone AFTER DELETE ON jobs BEGIN DELETE FROM skills_due_jobs WHERE job_id = OLD.id; END');
 
 export const KINDS = ['tool', 'language', 'platform', 'other'] as const;
 export const MARKS = ['confident', 'not-confident', ''] as const;
@@ -101,21 +112,23 @@ export const NONE_CONFIDENT = 'Mark at least one tool, language or platform as o
 // Once the list is reviewed, only skills marked confident go on a resume. So a review is refused, and so is any
 // change after one, that would leave no skill to show: a resume would then lose its whole Skills section.
 // Returns how many marks were set, or `refused` with the reason, in which case nothing was saved.
-export function markSkills(marks: { name: string; mark?: string; kind?: string }[], review: boolean, now: number): { marked: number; refused?: string } {
-  let marked = 0;
+// `changed` counts the marks and the kinds that changed.
+export function markSkills(marks: { name: string; mark?: string; kind?: string }[], review: boolean, now: number): { marked: number; changed: number; refused?: string } {
+  let marked = 0, kinds = 0;
   try {
     db.transaction(() => {
       for (const m of marks) {
         const key = String(m.name ?? '').trim().toLowerCase();
         if (key === '') continue;
-        if (typeof m.mark === 'string' && (MARKS as readonly string[]).includes(m.mark)) marked += db.query('UPDATE skills SET mark = ? WHERE key = ?').run(m.mark, key).changes;
-        if (typeof m.kind === 'string' && (KINDS as readonly string[]).includes(m.kind)) db.query('UPDATE skills SET kind = ?, kind_set = 1 WHERE key = ?').run(m.kind, key);
+        // A mark it already has writes nothing (the Skills screen sends one tap at a time).
+        if (typeof m.mark === 'string' && (MARKS as readonly string[]).includes(m.mark)) marked += db.query('UPDATE skills SET mark = ? WHERE key = ? AND mark != ?').run(m.mark, key, m.mark).changes;
+        if (typeof m.kind === 'string' && (KINDS as readonly string[]).includes(m.kind)) kinds += db.query('UPDATE skills SET kind = ?, kind_set = 1 WHERE key = ? AND (kind != ? OR kind_set = 0)').run(m.kind, key, m.kind).changes;
       }
       if ((review || reviewed()) && !allSkills().some((s) => allowed(s, true))) throw new Error(NONE_CONFIDENT);
       if (review) db.query('UPDATE skills_review SET reviewed_at = ? WHERE id = 1').run(now);
     })();
-  } catch (e) { if ((e as Error).message === NONE_CONFIDENT) return { marked: 0, refused: NONE_CONFIDENT }; throw e; }
-  return { marked };
+  } catch (e) { if ((e as Error).message === NONE_CONFIDENT) return { marked: 0, changed: 0, refused: NONE_CONFIDENT }; throw e; }
+  return { marked, changed: marked + kinds };
 }
 
 const mentions = (text: string, name: string) => [...text.matchAll(new RegExp(`(?:^|[^a-z0-9+#])${name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9+#])`, 'g'))];

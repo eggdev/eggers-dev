@@ -489,6 +489,30 @@ fn lookWhenWidth(): string = `${look().textSize * 10 / 16}rem`
 fn lookUsualWidth(): string = `${look().textSize * 11 / 16}rem`
 fn lookStatusWidth(): string = `${look().textSize * 9.5 / 16}rem`
 
+// One line of a ledger that is marked with words (the Skills list): its name, its count in grey, and in the slot the
+// words that mark it. On a wide window (`wide`, 640px and more) the three stand in columns that line up down the list,
+// as an Activity row's do; on a narrow one the name and the count share a line when they fit, and the words go under
+// them. The slot is placed once, whatever the width. testIds: the row is `testId-row`, the name `testId-name`, the
+// count `testId-facts`.
+fn lookCountWidth(): string = `${look().textSize * 11 / 16}rem`
+component LedgerRow
+  props
+    name: string
+    count: string
+    open: action
+    wide: bool
+    testId: string
+  slot
+  view
+    column flex-direction=(wide ? "row" : "column") align-items=(wide ? "baseline" : "stretch") column-gap=lookGutter() row-gap=lookTight() min-width=0 testId=`${testId}-row`
+      row flex-grow=(wide ? 1 : 0) flex-shrink=1 min-width=0 align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+        text name flex-grow=(wide ? 1 : 0) flex-shrink=1 min-width=0 font-size=lookText() font-weight=look().strong line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=`${testId}-name`
+        if not wide
+          text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
+        column width=(wide ? lookCountWidth() : "auto") flex-shrink=(wide ? 0 : 1) min-width=0
+          QuietAction(label=count, press=open, testId=`${testId}-facts`)
+      children
+
 // Slow work as one row (DESIGN.md, the pattern "Activity row"): what it is, its stage, when it was asked for or
 // started, how long it usually takes, and its status word (Waiting with its place). On a wide window the parts stand
 // in aligned columns, in tabular figures; on a narrow one they are stacked lines. A failed row gives its reason in
@@ -677,6 +701,16 @@ component Action
   view
     button press=press disabled=disabled aria-keyshortcuts=keys text-align="start" testId=testId
       text label font-size=lookText() font-weight=400 line-height=lookLeading()
+
+// A count that opens what it counts (a skill's "2 facts in 2 roles"): the same button, in grey and tabular figures.
+component QuietAction
+  props
+    label: string
+    press: action
+    testId: string
+  view
+    button press=press text-align="start" align-self="flex-start" max-width="100%" testId=testId
+      text label font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" overflow-wrap="break-word"
 
 // The main action of a screen: the same button, in the heavy weight.
 component MainAction

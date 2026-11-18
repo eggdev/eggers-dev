@@ -32,7 +32,7 @@ import { quantities, redact } from './numbers.ts';
 import { answeredRaised } from './raised.ts';
 import { lf } from './resume.ts';
 import { skimLoop, type Skim } from './skim.ts';
-import { withSkills } from './skills.ts';
+import { reviewed, withSkills } from './skills.ts';
 
 export type JobRow = { edited?: number; id: number; url: string; posting: string; title: string; company: string; place: string; status: string; note: string; fit: number; analysis: string; resume: string; created_at: number; updated_at: number; outcome: string; outcome_note: string; contact: string; ats: string; pdf: string; pages: number; posted_at: number; salary: string; applied_at: number };
 // `need` is must (the posting requires it), nice (it prefers it) or implied (it does not list it, but what it
@@ -521,22 +521,112 @@ export function reflagOpen(): void {
   for (const j of jobs) { try { reflag(j.id, context); } catch { /* skipped */ } }
 }
 
-// After the person marks their skills: every resume not yet sent that a model wrote gets its Skills line written
-// again from the list, with no model. A resume the person edited is left as it is. Returns the jobs whose
-// resume changed, for the caller to print again.
+// One job's Skills line from the list, with no model: written only if it differs, and only if the resume is still the text
+// that was read and still not edited (the server may save the owner's edit at the same moment). The stored PDF is
+// dropped in the same write, so it is never older than the text: the PDF route prints it again when it is asked for.
+// What was repaired when it was written still holds, since only the Skills line changed. True when it was written.
+export function rewriteSkillsLine(j: JobRow & { edited?: number }): boolean {
+  const resume = withSkills(j.resume, j.posting, j.pages);
+  if (resume === j.resume) return false;
+  const analysis: Analysis = j.analysis ? JSON.parse(j.analysis) : { ...EMPTY };
+  if (analysis.written?.sig === sigOf(j.resume)) analysis.written.sig = sigOf(resume);
+  const done = db.query("UPDATE jobs SET resume = ?, analysis = ?, pdf = '' WHERE id = ? AND resume = ? AND edited = 0").run(resume, JSON.stringify(analysis), j.id, j.resume).changes > 0;
+  if (done) saveResume(j, resume);
+  return done;
+}
+// Every resume not yet sent that a model wrote, and that is not being written now: its Skills line from the list.
 export function refreshSkills(): number[] {
-  const changed: number[] = [];
+  return openJobs().filter((x) => x.edited === 0 && x.resume_status !== 'queued' && x.resume_status !== 'running').filter((j) => rewriteSkillsLine(j)).map((j) => j.id);
+}
+
+// The Skills lines, once a sitting of marks is over. Once the list is reviewed, a mark or a review changes what each
+// unsent resume's Skills line should be. Writing them at each mark would print every unsent resume again for every
+// mark, so a mark only records when it was made (skillsChanged), and the worker writes and prints the lines once no
+// mark has been saved for this long (refreshDueSkills). Two minutes: a sitting of marks is seconds apart.
+export const SKILLS_QUIET_MS = 2 * 60_000;
+// After this long due because a resume is being written, the screen says that is what it waits for.
+const SKILLS_WAIT_SAID_MS = 5 * 60_000;
+// A job whose line cannot be written is tried this many times, then left out with a note (skills_due_jobs).
+const SKILLS_TRIES = 3;
+// The first wait after a failed try; it doubles after each.
+const SKILLS_RETRY_MS = 60_000;
+const dueRow = () => db.query('SELECT marked_at, done_at FROM skills_due WHERE id = 1').get() as { marked_at: number; done_at: number };
+const failed = (jobId: number) => db.query('SELECT tries, marked_at, note, last_at, printed FROM skills_due_jobs WHERE job_id = ?').get(jobId) as { tries: number; marked_at: number; note: string; last_at: number; printed: number } | null;
+// A resume being written now, that will take the list as it is when it is done: the lines wait for it. One queued
+// behind a reading that did not finish is not waited for: it gets the list when it is written.
+const beingWritten = () => openJobs().some((j) => j.edited === 0 && (j.resume_status === 'running' || (j.resume_status === 'queued' && j.status === 'done')));
+// A mark or a review that changed something, at `now`. Before the first review no line follows the marks: nothing is due.
+export function skillsChanged(now: number): void {
+  if (reviewed()) db.query('UPDATE skills_due SET marked_at = max(marked_at, ?) WHERE id = 1').run(now);
+}
+// Whether the Skills lines are behind the list, and what the Skills screen says about it ("" when they are not).
+export function skillsDue(now = Date.now()): { due: boolean; at: number; line: string } {
+  const d = dueRow(), due = d.marked_at > d.done_at;
+  const waiting = due && now - d.marked_at > SKILLS_WAIT_SAID_MS && beingWritten();
+  return { due, at: d.marked_at + SKILLS_QUIET_MS, line: !due ? '' : waiting ? 'Resumes that are not sent get the new list once the resume being written now is done.' : 'Resumes that are not sent get the new list in about 2 minutes.' };
+}
+// What the job's page says about its Skills line ("" for nothing): behind the list, or left out after failed tries.
+export function skillsLineOf(jobId: number): string {
+  const j = db.query('SELECT * FROM jobs WHERE id = ?').get(jobId) as (JobRow & { edited: number; resume_status: string }) | null;
+  if (!j || j.resume === '' || j.outcome !== '' || j.edited === 1) return '';
+  const f = failed(jobId);
+  if (f && f.note !== '' && f.marked_at === dueRow().marked_at) return f.note;
+  try { return skillsDue().due && withSkills(j.resume, j.posting, j.pages) !== j.resume ? 'Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF.' : ''; } catch { return ''; }
+}
+// The worker's part: after the quiet, each unsent resume a model wrote takes its Skills line from the list, and each one
+// written, or still waiting for its PDF from a pass cut short, is printed (`print`). Each job on its own: one that fails
+// is logged once and tried again on the next passes, and after SKILLS_TRIES it is left out with a note on it, so the
+// pass never runs for ever. The lines stay due while a resume is being written, while a job is still to be tried, or
+// when a mark is saved during the pass. Gives the jobs whose line was written.
+export async function refreshDueSkills(now: number, print: (jobId: number) => Promise<void>): Promise<number[]> {
+  const d = dueRow();
+  if (d.marked_at <= d.done_at || now - d.marked_at < SKILLS_QUIET_MS) return [];
+  const written: number[] = [];
+  let pending = false;
+  const save = (jobId: number, tries: number, printed: number, note: string) => db.query(`INSERT INTO skills_due_jobs (job_id, tries, marked_at, note, last_at, printed) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (job_id) DO UPDATE SET tries = excluded.tries, marked_at = excluded.marked_at, note = excluded.note, last_at = excluded.last_at, printed = excluded.printed`).run(jobId, tries, d.marked_at, note, now, printed);
   for (const j of openJobs().filter((x) => x.edited === 0 && x.resume_status !== 'queued' && x.resume_status !== 'running')) {
-    const resume = withSkills(j.resume, j.posting, j.pages);
-    if (resume === j.resume) continue;
-    const analysis: Analysis = j.analysis ? JSON.parse(j.analysis) : { ...EMPTY };
-    // What was repaired when it was written still holds: only the Skills line changed.
-    if (analysis.written?.sig === sigOf(j.resume)) analysis.written.sig = sigOf(resume);
-    db.query('UPDATE jobs SET resume = ?, analysis = ? WHERE id = ?').run(resume, JSON.stringify(analysis), j.id);
-    saveResume(j, resume);
-    changed.push(j.id);
+    const f = failed(j.id), mine = f && f.marked_at === d.marked_at ? f : null, tries = mine?.tries ?? 0, printed = mine?.printed ?? 0;
+    if (tries >= SKILLS_TRIES) continue;
+    // A job that failed waits longer after each try (1 minute, then 2): the passes do not spin on it, and write nothing meanwhile.
+    if (tries > 0 && now - mine!.last_at < SKILLS_RETRY_MS * 2 ** (tries - 1)) { pending = true; continue; }
+    let emptyPdf = false;
+    try {
+      const fresh = db.query('SELECT * FROM jobs WHERE id = ?').get(j.id) as JobRow & { edited: number; pdf: string };
+      if (!fresh || fresh.edited === 1 || fresh.outcome !== '') continue;
+      const wrote = rewriteSkillsLine(fresh);
+      if (wrote) { written.push(j.id); await print(j.id); }
+      else if (withSkills(fresh.resume, fresh.posting, fresh.pages) !== fresh.resume) { pending = true; continue; }
+      else if (fresh.pdf === '') {
+        // Its text is new but its PDF is not, after a pass cut short: printed once for this change, the try recorded
+        // first. Past that, the PDF route prints it when it is asked for.
+        if (printed) continue;
+        emptyPdf = true;
+        save(j.id, tries, 1, '');
+        await print(j.id);
+      }
+      if (failed(j.id)) db.query('DELETE FROM skills_due_jobs WHERE job_id = ?').run(j.id);
+    } catch (e) {
+      const n = tries + 1, why = (e as Error).message;
+      if (n === 1) console.log(`skills: the Skills line of job ${j.id} could not be written again: ${why}`);
+      if (n >= SKILLS_TRIES) console.log(`skills: job ${j.id} is left out after ${SKILLS_TRIES} tries`);
+      save(j.id, n, emptyPdf || printed ? 1 : 0, n >= SKILLS_TRIES ? 'This resume’s Skills line could not be written again from your skills list. Write the resume again to bring it up to date.' : '');
+      // A PDF that could not be printed is left to the PDF route; a line that could not be written is tried again.
+      if (n < SKILLS_TRIES && !emptyPdf) pending = true;
+    }
   }
-  return changed;
+  if (!pending && !beingWritten()) db.transaction(() => { db.query('UPDATE skills_due SET done_at = max(done_at, ?) WHERE id = 1').run(d.marked_at); }).immediate();
+  return written;
+}
+// One job at once, when its PDF is asked for or it is marked sent while the lines are due: its Skills line from the
+// list and its PDF, with no model. Only an unsent, unedited resume that is not being written. True when it was written.
+export async function refreshOneSkillsLine(jobId: number, print: (jobId: number) => Promise<void>): Promise<boolean> {
+  if (!skillsDue().due) return false;
+  const j = db.query('SELECT * FROM jobs WHERE id = ?').get(jobId) as (JobRow & { edited: number; resume_status: string }) | null;
+  if (!j || j.resume === '' || j.outcome !== '' || j.edited === 1 || j.resume_status === 'queued' || j.resume_status === 'running') return false;
+  if (!rewriteSkillsLine(j)) return false;
+  await print(jobId);
+  return true;
 }
 
 // A new version could not be kept (FactsError), so the job's earlier resume stands. This says so on that resume, as a flag.

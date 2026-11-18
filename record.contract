@@ -1,6 +1,6 @@
 // Record: the owner's working life as records (DESIGN.md rule 4), and the screens beside it. Its second line
 // (`RecordNav`, drawn once by the root under the main line) holds Experience (the record as one tree: roles, their
-// projects and facts, at /record), Profile, Direction, Details and Sources.
+// projects and facts, at /record), Skills (skills.contract), Profile, Direction, Details and Sources.
 // Each screen is drawn only with the shared pieces of look.contract. The data and the actions are the root's
 // (app.contract); a form keeps its drafts itself.
 use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, experienceLook from "./look.contract"
@@ -274,6 +274,7 @@ component RecordNav
   view
     SubLine(label="Record")
       SubLink(label="Experience", current=(at == "bank"), press=go("bank"), testId="sub-experience")
+      SubLink(label="Skills", current=(at == "skills"), press=go("skills"), testId="sub-skills")
       SubLink(label="Profile", current=(at == "profile"), press=go("profile"), testId="sub-profile")
       SubLink(label="Direction", current=(at == "direction"), press=go("direction"), testId="sub-direction")
       SubLink(label="Details", current=(at == "details"), press=go("details"), testId="sub-details")

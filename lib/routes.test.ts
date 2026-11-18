@@ -92,7 +92,7 @@ test('a timeline answer changes the role, closes the question, and changes no st
 
 test('one mark with no "reviewed" is not a review, and changes no stored resume', async () => {
   const marked = await call('POST', '/skills', { marks: [{ name: 'TypeScript', mark: 'not-confident' }] });
-  expect(marked).toMatchObject({ status: 200, body: { ok: true, marked: 1, reviewed: false, updated: 0 } });
+  expect(marked).toMatchObject({ status: 200, body: { ok: true, marked: 1, reviewed: false, due: false } });
   expect(resumes()).toEqual(START);
   const list = (await call('GET', '/skills')).body;
   expect(list.reviewed).toBe(false);
@@ -100,13 +100,18 @@ test('one mark with no "reviewed" is not a review, and changes no stored resume'
   expect(list.skills.find((s: { name: string }) => s.name === 'TypeScript')).toMatchObject({ mark: 'not-confident', shown: false });
 });
 
-test('a review is refused while no skill is marked confident, and then rewrites only the Skills line of written resumes', async () => {
+test('a review is refused while no skill is marked confident; then, once the sitting is over, only the Skills line of written resumes is written again', async () => {
   const refused = await call('POST', '/skills', { marks: [], reviewed: true });
   expect(refused).toMatchObject({ status: 400, body: { error: 'Mark at least one tool, language or platform as one you are confident in before you confirm the list. Nothing was saved.' } });
   expect((await call('GET', '/skills')).body.reviewed).toBe(false);
   expect(resumes()).toEqual(START);
   const done = await call('POST', '/skills', { marks: [{ name: 'Go', mark: 'confident' }], reviewed: true });
-  expect(done).toMatchObject({ status: 200, body: { ok: true, marked: 1, reviewed: true, updated: 2 } });
+  expect(done).toMatchObject({ status: 200, body: { ok: true, marked: 1, reviewed: true, due: true } });
+  // The review only makes the Skills lines due; the worker writes them once the sitting is over (here, at once).
+  expect(resumes()).toEqual(START);
+  expect((await call('GET', '/skills')).body.due).toBe(true);
+  expect((await call('POST', '/test/skills-due')).body).toEqual({ ok: true, written: [1, 2] });
+  expect((await call('GET', '/skills')).body.due).toBe(false);
   const now = resumes() as { id: number; resume: string }[];
   expect(now[1].resume).toBe(SECOND.replace('## Skills\nGo, TypeScript, synergy', '## Skills\n\nGo'));
   expect(now[0].resume.split('## Skills')[0]).toBe(OLD_RESUME.split('## Skills')[0]);
@@ -251,4 +256,75 @@ test('Activity’s Try again on failed project suggestions asks again by the rol
   expect(d.query('SELECT propose_status, propose_note FROM roles WHERE id = 2').get()).toEqual({ propose_status: 'queued', propose_note: '' });
   d.close();
   expect(await call('POST', `/activity/${failed.id}/retry`)).toMatchObject({ status: 404 });
+});
+
+test('the Skills screen\'s list over HTTP: its groups and counts, a new skill, a mark through Home’s question, and the review', async () => {
+  const before = (await call('GET', '/skills')).body;
+  expect(Array.isArray(before.groups)).toBe(true);
+  const all = before.groups.flatMap((g: { skills: { name: string }[] }) => g.skills);
+  expect(all.length).toBe(before.skills.length);
+  const go = all.find((s: { key: string }) => s.key === 'go');
+  expect([go.name, go.kind, typeof go.facts, typeof go.roles, go.factList.length === go.facts]).toEqual(['Go', 'language', 'number', 'number', true]);
+  // An earlier test reviewed the list. A skill the record gains after it is new, first, and asked about on Home; a tap on
+  // it from the list answers that question; the same tap again changes nothing.
+  expect((await call('POST', '/facts', { roleId: 1, text: 'Ran the invented queue.', skills: 'Zephyrqueue' })).status).toBe(201);
+  const fresh = (await call('GET', '/skills')).body;
+  expect(fresh.groups[0]).toMatchObject({ id: 'new', title: 'New since your last review' });
+  expect(fresh.groups[0].skills.map((x: { name: string; question: boolean }) => [x.name, x.question])).toEqual([['Zephyrqueue', true]]);
+  expect(await call('POST', '/skills', { marks: [{ name: 'Zephyrqueue', mark: 'not-confident' }] })).toMatchObject({ status: 200, body: { ok: true, marked: 1 } });
+  expect((await call('GET', '/questions')).body.questions.some((q: { key: string }) => q.key === 'skill:zephyrqueue')).toBe(false);
+  expect(await call('POST', '/skills', { marks: [{ name: 'Zephyrqueue', mark: 'not-confident' }] })).toMatchObject({ status: 200, body: { ok: true, marked: 0 } });
+  expect(await call('POST', '/skills', { marks: [], reviewed: true })).toMatchObject({ status: 200, body: { ok: true, reviewed: true } });
+  const after = (await call('GET', '/skills')).body;
+  expect([after.reviewed, after.newCount, /^\d{1,2} [A-Z][a-z]{2} \d{4}$/.test(after.reviewedOn)]).toEqual([true, 0, true]);
+});
+
+test('POST /skills refuses a body that is not an object, skips entries that are not marks, and an empty mark clears nothing', async () => {
+  const raw = async (body: string) => { const r = await fetch(`${base}/skills`, { method: 'POST', headers: { 'content-type': 'application/json' }, body }); return { status: r.status, body: (await r.json()) as Record<string, any> }; };
+  expect(await raw('null')).toEqual({ status: 400, body: { error: 'Send the request as a JSON object.' } });
+  expect(await raw('[1]')).toEqual({ status: 400, body: { error: 'Send the request as a JSON object.' } });
+  expect(await call('POST', '/skills', { marks: [null, 7, 'Go'] })).toMatchObject({ status: 200, body: { ok: true, marked: 0 } });
+  const goMark = async () => ((await call('GET', '/skills')).body.skills as { name: string; mark: string }[]).find((x) => x.name === 'Go')!.mark;
+  const was = await goMark();
+  expect(was).not.toBe('');
+  expect(await call('POST', '/skills', { marks: [{ name: 'Go', mark: '' }] })).toMatchObject({ status: 200, body: { marked: 0 } });
+  expect(await goMark()).toBe(was);
+});
+
+test('while the Skills lines wait for the quiet, the PDF asked for and the job marked sent take the list as it is now', async () => {
+  const d = () => new Database(file, { readonly: true });
+  const line = (id: number) => { const x = d(); try { return ((x.query('SELECT resume FROM jobs WHERE id = ?').get(id) as { resume: string }).resume.split('## Skills')[1] ?? '').trim(); } finally { x.close(); } };
+  // Go stays confident through TypeScript; Go is then said Not confident. Job 1 is unsent and not edited.
+  expect(await call('POST', '/skills', { marks: [{ name: 'TypeScript', mark: 'confident' }, { name: 'Go', mark: 'not-confident' }] })).toMatchObject({ status: 200, body: { ok: true, due: true } });
+  expect(line(1)).toContain('Go');
+  expect((await call('GET', '/jobs/1')).body.skillsLine).toBe('Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF.');
+  const pdf = await fetch(`${base}/jobs/1/resume.pdf`);
+  expect(pdf.status).toBe(200);
+  const { extractText, getDocumentProxy } = await import('unpdf');
+  const { text } = await extractText(await getDocumentProxy(new Uint8Array(await pdf.arrayBuffer())), { mergePages: true });
+  const skills = String(text).split('Skills').pop()!;
+  expect(skills).toContain('TypeScript');
+  expect(skills).not.toMatch(/\bGo\b/);
+  expect(line(1)).toBe('TypeScript');
+  expect((await call('GET', '/jobs/1')).body.skillsLine).toBe('');
+  // Go is confident again; the job is marked applied at once, and goes out with the list as it is now.
+  expect(await call('POST', '/skills', { marks: [{ name: 'Go', mark: 'confident' }] })).toMatchObject({ status: 200, body: { due: true } });
+  expect((await call('PATCH', '/jobs/1', { outcome: 'applied', picked: true })).status).toBe(200);
+  expect(line(1)).toMatch(/\bGo\b/);
+}, 120_000);
+
+test('a job with broken stored data, while the Skills lines are due: its outcome is still recorded, and its stored PDF still served', async () => {
+  const pdfFile = join(dir, 'invented.pdf');
+  await Bun.write(pdfFile, '%PDF-1.4 invented');
+  const w = new Database(file);
+  const id = (w.query("INSERT INTO jobs (posting, title, company, status, analysis, resume, resume_status, created_at, edited, outcome, pdf) VALUES ('Go.', 'Engineer', 'Nimbus Yard', 'done', '{not json', ?, 'done', 1, 0, '', ?) RETURNING id")
+    .get('# Avery Lindqvist\n\n## Experience\n### Director of Engineering, Harborlight Systems\n- Built it.\n\n## Skills\n\nGo, Kafka', pdfFile) as { id: number }).id;
+  w.close();
+  expect(await call('POST', '/skills', { marks: [{ name: 'Go', mark: 'not-confident' }] })).toMatchObject({ status: 200, body: { due: true } });
+  const pdf = await fetch(`${base}/jobs/${id}/resume.pdf`);
+  expect([pdf.status, await pdf.text()]).toEqual([200, '%PDF-1.4 invented']);
+  expect((await call('PATCH', `/jobs/${id}`, { outcome: 'applied', picked: true })).status).toBe(200);
+  const r = new Database(file, { readonly: true });
+  expect(r.query('SELECT outcome FROM jobs WHERE id = ?').get(id)).toEqual({ outcome: 'applied' });
+  r.close();
 });

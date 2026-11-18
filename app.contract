@@ -17,6 +17,7 @@ use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, Jobs
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
 use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
+use SkillsScreen from "./skills.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
 font "Geist" = "assets/fonts/Geist.ttf"
@@ -36,6 +37,8 @@ routes nav
       pFact "/record/projects/fact/:id"
     asFacts "/record/facts"
       fFact "/record/facts/:id"
+    // Skills: the skills list of resume rule 7, reviewed in one pass (skills.contract).
+    skills "/record/skills"
     profile "/profile"
       direction "/profile/direction"
       details "/profile/details"
@@ -212,6 +215,7 @@ fn machineLine(s: SystemStatus): string = s.machine == "running" ? "Running" : s
 component App
   members "./home.contract"
   members "./activity.contract"
+  members "./skills.contract"
   state kind = "text"
   state draftTitle = ""
   state draftText = ""
@@ -317,7 +321,7 @@ component App
   // screens too, and Profile marks the profile's (Direction and Details mark themselves).
   derive inRecord = nav.tab == "bank"
   derive inSystem = nav.tab == "publicPage"
-  derive recordAt = stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
+  derive recordAt = top(nav).name == "skills" ? "skills" : stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
   // The open questions about two roles that both say Present, read while Experience is shown.
   resource overlaps = loadOverlaps() when onExperience as shape Overlap[] else empty()
   // Slow work started here is in the activity list at once: each write that asks for work reads the list again.
@@ -522,6 +526,13 @@ component App
   // Record's second line. Each screen opens over Experience; Direction and Details open over the profile, as they
   // always have, so saving them returns there.
   action goRecord(name: string)
+    if name == "bank"
+      pick("bank")
+    else
+      goRecordScreen(name)
+  // Another Record screen than Experience. A mark held on the Skills screen is sent first (Experience's pick sends it itself).
+  action goRecordScreen(name: string)
+    sendSkillHeld()
     if name == "direction"
       openDirection()
     else if name == "details"
@@ -530,8 +541,8 @@ component App
       nav = push(select(nav, "bank"), "/profile")
     else if name == "sources"
       nav = push(select(nav, "bank"), "/sources")
-    else
-      pick("bank")
+    else if name == "skills"
+      nav = push(select(nav, "bank"), "/record/skills")
   // System's second line: the Public page and the machine.
   action goSystem(name: string)
     if name == "system"
@@ -1092,6 +1103,10 @@ component App
               if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
                 column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
                   ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine)
+              if e.name == "skills"
+                column navigationKey=`${e.id}` navigationScroll="skills-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="skills-scroll" flex=1 min-height=0
+                    SkillsScreen(list=skillsList, failedToLoad=failed(skillsList), held=heldSkill, heldMark=heldSkillMark, heldName=heldSkillName, sent=sentMarks, error=skillError, opened=openSkill, reviewing=pending(skillsReviewed), wide=(viewport.width >= lookNarrow()), mark=markSkillTap, undo=undoSkill, review=reviewSkillList, toggle=toggleSkillFacts, retry=retrySkills)
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0

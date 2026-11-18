@@ -187,9 +187,11 @@ What makes the studio write unsent resumes again (each changes what a resume is 
 
 What does not: adding a project to a role while it holds no fact, What I learned, where a side project lives, changing
 a role's location, setting where a field comes from, a verdict on a line of How you work, a suggestion not kept, an
-answer of "There was none" or "I don't know", and a Save that changes nothing. The studio waits 15 minutes after the
-last change by hand, the last Keep or used result, and the last answer to a question, so one sitting of edits causes
-one rewrite.
+answer of "There was none" or "I don't know", a skill's mark, the review of the skills list, and a Save that changes
+nothing. A skill's mark and the review write no resume again; once the list is reviewed, each unsent resume's Skills
+line is written again from the list, with no model, once no mark has been saved for 2 minutes (section 9). The studio waits 15 minutes after the last
+change by hand, the last Keep or used result, and the last answer to a question, so one sitting of edits causes one
+rewrite.
 
 How the record is used when a resume or a message is written: a project of a role is context for its facts, never
 evidence. Numbers that no fact holds are left out of what the writer is given, and a number on a resume must stand in a
@@ -223,3 +225,36 @@ What stage 2 adds to Experience:
   files the facts in a new project and leaves their role as it was. A suggested
   result is shown on the kept project for the owner to use or leave out. A title said not to be a project is not
   suggested again.
+
+## 9. Skills
+
+Record's second line has Skills after Experience (`/record/skills`, `skills.contract`). It is the skills list of the
+owner's resume rule 7, reviewed in one pass. At the top, one line says where the list stands: "Not reviewed yet. Until
+you review this list, skills you have not marked can appear on a resume.", or "Reviewed on 3 Mar 2026. 4 skills are
+new since then." Under it is one main action, "I have reviewed this list".
+
+- The list is in groups: skills new since the last review first, under their own head, then Tools, Languages,
+  Platforms, and the rest, which never go on a resume. A skill no fact names any more is not listed.
+- Each skill is one row: its name, how many facts name it and in how many roles in grey (a tap shows those facts under
+  the row, each a link to it), and its mark. On a window 640px wide or more the three stand in columns that line up
+  down the list (`LedgerRow` in `look.contract`); on a narrower one the name and the count share a line, and the marks
+  go under them. The marks are the three the list has: Confident, Not confident, Not marked.
+- A mark is one tap on a word. As an answer on Home, it is held for 8 seconds with Undo, then saved; it is also saved
+  when another skill is marked, when the list is reviewed, or when the screen is left. A tap on the mark a skill has
+  does nothing and writes nothing.
+- Where Home asks about a skill, a mark here is that question's answer, so the two always agree.
+- A review is refused, in words, while no tool, language or platform is marked Confident.
+- Marks and the review write no resume again (section 8). Once the list is reviewed, they make the Skills lines of
+  unsent resumes due: the worker writes each one again from the list, with no model, and prints it, once no mark has
+  been saved for 2 minutes, so a sitting of marks prints each resume once. A resume the owner edited is left as it is,
+  and one being written is done after it is written. Each job is done on its own: one that cannot be done is tried 3
+  times, a minute and then two apart, and then left out, and its page says so. The old PDF is dropped with the old
+  line, so it is never older than the text; a PDF that could not be printed is tried once more, and after that it is
+  printed when it is opened.
+- While the lines are due, one quiet line on Skills says so: "Resumes that are not sent get the new list in about 2
+  minutes.", or, after 5 minutes of waiting for a resume being written, that they wait for it. A job's page says it of
+  its own resume: "Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its
+  PDF." Opening its PDF, or marking it applied, writes that one job's line first. It is no row in Activity: the work
+  itself takes seconds.
+- "Not marked" is sent as its word; an empty mark changes nothing. The review carries a mark only while one is held,
+  and a refused review keeps the held mark on screen.

@@ -91,18 +91,18 @@ test('real tools written in lower case are tools, and so is a product name that 
 
 test('marking a few skills is not a review, and a review needs one skill the person is confident in', () => {
   // A partial save: one mark, and the list is still not reviewed, so skills not yet marked still appear.
-  expect(markSkills([{ name: 'Kafka', mark: 'not-confident' }], false, 1500)).toEqual({ marked: 1 });
+  expect(markSkills([{ name: 'Kafka', mark: 'not-confident' }], false, 1500)).toMatchObject({ marked: 1 });
   expect(reviewed()).toBe(false);
   expect(resumeSkills(POSTING, 2)).toEqual(['Go', 'AWS', 'PostgreSQL', 'TypeScript']);
   // A review with no confident tool, language or platform is refused, and nothing in the request is saved.
-  expect(markSkills([{ name: 'Go', mark: 'not-confident' }, { name: 'code review', mark: 'confident' }], true, 1600)).toEqual({ marked: 0, refused: NONE_CONFIDENT });
+  expect(markSkills([{ name: 'Go', mark: 'not-confident' }, { name: 'code review', mark: 'confident' }], true, 1600)).toMatchObject({ marked: 0, refused: NONE_CONFIDENT });
   expect(NONE_CONFIDENT).toBe('Mark at least one tool, language or platform as one you are confident in before you confirm the list. Nothing was saved.');
   expect(reviewed()).toBe(false);
   expect(allSkills().find((s) => s.name === 'Go')!.mark).toBe('');
-  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, 1700)).toEqual({ marked: 1 });
+  expect(markSkills([{ name: 'Go', mark: 'confident' }], true, 1700)).toMatchObject({ marked: 1 });
   expect(reviewed()).toBe(true);
   // After the review, a change that would leave nothing to show is refused too: the Skills section is never emptied.
-  expect(markSkills([{ name: 'Go', mark: 'not-confident' }], false, 1800)).toEqual({ marked: 0, refused: NONE_CONFIDENT });
+  expect(markSkills([{ name: 'Go', mark: 'not-confident' }], false, 1800)).toMatchObject({ marked: 0, refused: NONE_CONFIDENT });
   expect(resumeSkills(POSTING, 2)).toEqual(['Go']);
   expect(withSkills('# Avery Lindqvist\n\n## Skills\n\nKafka, Go\n', POSTING, 2)).toContain('## Skills\n\nGo');
 });
