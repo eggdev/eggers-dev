@@ -10,6 +10,7 @@ import { db, type RoleRow } from './db.ts';
 import { ask } from './llm.ts';
 import { numbersIn } from './metrics.ts';
 import { setStage } from './activity.ts';
+import { handWrote } from './raised.ts';
 import { factRef, levelOf } from './tree.ts';
 
 // Suggestions are offered on a role with at least this many facts in Day to day.
@@ -194,6 +195,8 @@ export function keepProposal(id: number, b: Record<string, unknown>, now: number
     // The result stays a suggestion for the owner to confirm; one not among the kept facts is dropped.
     const result = ids.includes(p.result_fact) ? p.result_fact : 0;
     db.query("UPDATE project_proposals SET status = 'kept', project_id = ?, title = ?, fact_ids = ?, result_fact = ?, decided_at = ? WHERE id = ?").run(project, title, JSON.stringify(ids), result, now, id);
+    // The facts filed change what a resume is written from: the rewrite of unsent resumes waits, as after a hand edit.
+    handWrote(now);
   }).immediate();
   return { ok: true, project };
 }
@@ -213,7 +216,8 @@ export function decideResult(id: number, use: boolean, now: number): Decided {
   // Only a fact still in the project can be its result.
   if (use && fact!.project_id !== p.project_id) return no('That fact is no longer in this project, so it cannot be its result.', 409);
   db.transaction(() => {
-    if (use) db.query("UPDATE projects SET result = ? WHERE id = ? AND result = ''").run(fact!.text, p.project_id);
+    // The project's result is given to a resume's writer: the rewrite waits, as after a hand edit.
+    if (use && db.query("UPDATE projects SET result = ? WHERE id = ? AND result = ''").run(fact!.text, p.project_id).changes > 0) handWrote(now);
     db.query('UPDATE project_proposals SET result_state = ?, decided_at = ? WHERE id = ?').run(use ? 'used' : 'declined', now, id);
   })();
   return { ok: true, project: p.project_id ?? undefined };

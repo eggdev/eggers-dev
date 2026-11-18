@@ -3,16 +3,20 @@
 // own process id. It never prints a PDF (--stub-github) and never asks a model. Everything in the database is invented.
 // What it proves: answering a raised question, or marking a skill, changes no stored resume by itself; a raised
 // question stays open until it is answered here; a review of the skills list needs to be asked for, and can be refused.
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { startServer } from './testserver.ts';
 import { OLD_RESUME, oldDatabase } from './oldschema.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'egg-routes-')), file = join(dir, 'egg.db');
 const SECOND = '# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Senior Engineer, Quillfeather Labs\nJan 2016 – Feb 2021\n- Rebuilt the quoting API.\n\n## Skills\nGo, TypeScript, synergy';
 let server: ReturnType<typeof Bun.spawn> | undefined, base = '';
+// A test that runs past its time is stopped, and the server it started with it, which fails every test after it. On a
+// machine busy with another test run the requests take longer: each test has a minute.
+setDefaultTimeout(60_000);
 
 beforeAll(async () => {
   oldDatabase(file);
@@ -23,15 +27,8 @@ beforeAll(async () => {
     .run(JSON.stringify({ verdict: '', requirements: [], strengths: [], risks: [], changes: [], gaps: [] }), SECOND);
   d.run("INSERT INTO roles (id, company, title, start, end, standing) VALUES (4, 'Lantern Notes', 'Founder', '2023-06', '', 'own')");
   d.close();
-  // A spare port: one the system hands out, freed again for the server.
-  const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') }), port = probe.port;
-  await probe.stop(true);
-  base = `http://127.0.0.1:${port}`;
-  server = Bun.spawn(['bun', 'server.ts', '--stub-github'], { cwd: resolve(import.meta.dir, '..'), stdout: 'ignore', stderr: 'ignore',
-    env: { ...process.env, DB: file, EGG_INBOX: join(dir, 'inbox'), HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'test' } });
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(`${base}/health`)).ok) return; } catch { /* not up yet */ } await Bun.sleep(100); }
-  throw new Error('The test server did not start.');
-}, 30_000);
+  ({ base, server } = await startServer({ DB: file, EGG_INBOX: join(dir, 'inbox') }));
+}, 90_000);
 // Only the process started above is stopped, by its own id.
 afterAll(async () => { server?.kill(); await server?.exited; rmSync(dir, { recursive: true, force: true }); });
 
@@ -192,7 +189,7 @@ test('a verdict on a line that does not hold, a suggestion request on a small ro
   expect((await call('GET', '/roles/1/proposals')).body).toEqual({ proposals: [] });
 });
 
-test('suggestions asked for on a role with 6 facts in Day to day: stored through the checks, kept, and the signature unchanged', async () => {
+test('suggestions asked for on a role with 6 facts in Day to day: stored through the checks, and kept with each fact in its role', async () => {
   const facts: string[] = [];
   for (let i = 0; i < 6; i++) facts.push((await call('POST', '/facts', { roleId: 2, text: `Ran the invented review number ${i}.` })).body.id);
   expect(await call('POST', '/roles/2/propose')).toMatchObject({ status: 200 });

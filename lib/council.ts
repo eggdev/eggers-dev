@@ -37,7 +37,7 @@ const READING = { type: 'object', additionalProperties: false, required: ['score
   problems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['quote', 'why', 'fix'], properties: { quote: { type: 'string' }, why: { type: 'string' }, fix: { type: 'string' } } } } } };
 const REVISED = { type: 'object', additionalProperties: false, required: ['resume', 'changes', 'questions'], properties: { resume: { type: 'string' }, changes: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } } } };
 
-const read = (seat: (typeof SEATS)[number], resume: string, posting: string, cwd: string, wishes: string) => ask<Reading>({ cwd, schema: READING, timeoutMs: 10 * 60_000, model: seat.model(),
+const read = (seat: (typeof SEATS)[number], resume: string, posting: string, cwd: string, wishes: string, context: string) => ask<Reading>({ cwd, schema: READING, timeoutMs: 10 * 60_000, model: seat.model(),
   prompt: `${seat.brief}
 
 Score the resume from 1 to 10 for this posting, from your seat:
@@ -56,7 +56,7 @@ Job titles, employers, dates, places, the labels beside the dates (Contract, Par
 
 Score the page, not the candidate. Whether the person has what the posting asks is measured elsewhere, as their fit. A requirement the page does not show (a language, a clearance, years of management) is not a problem with the resume and must not lower your score: no rewrite can add it. Lower your score only for what the page does badly with what it has: a weak or vague line, the wrong order, a strong point buried, wording that needs a second read. The same holds for the person's own wishes below, where they give any: score the page as written within them.${wishes ? `\n\nThe person's own wishes for their resume:\n<wishes>\n${wishes}\n</wishes>` : ''}
 
-${SIGNAL}
+${SIGNAL}${context ? `\n\n${context}` : ''}
 
 ${WRITING}
 
@@ -79,7 +79,7 @@ ${seat.model().startsWith('gpt') ? masked(resume) : resume}
 // A reader outside this machine's own model gets the resume without the name and contact line.
 const masked = (resume: string) => { const lines = resume.split('\n'), at = lines.findIndex((l) => /^##\s/.test(l)); return at < 0 ? resume : ['# [Name]', '[location and contact details]', '', ...lines.slice(at)].join('\n'); };
 
-const revise = (resume: string, readings: { seat: string; r: Reading }[], posting: string, bank: string, limits: string, cwd: string, wishes: string, short = '') => ask<{ resume: string; changes: string[]; questions: string[] }>({ cwd, schema: REVISED, timeoutMs: 15 * 60_000, model: REVISER(),
+const revise = (resume: string, readings: { seat: string; r: Reading }[], posting: string, bank: string, limits: string, cwd: string, wishes: string, context: string, short = '') => ask<{ resume: string; changes: string[]; questions: string[] }>({ cwd, schema: REVISED, timeoutMs: 15 * 60_000, model: REVISER(),
   prompt: `You are revising a resume written for one job posting, after three readers reviewed it. Fix what they flagged and return the whole resume.
 
 Rules that outrank the readers:
@@ -93,7 +93,7 @@ Rules that outrank the readers:
 - The rules below outrank the readers and the person's wishes alike. Where a reader asks for something a rule forbids, leave it and do not make the change.
 ${wishes ? `- The person's own wishes for their resume outrank the readers, and set emphasis only. Keep what they ask to keep (an earlier career they value, a line of scope under a title, what leads each role), at the weight they give it, as far as the rules below allow. Keeping something is not leading with it: the Summary opens on the work that answers this posting, and an earlier career stays a short entry in its place in the order. Their wishes add no facts: every line still needs the bank.\n<wishes>\n${wishes}\n</wishes>` : ''}
 
-${SIGNAL}
+${SIGNAL}${context ? `\n\n${context}` : ''}
 
 ${METRICS}
 
@@ -134,14 +134,15 @@ const clamp = (n: number) => Math.max(1, Math.min(10, Math.round(n * 2) / 2));
 
 // `most` is how many rewrites it may make. With 0 the readers only score the text, and it comes back as it went in
 // (for a resume the person edited, which is never rewritten).
-export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES): Promise<{ resume: string; review: Review }> {
+// `context`: what a project of a role is, and "[number]" (CONTEXT in lib/writing.ts), when the bank sends either; '' when not.
+export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES, context = ''): Promise<{ resume: string; review: Review }> {
   let resume = draft.trim(), best = { resume, score: 0, seats: [] as Seat[], changes: [] as string[], parser: -1 };
   const changes: string[] = [], history = SEATS.map(() => [] as number[]);
   let questions: string[] = [];
   const done = (rounds: number) => ({ resume: best.resume, review: { score: best.score, rounds, passed: passes(best.score, best.seats), ...(best.parser >= 0 ? { parser: best.parser } : {}), seats: best.seats.map((s, i) => ({ ...s, scores: history[i] })), changes: best.changes, questions } });
   for (let rewrites = 0; ; rewrites++) {
     const readings = await Promise.all(SEATS.map(async (s) => {
-      try { return { seat: s.seat, model: named(s.model()), r: await read(s, resume, posting, cwd, wishes).catch(() => read(s, resume, posting, cwd, wishes)) }; }
+      try { return { seat: s.seat, model: named(s.model()), r: await read(s, resume, posting, cwd, wishes, context).catch(() => read(s, resume, posting, cwd, wishes, context)) }; }
       catch (e) { return { seat: s.seat, model: named(s.model()), r: undefined, why: (e as Error).message }; }
     }));
     const seats: Seat[] = readings.map((x, i) => {
@@ -160,7 +161,7 @@ export async function council(draft: string, posting: string, bank: string, limi
     if ((passes(score, seats) && ready) || rewrites >= most) return done(rewrites);
     const heard = readings.filter((x): x is typeof x & { r: Reading } => x.r !== undefined).map((x) => ({ seat: x.seat, r: x.r }));
     const short = p && !ready ? `\n\nA rule-based score of the page stands at ${p.score} of 100 and must reach ${REQUIRED}. What holds it down:\n${p.notes.map((n) => `- ${n}`).join('\n')}` : '';
-    const next = await revise(resume, heard, posting, bank, limits, cwd, wishes, short);
+    const next = await revise(resume, heard, posting, bank, limits, cwd, wishes, context, short);
     if (next.resume.trim() === '') return done(rewrites);
     resume = next.resume.trim();
     changes.push(...next.changes.map((c) => c.trim()).filter(Boolean));

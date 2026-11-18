@@ -1,7 +1,7 @@
 // `bun test lib`: projects proposed for a role (lib/propose.ts). The model is a stand-in (fakeAsk): no model is ever
 // asked. What it proves: every check drops a proposal that fails it, never repairing it by a guess; Keep checks again,
-// marks a proposal whose facts moved as stale and applies nothing of it; Keep files the facts and leaves their role,
-// the record's signature and every resume as they were; a result is written only when the owner says so; rejected
+// marks a proposal whose facts moved as stale and applies nothing of it; Keep files the facts and leaves their role
+// and every stored resume as they were; a result is written only when the owner says so; rejected
 // titles are sent with the next request. Everything is invented.
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { db, fact, role, seed } from './scratch.ts';
@@ -81,7 +81,7 @@ test('one request: the stand-in model is asked once, what passes is stored, and 
   expect(openProposalRoles()).toEqual([{ role: 4, n: 1, name: 'Head of Platform at Fernway' }]);
 });
 
-test('Keep files the facts in a new project and leaves their role, the signature and every resume as they were; the result waits for the owner', async () => {
+test('Keep files the facts in a new project and leaves their role and every stored resume as they were; the result waits for the owner', async () => {
   db.run("INSERT INTO jobs (id, posting, title, company, status, resume, created_at, bank_sig, edited, outcome) VALUES (1, 'A posting.', 'Engineer', 'Initech', 'done', '# A resume', 1, 'x', 0, '')");
   fakeAsk(() => ({ projects: [{ title: 'Cloud move', facts: [k(0), k(1), k(2)], result: k(1) }] }));
   await proposeFor(4, '.', () => now);
@@ -93,7 +93,9 @@ test('Keep files the facts in a new project and leaves their role, the signature
   expect(db.query('SELECT role_id, title, origin, result FROM projects WHERE id = ?').get(project)).toEqual({ role_id: 4, title: 'Cloud move', origin: `proposal:${p}`, result: '' });
   expect((db.query('SELECT id FROM facts WHERE project_id = ? ORDER BY id').all(project) as { id: number }[]).map((f) => f.id)).toEqual([ids[0], ids[1], ids[2]]);
   expect(db.query('SELECT role_id FROM facts ORDER BY id').all()).toEqual(roles);
-  expect(bankSignature()).toBe(sig);
+  // The signature moves (a resume's writer is given the project, stage 3), and the rewrite waits for the 15-minute hold;
+  // no stored resume changes now.
+  expect(bankSignature()).not.toBe(sig);
   expect(db.query('SELECT resume, resume_status FROM jobs').all()).toEqual(resume);
   // The result is the owner's to confirm.
   expect(decideResult(p, true, now)).toEqual({ ok: true, project });

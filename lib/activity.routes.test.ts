@@ -1,24 +1,22 @@
 // `bun test lib`: the four routes of the activity list, asked over HTTP of a real `server.ts` on a throw-away database.
-// The server is started here on a spare local port with --stub-github, which also gives it the test-only route that
+// The server is started here on a port the system chooses (lib/testserver.ts) with --stub-github, which also gives it the test-only route that
 // moves a piece of work as the worker would (POST /test/work), and is stopped by its own process id. No model is
 // asked. Everything in the database is invented.
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { startServer } from './testserver.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'egg-activity-')), file = join(dir, 'egg.db');
 let server: ReturnType<typeof Bun.spawn> | undefined, base = '';
+// A test that runs past its time is stopped, and the server it started with it, which fails every test after it. On a
+// machine busy with another test run the requests take longer: each test has a minute.
+setDefaultTimeout(60_000);
 
 beforeAll(async () => {
-  const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') }), port = probe.port;
-  await probe.stop(true);
-  base = `http://127.0.0.1:${port}`;
-  server = Bun.spawn(['bun', 'server.ts', '--stub-github'], { cwd: resolve(import.meta.dir, '..'), stdout: 'ignore', stderr: 'ignore',
-    env: { ...process.env, DB: file, EGG_INBOX: join(dir, 'inbox'), HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'test' } });
-  for (let i = 0; i < 100; i++) { try { if ((await fetch(`${base}/health`)).ok) return; } catch { /* not up yet */ } await Bun.sleep(100); }
-  throw new Error('The test server did not start.');
-}, 30_000);
+  ({ base, server } = await startServer({ DB: file, EGG_INBOX: join(dir, 'inbox') }));
+}, 90_000);
 // Only the process started above is stopped, by its own id.
 afterAll(async () => { server?.kill(); await server?.exited; rmSync(dir, { recursive: true, force: true }); });
 

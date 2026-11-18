@@ -2,7 +2,7 @@
 // token, the status, the Codex sign-in beside a real keeper on a fake store, and the stop on SIGTERM. The sign-in's
 // command is a fake; nothing here runs Codex, listens on a port or reaches the network.
 // Run from the repository root: `bun test cloud`.
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,9 +25,12 @@ const temp = () => {
   temps.push(dir);
   return dir;
 };
+// The tests here start and stop processes (a keeper, a sign-in, the app). On a machine busy with another test run that
+// takes longer than the 5-second default: each test and this cleanup have a minute.
+setDefaultTimeout(60_000);
 afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+}, 60_000);
 
 const target = () => {
   const root = temp();

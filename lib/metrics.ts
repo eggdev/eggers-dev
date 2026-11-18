@@ -32,6 +32,16 @@ const NOISE = [/\b(?:python|java|angular|node(?:\.js)?|react|vue|go|ruby|php|swi
   /\b\d+\/\d+\b/g,
   /\d[\d.,]*[kmb]?\+?\s*(?:[a-z-]+\s+){0,2}(?:tests?|test cases?|specs?|files?|endpoints?|commits?|pull requests?|prs|tickets?|lines? of code|loc)\b/g, /\d[\d.]*\s*%\s*(?:[a-z-]+\s+)?coverage\b/g, /\d+\s*days? ago\b/g];
 
+// The same noise for lib/numbers.ts, by kind and as spans of the text (the text keeps its length and case). `dates`:
+// calendar dates, quarters and years, and "3 days ago". `counts`: counts of tests, files, endpoints, commits and the like,
+// and coverage. The names among the patterns above (versions, ports, standards, ratios) are not given here:
+// lib/numbers.ts has its own, stricter rule for names.
+const NOISE_KINDS = { dates: [NOISE[3], NOISE[4], NOISE[5], NOISE[6], NOISE[7], NOISE[8], NOISE[12]], counts: [NOISE[10], NOISE[11]] };
+export const noiseSpans = (text: string, kinds: (keyof typeof NOISE_KINDS)[] = ['dates', 'counts']): [number, number][] => {
+  const lower = text.toLowerCase();
+  return kinds.flatMap((k) => NOISE_KINDS[k]).flatMap((re) => [...lower.matchAll(new RegExp(re.source, re.flags))].map((m) => [m.index!, m.index! + m[0].length] as [number, number]));
+};
+
 const WORDS: Record<string, string> = { two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12' };
 // Text with the noise gone and its numbers in one spelling: "12,000" as "12000", "1.2 million" as "1.2m", "40 percent" as "40%", "five" as "5".
 const plain = (text: string) => NOISE.reduce((s, re) => s.replace(re, ' '), text.toLowerCase().replace(/\bp\d{2,3}\b/g, ' percentile ').replace(/\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/g, (w) => WORDS[w]))

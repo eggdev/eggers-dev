@@ -1240,3 +1240,13 @@ test "projects are suggested for a role on request; one is kept, one edited then
   clock settle
   expect text "part-result" == "Moved 40 services in two quarters."
   expect tree missing "suggested-result"
+
+test "drafts left out because of a number with no fact behind it are said on the job, in plain words"
+  at "/job/3"
+  clock data
+  expect tree missing "doors-note"
+  request POST "/test/work" {"kind": "draft-messages", "id": 3, "to": "done", "note": "One draft was left out. It used a number your record does not hold."}
+  reload
+  clock data
+  expect text "doors-note" == "One draft was left out. It used a number your record does not hold."
+  expect tree missing "doors-error"

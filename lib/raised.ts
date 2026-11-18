@@ -67,6 +67,9 @@ export const lastAnswerAt = (): number => (db.query('SELECT max(answered_at) AS 
 // Hand edits in Experience (lib/record.ts) can change the bank's signature too, and one sitting of them lasts longer
 // than the worker's quiet time. When the owner last wrote to the record by hand (0 for never).
 export const lastHandWriteAt = (): number => (db.query('SELECT at FROM record_written WHERE id = 1').get() as { at: number } | null)?.at ?? 0;
+// Keeps the time of a hand write (lib/record.ts) or of a decision that changes the record (lib/propose.ts: Keep, and a
+// suggested result used), so the rewrite of unsent resumes waits for the sitting to end.
+export const handWrote = (now: number) => db.query('UPDATE record_written SET at = max(at, ?) WHERE id = 1').run(now);
 // What the rewrite of unsent resumes is held after: the later of the last answer and the last hand write.
 export const holdSince = (): number => Math.max(lastAnswerAt(), lastHandWriteAt());
 // Whether the worker may now queue resumes for a changed bank: the bank has been still for `quietMs`, and the

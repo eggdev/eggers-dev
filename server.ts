@@ -3,7 +3,7 @@
 // It has no sign-in: reach it only over the tailnet. `test` and `verify` run it on an empty database.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { extname, join } from 'node:path';
-import { bankSignature, db, type RoleRow, type SourceRow } from './lib/db.ts';
+import { bankSignature, db, profileSignature, type RoleRow, type SourceRow } from './lib/db.ts';
 import { direction, payFloor, saveDirection } from './lib/direction.ts';
 import { FIELDS, person, savePerson, withHeader } from './lib/person.ts';
 import { forget, messages, openQuestions, put, say } from './lib/talk.ts';
@@ -205,7 +205,8 @@ const LOCAL = 'http://127.0.0.1:8787'; // app.ts's default for API_BASE_URL
 const built = process.env.API_BASE_URL ?? '';
 const here = new URL(/^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(built) ? built : LOCAL);
 const hostname = process.env.HOST ?? here.hostname, port = Number(process.env.PORT ?? here.port);
-Bun.serve({ hostname, port, routes: {
+// PORT=0 asks the system for a free port (the tests do, so two runs never meet on one); the line below says which.
+const served = Bun.serve({ hostname, port, routes: {
   '/health': () => new Response('ok'),
   '/bank': { OPTIONS: preflight, GET: () => send(bank()) },
   // The record as one tree (lib/record.ts): roles, projects and facts with their references, and no story or evidence.
@@ -217,7 +218,7 @@ Bun.serve({ hostname, port, routes: {
       const facts = (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;
       // The page has its own title, so the document's first heading is left to the file (data/profile.md).
       return send({ status: p.status, note: p.note, body: p.body.replace(/^# .*\n+/, ''), gaps: p.gaps === '' ? [] : p.gaps.split('\n'), facts,
-        stale: p.body !== '' && p.signature !== bankSignature(),
+        stale: p.body !== '' && p.signature !== profileSignature(),
         written: p.updated_at === 0 ? '' : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(p.updated_at) });
     },
   },
@@ -228,7 +229,7 @@ Bun.serve({ hostname, port, routes: {
       const b = await req.json().catch(() => ({}));
       if (!str(b.body)) return send({ error: 'Enter the profile.' }, 400);
       const gaps = Array.isArray(b.gaps) ? b.gaps.map(str).filter(Boolean).join('\n') : '';
-      db.query("UPDATE profile SET status = 'done', note = '', body = ?, gaps = ?, signature = ?, updated_at = ? WHERE id = 1").run(str(b.body), gaps, bankSignature(), Date.now());
+      db.query("UPDATE profile SET status = 'done', note = '', body = ?, gaps = ?, signature = ?, updated_at = ? WHERE id = 1").run(str(b.body), gaps, profileSignature(), Date.now());
       return send({ ok: true });
     },
   },
@@ -784,4 +785,4 @@ Bun.serve({ hostname, port, routes: {
     },
   },
 } });
-console.log(`server.ts: http://${hostname}:${port}`);
+console.log(`server.ts: http://${hostname}:${served.port}`);

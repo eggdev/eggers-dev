@@ -70,3 +70,21 @@ export const ENTRIES = `Sections and entries:
 - Never write an entry with zero bullets. A role that earns no bullet is left out, or is named on the single line under "## Earlier experience", using its "earlier" text exactly. Items on that line are parted by "; ".
 - Size each entry by its relevance to this posting. The current role and the one before it get the most space. A role that ended 8 or more years ago, or that is outside the field of this posting, gets one bullet at most, or goes on the Earlier experience line. An unrelated earlier career is one item on that line, and is kept only if it shows leadership or explains a gap in the dates.
 - When a fact in the bank is ambiguous (who owned the work, what a number measured, which role it belongs to), leave it out and return it as a question for the person. Never smooth it over.`;
+
+// Said wherever context with numbers taken out is sent (lib/numbers.ts, redact): the resume's writer (in CONTEXT) and the
+// message drafts.
+export const NUMBER_MARK = '"[number]" stands where a number was left out because no fact holds it. Never print "[number]", and never put a number of your own in its place.';
+
+// What a project of a role is to the writer (stage 3 of the record as a tree): context for its facts, never evidence.
+// It goes with the bank wherever a model is given it (the writer, the council's readers and reviser, the skim's fix), and
+// only when the bank has a project of a role, a fact's details or a kept line to explain (lib/jobs.ts, contextRules).
+export const CONTEXT = `Projects and the details of a fact:
+- Some facts of a role are grouped in its "projects". A project's "name" groups its facts, and its "context" (the situation before, what the person did, the result, in the person's own words) explains them. Neither is evidence. Print nothing from a project's name or context unless one of the project's facts says it too, and never take a title, an employer or a date from a project: those come only from the entry and its roles. A project is never a heading or a sub-heading of its own, and never has dates of its own: its facts are bullets of its role.
+- A number is printed only when it stands in a fact: in its text, detail or metric, or in its "baseline" (the person's own answer about the number before), its "team" (how many worked on it) or its "own_part" (what the person did themselves). "own_part" also says how much of the work to claim: never claim more of it than that.
+- ${NUMBER_MARK}`;
+
+// The kept lines of "How you work" (lib/derived.ts), when they are given to a writer: they help choose, and are never printed.
+export const KEPT_LINES = 'Counted from the record and confirmed by the person. Not facts: never print one, never quote its numbers; use them only to choose which facts lead.';
+
+// What the person says they learned, given to the message drafts only (lib/outreach.ts), never to the resume writer.
+export const LEARNED = 'What the person says they learned, in their own words, and the background of each project whose facts carry this application. They may be said in the person’s voice ("I learned…"). They are not results, and no number from them is used unless one of the project’s facts has it.';

@@ -73,15 +73,23 @@ export function syncSkills(now: number): void {
       seen.set(raw.toLowerCase(), s);
     }
   }
-  db.transaction(() => {
-    db.run('UPDATE skills SET in_bank = 0, facts = 0');
-    for (const [key, s] of seen) {
-      // The spelling most facts use is the one shown.
-      const name = [...s.spellings].sort((a, b) => b[1] - a[1])[0][0];
-      db.query('INSERT OR IGNORE INTO skills (key, name, kind, added_at) VALUES (?, ?, ?, ?)').run(key, name, kindOf(name), now);
-      db.query('UPDATE skills SET name = ?, facts = ?, in_bank = 1 WHERE key = ?').run(name, s.n, key);
-    }
-  })();
+  // Only what differs is written, so a sync that finds the list as it is writes nothing (it runs each time Home or the
+  // questions are read, and every write looks like a change to the backup). What is stored is the same as before.
+  const stored = new Map((db.query('SELECT key, name, facts, in_bank FROM skills').all() as { key: string; name: string; facts: number; in_bank: number }[]).map((r) => [r.key, r]));
+  const writes: (() => void)[] = [];
+  for (const [key, s] of seen) {
+    // The spelling most facts use is the one shown.
+    const name = [...s.spellings].sort((a, b) => b[1] - a[1])[0][0], row = stored.get(key);
+    // Two processes can list the same new skill at once: the second one's insert takes the row the first made.
+    if (!row) writes.push(() => db.query('INSERT INTO skills (key, name, kind, added_at, facts, in_bank) VALUES (?, ?, ?, ?, ?, 1) ON CONFLICT (key) DO UPDATE SET name = excluded.name, facts = excluded.facts, in_bank = 1').run(key, name, kindOf(name), now, s.n));
+    else if (row.name !== name || row.facts !== s.n || row.in_bank !== 1) writes.push(() => db.query('UPDATE skills SET name = ?, facts = ?, in_bank = 1 WHERE key = ?').run(name, s.n, key));
+  }
+  // A skill no fact names any more is kept with its mark, set aside.
+  for (const row of stored.values()) if (!seen.has(row.key) && (row.facts !== 0 || row.in_bank !== 0)) writes.push(() => db.query('UPDATE skills SET in_bank = 0, facts = 0 WHERE key = ?').run(row.key));
+  // The rows are read before the lock, so two processes can both find a skill new and both try to add it. The write
+  // takes the lock first (immediate), so they write one after the other, and the second one's insert becomes an update
+  // of the row the first made (the upsert above): that makes the early read harmless.
+  if (writes.length > 0) db.transaction(() => { for (const w of writes) w(); }).immediate();
   const since = reviewedAt();
   raise('skill', since === 0 ? [] : allSkills().filter((s) => s.mark === '' && s.kind !== 'other' && s.added_at > since).map((s) => ({ key: `skill:${s.key}`, about: `skill:${s.key}`, data: { skill: s.key },
     text: `Your record now names ${s.name} as a skill. Could you defend it in an interview? It stays off your resumes until you say.`, choices: ['Yes, I am confident in it', 'No, leave it off my resumes'] })), now);

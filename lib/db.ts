@@ -191,15 +191,53 @@ for (const column of ['posted_at INTEGER NOT NULL DEFAULT 0', "salary TEXT NOT N
 }
 try { db.run('ALTER TABLE jobs ADD COLUMN applied_at INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 
-// Changes whenever anything the profile is written from changes: a fact's wording, result, skills,
-// category or filing, or a role's title, dates, kind of work, note or label. It is how a profile is known to be out of date.
-export const bankSignature = () => {
+// A value the person gave that is not one to print: an answer of "There was none" or "I don't know", typed or chosen,
+// in any case and with a straight or curly apostrophe. Such a value is never sent to a writer (lib/jobs.ts, bank) and
+// so does not count in the signature either. For the owner's own part (`own_part`) a bare "None" or "Nothing" is a real
+// answer, that they did none of it, and is kept. "0", "None of it" and "Nothing, it was new" are always kept.
+const NOTHING = /^(?:there (?:was|were) none|there wasn['’]?t (?:one|any)|there was not (?:one|any)|none|nothing|no baseline|no idea|(?:i )?(?:don['’]?t|do not) (?:know|remember)|not sure|unknown|not applicable|n\/?a|tbd|\?+|-|–|—)\.?$/i;
+const NONE = /^(?:none|nothing)\.?$/i;
+export const saidValue = (v: string | null | undefined, field = ''): string | undefined => {
+  const t = (v ?? '').trim();
+  if (t === '') return undefined;
+  if (field === 'own_part' && NONE.test(t)) return t;
+  return NOTHING.test(t) ? undefined : t;
+};
+// The facts filed in a project of their own role: a project the owner made or kept (not a repository's or a side
+// project's, which are rows of roles), whose role is the fact's role. By fact id.
+export const filedInProjects = () => db.query('SELECT f.id, f.project_id FROM facts f JOIN projects p ON p.id = f.project_id AND p.via_role IS NULL AND p.role_id = f.role_id ORDER BY f.id').all() as { id: number; project_id: number }[];
+// The projects of roles that hold a filed fact, as a writer is given them: the name and the parts that are set.
+export const filedProjects = (ids: number[]) => ids.length === 0 ? [] : (db.query(`SELECT id, role_id, title, situation, did, result FROM projects WHERE id IN (${ids.map(Number).join(',')}) ORDER BY id`).all() as
+  { id: number; role_id: number; title: string; situation: string; did: string; result: string }[]).map((p) => ({ id: p.id, role_id: p.role_id, name: p.title.trim(), situation: saidValue(p.situation), what_i_did: saidValue(p.did), result: saidValue(p.result) }));
+// A fact's details as a writer is given them: baseline, team and own part, each only when it says something.
+export const factDetails = (f: { baseline?: string; team?: string; own_part?: string }) => ({ baseline: saidValue(f.baseline), team: saidValue(f.team), own_part: saidValue(f.own_part, 'own_part') });
+
+// What the profile is written from (lib/profile.ts): a fact's wording, result, skills, category or filing, and a role's
+// title, dates, kind of work, note or label. The profile does not read projects of roles or a fact's details.
+const recordParts = (): unknown[] => {
   const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all();
   const roles = db.query('SELECT id, company, title, start, end, standing, reach, part_of FROM roles ORDER BY id').all();
   // A role's note and label count only once one is set, so a bank that has none keeps the signature it had
   // before these columns existed, and no resume is written again for nothing.
   const said = db.query("SELECT id, note, label FROM roles WHERE note != '' OR label != '' ORDER BY id").all();
-  return new Bun.CryptoHasher('sha256').update(JSON.stringify(said.length ? [facts, roles, said] : [facts, roles])).digest('hex').slice(0, 24);
+  return said.length ? [facts, roles, said] : [facts, roles];
+};
+const hash = (parts: unknown[]) => new Bun.CryptoHasher('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 24);
+// How a profile is known to be out of date: it changes only for what the profile reads. On a record with no project of a
+// role filled or filed and no fact detail it is the same as bankSignature, so no stored profile turns stale at a deploy.
+export const profileSignature = () => hash(recordParts());
+
+// Changes whenever anything a resume is written from changes: what the profile reads, and also which facts are filed
+// in a project of their role, that project's name and parts, and a fact's baseline, team and own part. Those count
+// only once one is set, as the writer is given them: "There was none" and "I don't know" count as not set, and what
+// was learned, where a project lives and its source marks are never given, so they never count.
+export const bankSignature = () => {
+  const parts = recordParts();
+  const filed = filedInProjects();
+  const details = (db.query("SELECT id, baseline, team, own_part FROM facts WHERE baseline != '' OR team != '' OR own_part != '' ORDER BY id").all() as { id: number; baseline: string; team: string; own_part: string }[])
+    .map((f) => ({ id: f.id, ...factDetails(f) })).filter((f) => f.baseline !== undefined || f.team !== undefined || f.own_part !== undefined);
+  if (filed.length || details.length) parts.push({ filed, projects: filedProjects([...new Set(filed.map((f) => f.project_id))]), details });
+  return hash(parts);
 };
 
 // A role that came with a job title is taken to be an employer until the person says otherwise;

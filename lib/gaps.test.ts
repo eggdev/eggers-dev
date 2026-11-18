@@ -99,10 +99,12 @@ test('an answer writes exactly the one value its row names, and nothing else', (
   expect(db.query('SELECT result, did, situation FROM projects WHERE id = ?').get(p)).toEqual({ result: 'Schedulers stopped using paper.', did: '', situation: '' });
   const sig = bankSignature();
   expect(answer('record:baseline:1', 1, '', now, choiceAt('record:baseline:1', 1))).toBe('');
+  // "There was none" is kept as the answer, and is not a value a resume's writer is given: the signature is unchanged.
+  expect(bankSignature()).toBe(sig);
   expect(answer('record:own:1', 0, 'I designed the screens and wrote the front end.', now, choiceAt('record:own:1', 0))).toBe('');
   expect(db.query('SELECT baseline, own_part FROM facts WHERE id = 1').get()).toEqual({ baseline: 'There was none', own_part: 'I designed the screens and wrote the front end.' });
-  // A fact's baseline and own part are not read by the resume pipeline yet: the signature is unchanged.
-  expect(bankSignature()).toBe(sig);
+  // The own part is given to the writer (stage 3): the signature moves.
+  expect(bankSignature()).not.toBe(sig);
   syncRecordQuestions(now + 1);
   expect(open().map((q) => q.key)).toEqual([`record:part:${p}:did`]);
 });
@@ -151,13 +153,24 @@ test('a sync that finds nothing new writes nothing, for the record’s questions
   const { syncLinkedin } = await import('./linkedin.ts');
   const { raise } = await import('./raised.ts');
   const timelineNow = openRaised().filter((q) => q.kind === 'timeline').map((q) => ({ key: q.key, text: q.text, choices: q.choices, about: q.about, data: q.data }));
+  const { syncSkills } = await import('./skills.ts');
+  const skills = () => db.query('SELECT * FROM skills ORDER BY key').all();
+  const listed = skills();
+  expect(listed.length).toBeGreaterThan(2);
   const before = changes();
   syncRecordQuestions(now + 1);
   syncLinkedin(now + 1);
   raise('timeline', timelineNow, now + 1);
+  syncSkills(now + 1);
+  syncQuestions(now + 1);
   queue(now + 1);
   expect(changes() - before).toBe(0);
-  // (syncSkills in lib/skills.ts still rewrites the skills list on every sync: that file is not changed in this stage.)
+  // What the skills list stores is the same as before.
+  expect(skills()).toEqual(listed);
+  // A skill gone from every fact is set aside, and one added is listed, as before: only what differs is written.
+  db.run("UPDATE facts SET skills = 'Go' WHERE skills LIKE '%TypeScript%'");
+  syncSkills(now + 2);
+  expect(db.query("SELECT name, facts, in_bank FROM skills WHERE key IN ('typescript', 'go') ORDER BY key").all()).toEqual([{ name: 'Go', facts: 4, in_bank: 1 }, { name: 'TypeScript', facts: 0, in_bank: 0 }]);
 });
 
 test('a snoozed record question gives its place on Home to the next, and any open one can be snoozed', async () => {

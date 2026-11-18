@@ -128,3 +128,36 @@ test('the first start of the tree gives each project-like row one project, and c
   expect(first.tree.facts).toEqual([['F-0001', '1', ''], ['F-0002', '2', ''], ['F-0003', '1', '1'], ['F-0004', '', '2'], ['F-0005', '', '3']]);
   expect(second.tree).toEqual(first.tree);
 }, 60_000);
+
+// Stage 3: projects, the new fact fields and the kept lines reach the resume writer. A database as stage 2 left it
+// (a project of a role with a name, a situation and what was learned but no fact, a source mark, a kept verdict, an
+// open suggestion, a baseline of "There was none") keeps the signature the old rule gives, so nothing is queued.
+const stage2File = join(dir, 'stage2.db');
+const STAGE2_CHILD = `
+const { db, bankSignature } = await import('${lib}/db.ts');
+await import('${lib}/projects.ts');
+const { dueIn } = await import('${lib}/activity.ts');
+await import('${lib}/record.ts'); await import('${lib}/jobs.ts');
+if (!db.query("SELECT id FROM projects WHERE title = 'Planned work'").get()) {
+  db.run("INSERT INTO projects (role_id, title, situation, learned, lives, created_at) VALUES (1, 'Planned work', 'A plan in 3 parts.', 'Patience.', 'example.org', 1)");
+  db.run(\`UPDATE roles SET official = '{"title":"hr"}' WHERE id = 1\`);
+  db.run("INSERT INTO derived_lines (key, verdict, text, judged_at) VALUES ('led', 'kept', 'A line.', 1)");
+  db.run("INSERT INTO project_proposals (role_id, title, status, created_at) VALUES (1, 'A suggestion', 'open', 1)");
+  db.run("UPDATE facts SET baseline = 'There was none' WHERE id = 1");
+}
+const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all();
+const roles = db.query('SELECT id, company, title, start, end, standing, reach, part_of FROM roles ORDER BY id').all();
+const old = new Bun.CryptoHasher('sha256').update(JSON.stringify([facts, roles])).digest('hex').slice(0, 24);
+console.log(JSON.stringify({ sig: bankSignature(), old, due: dueIn(Date.now(), bankSignature), jobs: db.query('SELECT resume_status, bank_sig FROM jobs').all() }));
+`;
+
+test('a database as stage 2 left it keeps its signature when the writer is given projects, and nothing is queued', () => {
+  const before = oldTreeDatabase(stage2File);
+  const first = open(STAGE2_CHILD, stage2File), second = open(STAGE2_CHILD, stage2File);
+  for (const got of [first, second]) {
+    expect(got.sig).toBe(got.old);
+    expect(got.sig).toBe(before.sig);
+    expect(got.due).toBe(0);
+    expect(got.jobs).toEqual([{ resume_status: 'done', bank_sig: before.sig }]);
+  }
+}, 60_000);

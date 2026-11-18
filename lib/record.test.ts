@@ -1,5 +1,6 @@
 // `bun test lib`: the record's writes by hand (lib/record.ts) on a scratch database (lib/scratch.ts). What they prove:
-// filing a fact into a project of its own role leaves every resume as it is; a fact the owner filed survives a
+// filing a fact into a project of its own role moves the signature (a resume's writer is given it), and taking it out
+// puts it back; a fact the owner filed survives a
 // re-read of its source; a side project made by hand reads as a personal project on a resume; a mark clears when its
 // value changes, whoever changes it; a partial edit of a fact keeps its story; a reference is never handed out twice.
 // Every name, employer and number is invented.
@@ -15,19 +16,22 @@ const ok = <T extends { ok: boolean }>(d: T) => { if (!d.ok) throw new Error(JSO
 const marks = (id: number) => JSON.parse((db.query('SELECT official FROM roles WHERE id = ?').get(id) as { official: string }).official);
 const placed = (id: number) => db.query('SELECT role_id, project_id, status FROM facts WHERE id = ?').get(id);
 
-test('filing a fact into a project of its own role, and back to Day to day, keeps the signature', () => {
+test('filing a fact into a project of its own role moves the signature, and back to Day to day it is as it was', () => {
   const before = bankSignature();
+  // A project with no fact is not given to a resume's writer: no change.
   const p = ok(addProject({ title: 'Rebuilt dispatch', roleId: 1, when: '2022–2023', result: 'Schedulers stopped using paper.' }));
   expect(bankSignature()).toBe(before);
+  // Filed, the fact reaches the writer under its project, with the project's result as context (stage 3): it moves.
   ok(patchFact(1, { projectId: String(p.id) }));
   expect(placed(1)).toEqual({ role_id: 1, project_id: p.id, status: 'confirmed' });
-  expect(bankSignature()).toBe(before);
+  expect(bankSignature()).not.toBe(before);
   expect(readTree().facts.find((f) => f.id === '1')).toMatchObject({ roleId: '1', projectId: String(p.id) });
   ok(patchFact(1, { projectId: '' }));
   expect(placed(1)).toEqual({ role_id: 1, project_id: null, status: 'confirmed' });
   expect(bankSignature()).toBe(before);
-  // Deleting a project keeps its facts, in Day to day, and changes no resume either.
+  // Deleting a project keeps its facts, in Day to day, and the signature is as it was before the project.
   ok(patchFact(2, { projectId: String(p.id) }));
+  expect(bankSignature()).not.toBe(before);
   ok(deleteProject(p.id));
   expect(placed(2)).toMatchObject({ role_id: 1, project_id: null });
   expect(bankSignature()).toBe(before);

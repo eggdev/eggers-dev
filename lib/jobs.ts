@@ -12,21 +12,23 @@
 // (lib/entries.ts) and writes the Skills line from the person's own list (lib/skills.ts). What code finds and
 // cannot fix is kept as flags on the job (lib/checks.ts) or asked of the person (lib/raised.ts).
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { db, type RoleRow } from './db.ts';
+import { db, factDetails, filedInProjects, filedProjects, type RoleRow } from './db.ts';
 import { INBOX } from './ingest.ts';
 import { ask } from './llm.ts';
 import { council, type Review } from './council.ts';
 import { ASKED } from './db.ts';
 import { person, withHeader } from './person.ts';
-import { BULLETS, ENTRIES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
+import { BULLETS, CONTEXT, ENTRIES, KEPT_LINES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
+import { keptLines } from './record.ts';
 import { inData } from './paths.ts';
 import { draftScore } from './ats.ts';
 import { atsCheck, pdfPath, renderPdf } from './pdf.ts';
 import { direction, directionForMaterials, fitTest } from './direction.ts';
 import { TARGETS } from './profile.ts';
-import { fixable, flags, sigOf, syncQuestions, type Flag, type Written } from './checks.ts';
+import { fixable, flagContext, flags, projectNames, sigOf, syncQuestions, type Flag, type FlagContext, type Written } from './checks.ts';
 import { canonical, collapseEmpty, employers, repairEntries, type FactFinding } from './entries.ts';
 import { inventory } from './metrics.ts';
+import { quantities, redact } from './numbers.ts';
 import { answeredRaised } from './raised.ts';
 import { lf } from './resume.ts';
 import { skimLoop, type Skim } from './skim.ts';
@@ -81,9 +83,15 @@ const yearsSince = (end: string, now: number) => {
   return Math.max(0, (now - new Date(y, (m || 12) - 1, 28).getTime()) / (365.25 * 86_400_000));
 };
 
-// Fills each requirement's weight (0 to 1) and basis from the strongest role that supports it.
+// Fills each requirement's weight (0 to 1) and basis from the strongest role that supports it. A project's key
+// ("project:3", as the bank sends a project of a role) counts as the row it belongs to: its role, or for a repository's
+// or a side project's project, that row.
 export function weigh(requirements: Requirement[], roles: RoleRow[], now: number): Requirement[] {
   const byKey = new Map(roles.map((r) => [`role:${r.id}`, r]));
+  for (const p of db.query('SELECT id, role_id, via_role FROM projects').all() as { id: number; role_id: number | null; via_role: number | null }[]) {
+    const row = roles.find((r) => r.id === (p.via_role ?? p.role_id));
+    if (row) byKey.set(`project:${p.id}`, row);
+  }
   return requirements.map((q) => {
     if (q.coverage === 'none') return { ...q, weight: 0, basis: '' };
     const backing = (q.roles ?? []).map((k) => byKey.get(k)).filter((r): r is RoleRow => r !== undefined);
@@ -181,11 +189,25 @@ const metricFacts = () => db.query("SELECT id, role_id, metric FROM facts WHERE 
 // Every fact and role has a key, so a requirement can name its evidence. The metrics inventory (lib/metrics.ts)
 // goes with it. `lean` leaves out each fact's story and the inventory: the first reading judges coverage from
 // the facts and their results alone, and is quicker for it.
-function bank(lean = false) {
+// A project of a role (one the owner made or kept, lib/record.ts) joins its role's "projects" with its facts, which
+// leave the role's own list, so no fact is sent twice. Its name and the parts that are set are context for its facts,
+// never evidence (CONTEXT in lib/writing.ts); what was learned is never sent. A fact's baseline, team and own part are
+// sent when they say something (lib/db.ts, saidValue). A repository's or a side project's project keeps its shape.
+export function bank(lean = false) {
   const roles = allRoles(), now = Date.now();
-  const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills FROM facts ORDER BY id').all() as { id: number; role_id: number | null; kind: string; text: string; detail: string; metric: string; skills: string }[];
-  const shape = (f: (typeof facts)[number]) => ({ key: `fact:${f.id}`, kind: f.kind, text: f.text, detail: lean ? undefined : f.detail, metric: f.metric, skills: f.skills });
-  const of = (id: number | null) => facts.filter((f) => f.role_id === id).map(shape);
+  const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills, baseline, team, own_part FROM facts ORDER BY id').all() as
+    { id: number; role_id: number | null; kind: string; text: string; detail: string; metric: string; skills: string; baseline: string; team: string; own_part: string }[];
+  const shape = (f: (typeof facts)[number]) => ({ key: `fact:${f.id}`, kind: f.kind, text: f.text, detail: lean ? undefined : f.detail, metric: f.metric, skills: f.skills, ...factDetails(f) });
+  const filed = new Map(filedInProjects().map((f) => [f.id, f.project_id]));
+  const projects = filedProjects([...new Set(filed.values())]);
+  const of = (id: number | null) => facts.filter((f) => f.role_id === id && !filed.has(f.id)).map(shape);
+  // A part is sent with each number that no fact of the project holds strictly taken out ("[number]", lib/numbers.ts).
+  const own = (id: number) => projects.filter((p) => p.role_id === id).map((p) => {
+    const mine = facts.filter((f) => filed.get(f.id) === p.id), held = quantities(mine.map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part].join('. ')).join('. '));
+    const hide = (v: string | undefined) => (v === undefined ? undefined : redact(v, held));
+    const context = { situation: hide(p.situation), what_i_did: hide(p.what_i_did), result: hide(p.result) };
+    return { key: `project:${p.id}`, name: p.name, context: Object.values(context).some((v) => v !== undefined) ? context : undefined, facts: facts.filter((f) => filed.get(f.id) === p.id).map(shape) };
+  });
   const entries = employers(roles).map((g) => {
     const c = canonical(g), head = g.rows[0];
     return { heading: c.heading, dates: c.dates, previously: c.previously.length ? c.previously : undefined, note: c.note || undefined, earlier: c.earlier,
@@ -193,11 +215,24 @@ function bank(lean = false) {
       ended_years_ago: Math.floor(Math.min(...g.rows.map((r) => yearsSince(r.end, now)))),
       roles: g.rows.map((r) => ({ key: `role:${r.id}`, title: r.title, start: r.start, end: r.end || 'present', facts: of(r.id),
         // A project filed under an employer is nested in it, so it reads as work done in that job.
-        projects: g.children.filter((p) => p.part_of === r.id).map((p) => ({ key: `role:${p.id}`, name: p.company, start: p.start, end: p.end || 'present', reach: REACH_WORD[p.reach] || undefined, facts: of(p.id) })).filter((p) => p.facts.length > 0) })) };
+        // A row filed under it (a repository, or a role made part of this employer) brings its own projects of a role
+        // with it, so a fact filed in one is sent wherever the row is.
+        projects: [...own(r.id), ...g.children.filter((p) => p.part_of === r.id).map((p) => { const mine = own(p.id).filter((x) => x.facts.length > 0);
+          return { key: `role:${p.id}`, name: p.company, start: p.start, end: p.end || 'present', reach: REACH_WORD[p.reach] || undefined, facts: of(p.id), ...(mine.length ? { projects: mine } : {}) }; })]
+          .filter((p) => p.facts.length > 0 || ('projects' in p && (p.projects?.length ?? 0) > 0)) })) };
   }).filter((e) => e.roles.some((r) => r.facts.length > 0 || r.projects.length > 0));
   return { entries, general: [...of(null), ...facts.filter((f) => f.role_id !== null && !roles.some((r) => r.id === f.role_id)).map(shape)],
     metrics_inventory: lean ? undefined : inventory(metricFacts()).map((m) => ({ fact: `fact:${m.fact}`, role: m.role === null ? '' : `role:${m.role}`, kind: m.kind, metric: m.text })) };
 }
+
+// Whether the bank sends a project of a role (with a filed fact), and whether the writer is to be told what context is
+// and what "[number]" means: only then, so a record with no project, no fact detail and no kept line is written from
+// the same prompts as before projects of roles reached the writer.
+const projectsSent = () => filedInProjects().length > 0;
+const keptForWriter = () => keptLines().filter((l) => !l.key.startsWith('learned:'));
+const detailsSaid = () => (db.query("SELECT baseline, team, own_part FROM facts WHERE baseline != '' OR team != '' OR own_part != ''").all() as { baseline: string; team: string; own_part: string }[])
+  .some((f) => Object.values(factDetails(f)).some((v) => v !== undefined));
+const contextRules = () => (projectsSent() || detailsSaid() || keptForWriter().length > 0 ? CONTEXT : '');
 
 // The length budget for one resume. The limits for old and unrelated roles are rule 8; the skills cap is rule 7.
 const limits = (pages: number) => (pages === 1
@@ -219,7 +254,7 @@ The bank is everything you know about the person. Never invent, round up or infe
    - "coverage" is "strong" when the bank has specific work that directly shows it, "partial" when the bank shows something adjacent, shorter or smaller than asked, and "none" when the bank shows nothing.
    - "roles" lists the keys ("role:12") of the bank roles or projects whose work supports it, strongest first, at most four; [] when coverage is "none" or the support is general (education, a skills list).
    - "best" is the key of the single strongest piece of evidence in the bank for it: one fact ("fact:57"), or one role ("role:12") when no single fact carries it (years of experience, a title held). Choose the fact a hiring manager would find most convincing: recent, in production, with a measured result. "" when coverage is "none".
-   - "evidence" names the work that supports it in one sentence ("Led five engineers on the billing export at Acme, 2021 to now"), or says what is missing when coverage is "none". Be strict: years of experience are counted from role dates; a technology counts only where the bank shows it used.
+${projectsSent() ? `     "best" is never a project ("project:3"): name the project's strongest fact instead.\n` : ''}   - "evidence" names the work that supports it in one sentence ("Led five engineers on the billing export at Acme, 2021 to now"), or says what is missing when coverage is "none". Be strict: years of experience are counted from role dates; a technology counts only where the bank shows it used.
 
 3. "verdict": three or four plain sentences to the person: how well they fit, what carries the application, what is most likely to get it screened out, and whether it is worth applying.
    "strengths": up to five, the points a recruiter for this job would care most about, each tied to named work.
@@ -250,7 +285,7 @@ ${person().location ? `   The person lives in ${person().location}. Use that for
 
 ${SIGNAL}
 
-${WRITING}
+${contextRules() ? `${contextRules()}\n\n` : ''}${WRITING}
 
 ${withResume ? `${BULLETS}\n\n${SUMMARY}\n\n${ENTRIES}\n\n${METRICS}\n\n` : ''}The person is looking for these kinds of role: ${TARGETS.list.join('; ')}.
 ${directionForMaterials() ? `\nTheir own notes on their direction follow. In the resume they set emphasis only: what to lead with among the work that answers this posting, a line of scope under a title, which earlier work they value. They never override a rule above. Titles, employers and dates stay as the bank has them. The Summary keeps its three parts and its length. Only the allowed sections are written. An old or unrelated role keeps its limit of one bullet. Tense follows the role, and the rules on numbers hold. Where a note asks for something a rule forbids, follow the rule. The notes do not add facts: every line still needs the bank.\n<direction>\n${directionForMaterials()}\n</direction>\n` : ''}${direction() && direction() !== directionForMaterials() ? '\nPart of their notes is a personal lens they use to think about fit. It is not shown to you and must never appear in the resume.\n' : ''}
@@ -304,7 +339,7 @@ export class FactsError extends Error {
 // entry's heading and dates from the bank, an entry with no bullets moved to the Earlier experience line, and
 // the Skills line from the person's own list. Never used on a resume the person edited.
 function tidy(text: string, posting: string, pages: number, roles: RoleRow[]) {
-  const fixed = repairEntries(withHeader(lf(text).trim()), roles);
+  const fixed = repairEntries(withHeader(lf(text).trim()), roles, projectNames());
   return { ...fixed, resume: withSkills(collapseEmpty(fixed.resume, roles), posting, pages) };
 }
 
@@ -314,6 +349,9 @@ function brief(requirements: Requirement[], top: Requirement[], terms: string[])
   const word = { must: 'required', implied: 'implied', nice: 'preferred' } as const;
   const line = (q: Requirement) => `[${word[q.need] ?? 'preferred'}, ${q.coverage}] ${q.text}${q.best ? ` Strongest evidence: ${q.best} “${q.bestText}”` : q.coverage === 'none' ? ' The bank has nothing for this: do not claim it.' : ` ${q.evidence}`}`;
   const decided = answeredRaised('timeline').filter((q) => q.answer.trim() !== '');
+  // The lines of "How you work" the person kept: a block of their own, never in the bank and never keyed as facts.
+  // A line about what the person learned is never given to a resume's writer (what was learned is for messages only).
+  const kept = keptForWriter();
   return `The posting has already been read and scored. Return only "resume" (item 4), "changes" (item 5) and "questions". The other items are here so you read the posting the same way. Its terms, as found then, are: ${terms.join(', ') || 'none found'}.
 
 The posting map, as it was read: each requirement, how well the bank covers it, and the single strongest evidence for it. Answer each requirement the bank covers with that evidence, in a bullet of the role it belongs to.
@@ -324,7 +362,7 @@ ${top.map((q, i) => `${i + 1}. ${q.text}${q.best ? ` Strongest evidence: ${q.bes
 Each of these must be visibly answered in the top third of page one: in the Summary, or in the first two bullets of the first role. Where a requirement's strongest evidence belongs to a later role, answer it in the Summary and keep that work in its own role's bullets. Never answer one with something the bank does not show.
 
 The metrics inventory is the bank's "metrics_inventory". "Keeping the best metrics" above says how it binds you.
-${decided.length ? `\nWhat the person decided about their timeline. Follow it. Roles they asked to group go together on the Earlier experience line.\n${decided.map((q) => `- ${q.text} They answered: ${q.answer}`).join('\n')}\n` : ''}
+${decided.length ? `\nWhat the person decided about their timeline. Follow it. Roles they asked to group go together on the Earlier experience line.\n${decided.map((q) => `- ${q.text} They answered: ${q.answer}`).join('\n')}\n` : ''}${kept.length ? `\n${KEPT_LINES}\n${kept.map((l) => `- ${redact(l.text)}`).join('\n')}\n` : ''}
 "questions": what in the bank was too ambiguous to use (who owned the work, what a number measured, which role a fact belongs to), each as a question the person could answer from memory that names the work. At most three. [] when nothing was.${ASKED()}`;
 }
 
@@ -351,17 +389,18 @@ export async function compose(posting: string, pages: number, terms: string[], r
     timeoutMs: 25 * 60_000, model: process.env.EGG_JOB_MODEL ?? process.env.EGG_MODEL ?? 'opus',
     prompt: `${reading(posting, pages, supplied, true)}\n\n${brief(requirements, top, terms)}` });
   // Every fact code puts back on the way to the version that is kept is remembered, to tell the person.
-  const putBack = new Set<string>(), words = bankText(), skills = bankSkills(), whole = JSON.stringify(bank());
+  // What the context checks read from the record, read once for this resume (lib/checks.ts, flagContext).
+  const putBack = new Set<string>(), words = bankText(), skills = bankSkills(), whole = JSON.stringify(bank()), context = flagContext(), rules = contextRules();
   const fix = (text: string) => { const v = tidy(text, posting, pages, roles); for (const f of v.repaired) putBack.add(f.text); return v; };
   const draft = fix(r.resume);
   if (process.env.EGG_COUNCIL !== 'off') stage('Being reviewed, round 1');
   // Scored as it will be sent: with its header, its true headings and its Skills line. No posting term is pasted in.
   const reviewed = process.env.EGG_COUNCIL === 'off' ? { resume: draft.resume, review: undefined } : await council(draft.resume, posting, whole, limits(pages), INBOX, log, directionForMaterials(),
-    (text) => { const sent = tidy(text, posting, pages, roles).resume, t = termsOf(terms, sent, words, skills); return draftScore(sent, [...t.inResume, ...t.inBankOnly], pages, [...skills]); });
+    (text) => { const sent = tidy(text, posting, pages, roles).resume, t = termsOf(terms, sent, words, skills); return draftScore(sent, [...t.inResume, ...t.inBankOnly], pages, [...skills]); }, undefined, rules);
   const afterCouncil = fix(reviewed.resume);
   if (process.env.EGG_SKIM !== 'off') stage('Checking what a reader sees in six seconds');
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, WRITING, `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages) });
+    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages, context) });
   // The newest version first. One with an entry the bank does not have is passed over for the one before it.
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil, draft], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) throw new FactsError(versions[0].unresolved);
@@ -411,17 +450,17 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
   try { syncQuestions(Date.now()); } catch (e) { console.log(`  questions could not be checked: ${(e as Error).message}`); }
   const analysis: Analysis = job.analysis ? JSON.parse(job.analysis) : { ...EMPTY }, roles = allRoles(), whole = JSON.stringify(bank()), log = (l: string) => console.log(`  ${l}`);
   if (job.edited === 1) {
-    const read = await council(job.resume, job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, 0);
+    const read = await council(job.resume, job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, 0, contextRules());
     analysis.review = read.review;
     db.query('UPDATE jobs SET analysis = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(analysis), Date.now(), job.id);
     reflag(job.id);
     return read.review;
   }
-  const fix = (text: string) => tidy(text, job.posting, job.pages, roles), top = topRequirements(analysis.requirements);
-  const got = await council(withHeader(job.resume), job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials());
+  const fix = (text: string) => tidy(text, job.posting, job.pages, roles), top = topRequirements(analysis.requirements), context = flagContext(), rules = contextRules();
+  const got = await council(withHeader(job.resume), job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, undefined, rules);
   const afterCouncil = fix(got.resume);
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting: job.posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, WRITING, `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages) });
+    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages, context) });
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) { keepEarlier(job.id, new FactsError(versions[0].unresolved).message); return undefined; }
   analysis.review = got.review;
@@ -462,18 +501,25 @@ export async function publish(jobId: number, print = true): Promise<void> {
 
 // Takes a job's flags again without printing anything: for when the data a flag reads has changed (a role's
 // dates, a skill's mark, an answered question) and the resume's text has not.
-export function reflag(jobId: number): void {
+export function reflag(jobId: number, context?: FlagContext): void {
   const job = db.query('SELECT * FROM jobs WHERE id = ?').get(jobId) as JobRow | null;
   if (!job || job.resume.trim() === '' || job.analysis === '') return;
   const analysis = JSON.parse(job.analysis) as Analysis;
   let check: { lines: { label: string; ok: boolean; note: string }[] } | undefined;
   try { check = job.ats ? JSON.parse(job.ats) : undefined; } catch { /* an unreadable check is left out */ }
-  analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check });
+  analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check }, Date.now(), context);
   db.query('UPDATE jobs SET analysis = ? WHERE id = ?').run(JSON.stringify(analysis), jobId);
 }
 const openJobs = () => db.query("SELECT * FROM jobs WHERE resume != '' AND outcome = ''").all() as (JobRow & { edited: number; resume_status: string })[];
 // The same for every job not yet sent. A job that fails is skipped: a flag must never stop the others.
-export function reflagOpen(): void { for (const j of openJobs()) { try { reflag(j.id); } catch { /* skipped */ } } }
+// What the context checks read from the record is read once for the whole pass.
+export function reflagOpen(): void {
+  const jobs = openJobs();
+  if (jobs.length === 0) return;
+  let context: FlagContext | undefined;
+  try { context = flagContext(); } catch { /* each job then reads it itself */ }
+  for (const j of jobs) { try { reflag(j.id, context); } catch { /* skipped */ } }
+}
 
 // After the person marks their skills: every resume not yet sent that a model wrote gets its Skills line written
 // again from the list, with no model. A resume the person edited is left as it is. Returns the jobs whose

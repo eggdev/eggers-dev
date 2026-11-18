@@ -180,11 +180,22 @@ What makes the studio write unsent resumes again (each changes what a resume is 
 - Placing a repository.
 - Changing a role's title, employer, dates, employment type or whether its work reached users.
 - Adding, editing or deleting a fact (its words, story, number or category).
+- Filing a fact in a project of its role, or taking it out (also by Keep on a suggestion).
+- Renaming a project of a role that holds a fact, or changing its Result, Situation or What I did (also by an answer
+  to a question, or by "Use it as the result").
+- Giving a fact its number before, its team or the owner's own part.
 
-What does not: adding a project to a role, filing a fact in a project of its own role, editing a project's four
-parts, changing a role's location, setting where a field comes from, and a Save that changes nothing. The studio
-waits 15 minutes after the last change by hand (as after the last answer to a question), so one sitting of edits
-causes one rewrite.
+What does not: adding a project to a role while it holds no fact, What I learned, where a side project lives, changing
+a role's location, setting where a field comes from, a verdict on a line of How you work, a suggestion not kept, an
+answer of "There was none" or "I don't know", and a Save that changes nothing. The studio waits 15 minutes after the
+last change by hand, the last Keep or used result, and the last answer to a question, so one sitting of edits causes
+one rewrite.
+
+How the record is used when a resume or a message is written: a project of a role is context for its facts, never
+evidence. Numbers that no fact holds are left out of what the writer is given, and a number on a resume must stand in a
+fact of that employer. The lines of How you work the owner kept help the writer choose which facts lead, are sent
+without their numbers, and are never printed. A message to someone at a company may also use what the owner says they
+learned on the projects behind the application; a resume never does.
 
 Two known behaviours: a source read again gives its facts new reference numbers; a project deleted that came from a
 repository comes back, empty, when that repository is read again.
@@ -202,12 +213,13 @@ What stage 2 adds to Experience:
   most of them, managing or hiring in several roles, a skill that runs through several roles, how many projects have
   a measured result, and a lesson said on several projects. Each line says what it was counted from and shows its
   items on request. Below its minimum a line is not drawn; with no line the section is not drawn. The owner keeps a
-  line or says it is not true, and can undo either. A kept line is only stored and shown in this stage.
+  line or says it is not true, and can undo either. A kept line helps a resume's and a message's writer choose which
+  facts lead; it is never printed.
 - **Suggested projects.** On a role with 6 or more facts in Day to day, "Suggest projects" asks a model once. It is
   slow work, a row in Activity. A suggestion is a title, which facts belong to it, and which fact states the result;
   code checks each and drops one that fails, never repairing it. Each shows on the role as a suggestion with Keep,
   Edit and Not a project; Home has one item for a role with suggestions waiting. Keep checks again against the
   record as it is then: a suggestion whose facts moved is out of date and is not kept until the owner edits it. Keep
-  files the facts in a new project and leaves their role as it was, so no resume is written again. A suggested
+  files the facts in a new project and leaves their role as it was. A suggested
   result is shown on the kept project for the owner to use or leave out. A title said not to be a project is not
   suggested again.

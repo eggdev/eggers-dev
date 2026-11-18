@@ -16,7 +16,21 @@ export type Group = { key: string; company: string; rows: RoleRow[]; children: R
 export type Canon = { heading: string; dates: string; previously: string[]; note: string; earlier: string };
 // was: what the resume says. is: what the bank says. fixable: the bank's value can be put back with no guess.
 // loose: a dated line that is no entry, which may be a job or may not (a certificate): for a flag's weight.
-export type FactFinding = { kind: 'title' | 'employer' | 'dates' | 'unknown' | 'split'; entry: string; was: string; is: string; fixable: boolean; text: string; loose?: boolean };
+// project: an entry or a dated line that is one of the record's projects of a role, written as a heading of its own.
+// It changes only the words of the finding: what is accepted or refused is the same.
+export type FactFinding = { kind: 'title' | 'employer' | 'dates' | 'unknown' | 'split'; entry: string; was: string; is: string; fixable: boolean; text: string; loose?: boolean; project?: string };
+
+// A project of a role by name, with the role it belongs to in words ("Director of Engineering at Harborlight Systems").
+// The caller reads them from the record (lib/checks.ts, projectNames): this file reads no database.
+export type ProjectName = { name: string; role: string };
+// The project of a role a heading or a dated line names, when it names one: for the words of a finding only.
+function projectNamed(text: string, projects: ProjectName[]): ProjectName | undefined {
+  if (projects.length === 0) return undefined;
+  const t = norm(text.replace(/[*_#`]/g, ' ').replace(/\([^)]*\d{4}[^)]*\)/g, ' ').replace(/\b(?:[A-Z][a-z]{2} )?\d{4}\s*[–—-]\s*(?:(?:[A-Z][a-z]{2} )?\d{4}|present)\b/gi, ' ').replace(/[·,:]+\s*$/, ''));
+  return t === '' ? undefined : projects.find((x) => norm(x.name) === t);
+}
+const asProject = (shown: string, p: { name: string; role: string }) =>
+  `The resume has “${shown}” as a heading of its own. It is a project of ${p.role} in your record: its facts are bullets of that role, never an entry or a heading with dates of its own.`;
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 // "Acme", "ACME" and "Acme, Inc." are one employer. Nothing looser than this is merged: that would be a guess.
@@ -82,13 +96,17 @@ function groupOf(title: string, company: string, ranges: Range[], groups: Group[
 
 type Seen = { entry: Entry; group?: Group; findings: FactFinding[] };
 
-function examine(resume: Resume, groups: Group[]): { entries: Seen[]; earlier: { index: number; group?: Group; findings: FactFinding[] }[]; loose: FactFinding[] } {
+function examine(resume: Resume, groups: Group[], projects: ProjectName[] = []): { entries: Seen[]; earlier: { index: number; group?: Group; findings: FactFinding[] }[]; loose: FactFinding[] } {
   const taken = new Set<string>();
   // Every entry, in whatever section it was written, in the order of the page.
   const entries = [...resume.experience, ...resume.projects, ...resume.elsewhere].sort((a, b) => a.at.heading - b.at.heading).map((entry): Seen => {
     const all = [...entry.ranges, ...entry.previously.flatMap((p) => p.ranges)];
     const { group, by } = groupOf(entry.title, entry.company, all, groups);
-    if (!group) return { entry, findings: [{ kind: 'unknown', entry: entry.heading, was: entry.heading, is: '', fixable: false, text: `The resume has an entry “${entry.heading}”. Your record has no job or project by that name, or with that title and those dates.` }] };
+    if (!group) {
+      const p = projectNamed(entry.heading, projects);
+      return { entry, findings: [{ kind: 'unknown', entry: entry.heading, was: entry.heading, is: '', fixable: false, ...(p ? { project: p.name } : {}),
+        text: p ? asProject(entry.heading, p) : `The resume has an entry “${entry.heading}”. Your record has no job or project by that name, or with that title and those dates.` }] };
+    }
     if (taken.has(group.key)) return { entry, group, findings: [{ kind: 'split', entry: entry.heading, was: entry.heading, is: canonical(group).heading, fixable: false, text: `${group.company} appears as two entries. One employer is one entry, with its date ranges and titles together.` }] };
     taken.add(group.key);
     const findings: FactFinding[] = [], titles = new Set(group.rows.map((r) => norm(r.title))), canon = canonical(group);
@@ -115,8 +133,11 @@ function examine(resume: Resume, groups: Group[]): { entries: Seen[]; earlier: {
   });
   // A line with a date range that is not an entry's own dates line, a bullet under an entry, or the person's note.
   const notes = new Set(groups.map((g) => norm(canonical(g).note)).filter(Boolean));
-  const loose = resume.dated.filter((d) => !notes.has(norm(d.text))).map((d): FactFinding => ({ kind: 'unknown', entry: d.text, was: d.text, is: '', fixable: false, loose: true,
-    text: `The resume has a line with dates that is not under one of the jobs in your record: “${d.text}”. If it is a job, your record does not have it.` }));
+  const loose = resume.dated.filter((d) => !notes.has(norm(d.text))).map((d): FactFinding => {
+    const p = projectNamed(d.text, projects);
+    return { kind: 'unknown', entry: d.text, was: d.text, is: '', fixable: false, loose: true, ...(p ? { project: p.name } : {}),
+      text: p ? asProject(d.text, p) : `The resume has a line with dates that is not under one of the jobs in your record: “${d.text}”. If it is a job, your record does not have it.` };
+  });
   // No job at all, when the bank has jobs.
   if (resume.experience.length === 0 && groups.some((g) => g.rows.some((r) => r.title.trim() !== '' && r.standing !== 'personal'))) {
     loose.push({ kind: 'unknown', entry: '', was: '', is: '', fixable: false, text: 'The resume lists no job under Experience, and your record has jobs.' });
@@ -127,8 +148,9 @@ const findingsOf = (seen: ReturnType<typeof examine>) => [...seen.entries.flatMa
 
 // Every difference between a resume and the bank's roles: a title, employer or date that differs, an entry the
 // bank does not have, a dated line that is no entry, or no job at all.
-export function checkEntries(markdown: string, roles: RoleRow[]): FactFinding[] {
-  return findingsOf(examine(parseResume(markdown, roles.map((r) => r.company)), employers(roles)));
+// `projects`: the record's projects of roles, so a project written as a heading is named as one (words only).
+export function checkEntries(markdown: string, roles: RoleRow[], projects: ProjectName[] = []): FactFinding[] {
+  return findingsOf(examine(parseResume(markdown, roles.map((r) => r.company)), employers(roles), projects));
 }
 
 // For a resume a model wrote. Each entry that is certainly one of the bank's employers gets its heading, dates line,
@@ -136,8 +158,8 @@ export function checkEntries(markdown: string, roles: RoleRow[]): FactFinding[] 
 // where that changed a fact (not only its formatting). `unresolved` is everything else: an entry or a dated line
 // that matches nothing in the bank, the same employer twice, and anything the repaired text still gets wrong
 // when it is checked again. Nothing true can be put back for those, so the caller must not keep this version.
-export function repairEntries(markdown: string, roles: RoleRow[]): { resume: string; repaired: FactFinding[]; unresolved: FactFinding[] } {
-  const text = lf(markdown), resume = parseResume(text, roles.map((r) => r.company)), seen = examine(resume, employers(roles));
+export function repairEntries(markdown: string, roles: RoleRow[], projects: ProjectName[] = []): { resume: string; repaired: FactFinding[]; unresolved: FactFinding[] } {
+  const text = lf(markdown), resume = parseResume(text, roles.map((r) => r.company)), seen = examine(resume, employers(roles), projects);
   // Each change is a splice at a line number of the text as it was read. They are applied from the bottom of the
   // file up, so no change moves a line that a later one names, wherever the sections sit.
   const edits: { at: number; remove: number; insert: string[] }[] = [];
@@ -159,7 +181,7 @@ export function repairEntries(markdown: string, roles: RoleRow[]): { resume: str
   const lines = text.split('\n');
   // From the bottom up. Two changes at one line number: the insertion (which removes nothing) goes in last, so it lands above.
   for (const e of edits.sort((a, b) => b.at - a.at || b.remove - a.remove)) lines.splice(e.at, e.remove, ...e.insert);
-  const fixed = lines.join('\n'), first = findingsOf(seen), left = checkEntries(fixed, roles);
+  const fixed = lines.join('\n'), first = findingsOf(seen), left = checkEntries(fixed, roles, projects);
   const unresolved = [...first.filter((f) => !f.fixable), ...left.filter((f) => !first.some((x) => !x.fixable && x.text === f.text))];
   return { resume: fixed, repaired: first.filter((f) => f.fixable), unresolved };
 }

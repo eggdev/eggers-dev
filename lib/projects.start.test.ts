@@ -55,6 +55,26 @@ test('two processes that check the questions together never fail with a locked d
   }
 }, 180_000);
 
+// Two processes that list a skill no process has listed yet, at the same moment (Home in one, the worker in the other).
+// Neither may fail: not with a second row for the same skill, nor with a locked database.
+const SKILLS = `${OPEN} const { db } = await import('${lib}/db.ts'); const { syncSkills } = await import('${lib}/skills.ts');
+  try { syncSkills(Date.now()); } catch (e) { console.log('skills could not be listed: ' + e.message); }`;
+
+test('two processes that list a new skill together both list it, once', async () => {
+  const file = join(dir, 'skills.db');
+  oldTreeDatabase(file);
+  for (let round = 0; round < 6; round++) {
+    const d = new Database(file);
+    d.query("INSERT INTO facts (id, role_id, kind, text, skills, created_at) VALUES (?, 1, 'other', ?, ?, 1)").run(100 + round, `An invented fact ${round}.`, `Invented Tool ${round}`);
+    d.close();
+    const both = await Promise.all([start(file, SKILLS), start(file, SKILLS)]);
+    expect(both.map((b) => (b.exit === 0 && !b.out.includes('could not') ? 'listed' : `failed: ${b.err}${b.out}`))).toEqual(['listed', 'listed']);
+  }
+  const d = new Database(file, { readonly: true });
+  expect(d.query("SELECT key, facts FROM skills WHERE key LIKE 'invented tool%' ORDER BY key").all()).toEqual(Array.from({ length: 6 }, (_, i) => ({ key: `invented tool ${i}`, facts: 1 })));
+  d.close();
+}, 120_000);
+
 test('with nothing to do, giving rows their projects writes nothing', async () => {
   const file = join(dir, 'idle.db');
   oldTreeDatabase(file);

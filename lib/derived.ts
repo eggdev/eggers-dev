@@ -2,8 +2,8 @@
 // was counted from and names the items behind it. Below its rule's minimum a line is not drawn at all: a count from too
 // little reads as a claim. The owner keeps a line or says it is not true; a verdict can be undone. A line's key names
 // its finding (the two kinds of result, the skill, the phrase), so a different finding is asked afresh; the numbers in a
-// line are counted again each time it is shown, and are not part of its key. In this stage a kept line is stored and shown, nothing more:
-// it is never sent to a model.
+// line are counted again each time it is shown, and are not part of its key. A kept line that still holds is given to a
+// resume's and a message's writer to choose which facts lead, never as a fact (lib/record.ts, keptLines).
 import { db } from './db.ts';
 import type { MetricKind } from './metrics.ts';
 

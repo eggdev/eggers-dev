@@ -6,13 +6,15 @@
 // A flag never changes a resume. What code repairs in a resume a model wrote is done before this (lib/entries.ts).
 import { bullets } from './ats.ts';
 import { db, type RoleRow } from './db.ts';
-import { checkEntries, emptyEntries, employers, normCompany } from './entries.ts';
+import { checkEntries, emptyEntries, employers, normCompany, type ProjectName } from './entries.ts';
 import { syncLinkedin } from './linkedin.ts';
 import { inventory, kept, type FactLite } from './metrics.ts';
+import { NUMBER_TOKEN, redact, unsupported } from './numbers.ts';
+import { keptLines } from './record.ts';
 import { onAnswer, openRaised, raise, type Raised } from './raised.ts';
 import { parseResume, sentences, skimView, STANDARD, wordCount, type Resume } from './resume.ts';
 import type { Skim } from './skim.ts';
-import { skillProblems, syncSkills } from './skills.ts';
+import { allSkills, skillProblems, syncSkills } from './skills.ts';
 import { timeline, type Action, type Finding } from './timeline.ts';
 
 // high: a fact on the page disagrees with the bank. warn: a rule is broken. info: worth knowing.
@@ -38,10 +40,11 @@ function shownFindings(resume: Resume, roles: RoleRow[], now: number): Finding[]
 }
 
 // What the rules find in the resume's own text, measured against the bank. The same for a written and an edited resume.
-export function codeFlags(markdown: string, pages: number, now = Date.now()): Flag[] {
+export function codeFlags(markdown: string, pages: number, now = Date.now(), context: FlagContext = flagContext()): Flag[] {
   const roles = allRoles(), resume = parseResume(markdown, roles.map((r) => r.company)), out: Flag[] = [];
   // A dated line that is no entry may be a job the bank lacks, or a certificate: it is a warning, not a fact that is wrong.
-  for (const f of checkEntries(markdown, roles)) out.push({ kind: 'facts', severity: f.loose ? 'warn' : 'high', text: f.text });
+  // A project written as an entry or a heading with dates of its own is its own kind: the writer can put it right.
+  for (const f of checkEntries(markdown, roles, context.names)) out.push({ kind: f.project ? 'project-heading' : 'facts', severity: f.loose ? 'warn' : 'high', text: f.text });
   for (const heading of emptyEntries(resume)) out.push({ kind: 'zero-bullets', severity: 'warn', text: `“${heading}” has no bullets under it. Give it a bullet, or name it on the Earlier experience line instead.` });
   const k = kept(resume, inventory(metricFacts()), roles);
   if (k.dropped.length > 0) out.push({ kind: 'metrics-dropped', severity: 'warn', items: k.dropped.map((m) => m.text),
@@ -71,16 +74,70 @@ export function codeFlags(markdown: string, pages: number, now = Date.now()): Fl
   // The finding stays a flag for as long as the data shows it, also after the person answered its question.
   const waiting = new Set(openRaised().map((q) => q.key));
   for (const f of shownFindings(resume, roles, now)) out.push({ kind: 'timeline', severity: 'warn', text: `${f.text} ${waiting.has(f.key) ? 'A question about it is waiting for you.' : 'Give the job an end date, a label or a one-line note to settle it.'}` });
+  out.push(...contextFlags(resume, roles, context));
+  return out;
+}
+
+// Rule 9, a number is never invented, now that a writer is given context beside the facts: a project's name and parts
+// (lib/jobs.ts, bank) and the kept lines of "How you work" (brief). The numbers no fact holds are taken out of what the
+// writer is given ("[number]", lib/numbers.ts, redact), so this check is the simple one:
+// - `context-number`: a number in a bullet whose value stands in the context as stored (the name and parts of every
+//   project of a role in the record) and in no fact of the bullet's employer, with its story, metric, number before,
+//   team, own part and skills. In the summary any fact counts, and a count of years is left to the role dates. Only the
+//   value is compared (lib/numbers.ts, unsupported), so a flagged number is one no such fact holds in any form.
+// - `number-mark`: a resume that prints "[number]".
+// - `kept-line`: a bullet or summary that copies a kept line; one that says it in other words is not caught.
+// A number in neither the context nor the facts is not judged here.
+export type FlagContext = { context: string; names: ProjectName[]; lines: { key: string; text: string }[];
+  facts: { role_id: number | null; text: string; detail: string; metric: string; baseline: string; team: string; own_part: string; skills: string }[]; versions: string[] };
+// What these checks read from the record, read once: reflagOpen and compose take it once for every resume they check.
+export function flagContext(): FlagContext {
+  const projects = db.query("SELECT title, situation, did, result FROM projects WHERE via_role IS NULL AND role_id IS NOT NULL").all() as { title: string; situation: string; did: string; result: string }[];
+  const context = projects.map((p) => [p.title, p.situation, p.did, p.result].join(' ')).join(' ');
+  const lines = keptLines();
+  const names = projectNames();
+  if (context.trim() === '' && lines.length === 0) return { context: '', names, lines, facts: [], versions: [] };
+  const facts = db.query('SELECT role_id, text, detail, metric, baseline, team, own_part, skills FROM facts').all() as FlagContext['facts'];
+  return { context, names, lines, facts, versions: versionNames() };
+}
+// The record's projects of roles by name, with their role in words, for lib/entries.ts to name a project written as a
+// heading (it reads no database itself).
+export const projectNames = (): ProjectName[] => (db.query("SELECT p.title, r.title AS rtitle, r.company FROM projects p JOIN roles r ON r.id = p.role_id WHERE p.via_role IS NULL AND p.title != ''").all() as { title: string; rtitle: string; company: string }[])
+  .map((p) => ({ name: p.title.trim(), role: p.rtitle ? `${p.rtitle} at ${p.company}` : p.company }));
+// The person's tools, languages and platforms by name: a version-shaped number right after one is no count ("Node 20").
+export const versionNames = () => allSkills().filter((x) => x.kind !== 'other').map((x) => x.name);
+const plainWords = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const andList = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+export const MARK_TEXT = (where: string) => `${where} prints “${NUMBER_TOKEN}”, which marks a number left out of what the writer was given because no fact holds it. Write it without the mark, or with a number a fact states.`;
+function contextFlags(resume: Resume, roles: RoleRow[], c: FlagContext): Flag[] {
+  const out: Flag[] = [];
+  const check = (where: string, text: string, ids: Set<number> | null, summary: boolean) => {
+    if (text.includes(NUMBER_TOKEN)) out.push({ kind: 'number-mark', severity: 'high', text: MARK_TEXT(where) });
+    if (c.context === '' && c.lines.length === 0) return;
+    const stated = c.facts.filter((f) => ids === null || (f.role_id !== null && ids.has(f.role_id))).map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part, f.skills].join(' ')).join(' ');
+    const only = c.context === '' ? [] : unsupported(text, c.context, stated, { versions: c.versions });
+    if (only.length > 0) out.push({ kind: 'context-number', severity: 'high', items: only,
+      text: `${where} uses ${andList(only)}, which your record has only in a project’s background, not in a fact. Take ${only.length === 1 ? 'it' : 'them'} out, or use a number a fact states.` });
+    for (const l of c.lines.filter((x) => [x.text, redact(x.text)].some((t) => plainWords(text).includes(plainWords(t))))) out.push({ kind: 'kept-line', severity: 'warn', items: [l.text],
+      text: `${where} repeats a line of How you work: “${l.text}” Those lines help choose what leads, and are not facts to print. Take it out.` });
+  };
+  if (resume.summary.trim() !== '') check('The summary', resume.summary, null, true);
+  const groups = employers(roles);
+  for (const e of resume.experience) {
+    const g = groups.find((x) => x.rows.some((r) => normCompany(r.company) === normCompany(e.company || e.title)));
+    const ids = g ? new Set([...g.rows, ...g.children].map((r) => r.id)) : null;
+    for (const b of e.bullets) check(`“${b}”`, b, ids, false);
+  }
   return out;
 }
 // The code findings a rewrite can put right, as instructions for the writer (lib/skim.ts).
-export const fixable = (markdown: string, pages: number): string[] => codeFlags(markdown, pages).filter((f) => ['summary-long', 'summary-person', 'summary-metric', 'old-role'].includes(f.kind)).map((f) => f.text);
+export const fixable = (markdown: string, pages: number, context?: FlagContext): string[] => codeFlags(markdown, pages, Date.now(), context).filter((f) => ['summary-long', 'summary-person', 'summary-metric', 'old-role', 'context-number', 'kept-line', 'project-heading', 'number-mark'].includes(f.kind)).map((f) => f.text);
 
 // Every flag for a job's resume as it stands: the code findings, what was repaired when it was written, what the
 // skim found, and what the parse test of the PDF found. Repairs and the skim are shown only while the text they
 // were made on is still the text.
-export function flags(markdown: string, pages: number, about: { written?: Written; skim?: Skim; ats?: { lines: { label: string; ok: boolean; note: string }[] } } = {}, now = Date.now()): Flag[] {
-  const out = codeFlags(markdown, pages, now);
+export function flags(markdown: string, pages: number, about: { written?: Written; skim?: Skim; ats?: { lines: { label: string; ok: boolean; note: string }[] } } = {}, now = Date.now(), context?: FlagContext): Flag[] {
+  const out = codeFlags(markdown, pages, now, context);
   if (about.written && about.written.sig === sigOf(markdown)) for (const r of about.written.repairs) out.push({ kind: 'facts-repaired', severity: 'info', text: r });
   if (about.skim) {
     if (about.skim.saw !== skimView(parseResume(markdown))) out.push({ kind: 'skim-stale', severity: 'info', text: 'The top of this resume changed after its six-second skim, so what the skim found is not shown. Write the resume again to have it skimmed.' });

@@ -4,11 +4,16 @@
 // date is put back; no posting term is pasted into Skills; flags are stored; a hand edit is flagged, never rewritten.
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { db, fact, seed } from './scratch.ts';
-import { codeFlags } from './checks.ts';
-import { assess, compose, FactsError, fitOf, keepEarlier, publish, refreshSkills, review, storeComposed, topRequirements, type Analysis, type JobRow, type Requirement } from './jobs.ts';
+import { codeFlags, fixable, projectNames } from './checks.ts';
+import { assess, bank, compose, FactsError, fitOf, keepEarlier, publish, refreshSkills, review, storeComposed, topRequirements, weigh, type Analysis, type JobRow, type Requirement } from './jobs.ts';
 import { fakeAsk, type Ask } from './llm.ts';
 import { parseResume } from './resume.ts';
-import { markSkills } from './skills.ts';
+import { markSkills, syncSkills } from './skills.ts';
+import { judge } from './derived.ts';
+import { addFact, addProject, addRole, derivedNow, keptLines, patchProject, patchRole } from './record.ts';
+import { checkEntries, employers, repairEntries } from './entries.ts';
+import type { RoleRow } from './db.ts';
+import { CONTEXT, KEPT_LINES } from './writing.ts';
 
 const POSTING = 'Staff Engineer at Nimbus Yard. You will build Go services on Kafka, with observability and cross-team collaboration. Our first platform engineer: scale to millions of events.';
 const TERMS = ['Go', 'Kafka', 'observability', 'cross-team collaboration', 'Rust'];
@@ -320,4 +325,332 @@ test('a review whose rewrite names a job the bank does not have keeps the resume
   const after = analysisOf(id);
   expect(after.review).toEqual(before.review);
   expect(after.flags!.find((f) => f.kind === 'facts-repaired')!.text).toContain('“Chief Architect, Nimbus Yard”');
+});
+
+// ---------- Stage 3: projects, the new fact fields and the kept lines of "How you work" ----------
+// Role 1's dispatch console in a project of its own: a situation and a result, no "what I did", and what was learned.
+// Role 2's quoting API in a project with only a name. One more project with no fact. Everything is invented.
+const project = (roleId: number, title: string, parts: { situation?: string; did?: string; result?: string; learned?: string; lives?: string } = {}) =>
+  (db.query('INSERT INTO projects (role_id, title, situation, did, result, learned, lives, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1) RETURNING id')
+    .get(roleId, title, parts.situation ?? '', parts.did ?? '', parts.result ?? '', parts.learned ?? '', parts.lives ?? '') as { id: number }).id;
+const fileIn = (factId: number, projectId: number) => db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(projectId, factId);
+const idOf = (text: string) => (db.query('SELECT id FROM facts WHERE text = ?').get(text) as { id: number }).id;
+function withProjects() {
+  const console = project(1, 'Dispatch console', { situation: 'Schedulers planned 35 depots on paper.', result: 'One console for every depot.', learned: 'I learned to ship in 3 week steps.', lives: 'console.example' });
+  const quoting = project(2, 'Quoting API');
+  project(1, 'Nothing filed yet', { situation: 'A plan with 9 parts.' });
+  fileIn(idOf('Built the dispatch console that schedulers use every day.'), console);
+  fileIn(idOf('Rebuilt the quoting API.'), quoting);
+  db.query("UPDATE facts SET baseline = '9 hours', team = 'about 4 people', own_part = 'I wrote the scheduler.' WHERE id = ?").run(idOf('Cut the nightly billing run.'));
+  db.query("UPDATE facts SET baseline = 'There was none' WHERE id = ?").run(idOf('Built the dispatch console that schedulers use every day.'));
+  return { console, quoting };
+}
+const writePrompt = () => calls.find((c) => kind(c) === 'write')!.prompt;
+const bankOf = (prompt: string) => JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19, prompt.indexOf('\n\nThe posting has already been read')));
+
+test('a project of a role reaches the writer with its facts and only the parts that are set; no fact is sent twice; learned never', async () => {
+  const { console, quoting } = withProjects();
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  const prompt = writePrompt(), bank = bankOf(prompt);
+  const harbor = bank.entries.find((e: { heading: string }) => e.heading.includes('Harborlight')).roles[0];
+  expect(harbor.projects).toEqual([{ key: `project:${console}`, name: 'Dispatch console', context: { situation: 'Schedulers planned [number] depots on paper.', result: 'One console for every depot.' },
+    facts: [{ key: `fact:${idOf('Built the dispatch console that schedulers use every day.')}`, kind: 'accomplishment', text: 'Built the dispatch console that schedulers use every day.', detail: '', metric: '640 users across 12 depots', skills: 'TypeScript, PostgreSQL' }] }]);
+  // Its fact left the role's own list; the fields a fact gained are sent when set, and "There was none" is not a value.
+  expect(harbor.facts.map((f: { text: string }) => f.text)).toEqual(['Cut the nightly billing run.', 'Wrote the test suite for the console.']);
+  expect(harbor.facts[0]).toMatchObject({ baseline: '9 hours', team: 'about 4 people', own_part: 'I wrote the scheduler.' });
+  expect(Object.keys(harbor.facts[1])).not.toContain('baseline');
+  // A project with only a name still groups its facts, with no context.
+  const quill = bank.entries.find((e: { heading: string }) => e.heading.includes('Quillfeather')).roles[0];
+  expect(quill.projects).toEqual([{ key: `project:${quoting}`, name: 'Quoting API', facts: [expect.objectContaining({ text: 'Rebuilt the quoting API.' })] }]);
+  expect(quill.facts.map((f: { text: string }) => f.text)).toEqual(['Ran weekly code review sessions.']);
+  // Every fact once in the whole bank; the project with no fact, what was learned and where it lives are not sent.
+  const keys = JSON.stringify(bank).match(/"key":"fact:\d+"/g)!;
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(keys.length).toBe((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n);
+  for (const gone of ['Nothing filed yet', 'A plan with 9 parts', 'I learned to ship', 'console.example', 'There was none']) expect([gone, prompt.includes(gone)]).toEqual([gone, false]);
+  // The writer is told what context is, and that titles, employers and dates never come from a project.
+  expect(prompt).toContain(CONTEXT);
+});
+
+test('with no project and no new field set, the writer gets the bank exactly as before', async () => {
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  const bank = bankOf(writePrompt());
+  for (const e of bank.entries) for (const r of e.roles) expect([r.key, r.projects]).toEqual([r.key, []]);
+  expect(JSON.stringify(bank)).not.toMatch(/"(baseline|team|own_part|context)"/);
+});
+
+test('kept lines of How you work go to the writer in a block of their own, never in the bank; a rejected, undecided or no longer true line is not sent', async () => {
+  fact(1, 'Managed a team of 5 engineers.');
+  fact(3, 'Wrote the desk scripts.', '', 'Go');
+  syncSkills(1);
+  const lines = derivedNow();
+  expect(lines.map((l) => l.key)).toEqual(['led', 'skill:go']);
+  expect(judge(lines, 'led', 'kept', 2)).toBe('');
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  let prompt = writePrompt();
+  const led = 'Your record shows you managing, hiring or growing a team in 2 of 3 roles.';
+  expect(prompt).toContain(`${KEPT_LINES}\n- Your record shows you managing, hiring or growing a team in [number] of [number] roles.`);
+  expect(prompt).not.toContain(led);
+  expect(KEPT_LINES).toBe('Counted from the record and confirmed by the person. Not facts: never print one, never quote its numbers; use them only to choose which facts lead.');
+  expect(JSON.stringify(bankOf(prompt))).not.toContain('managing, hiring');
+  // The skill line is undecided: not sent. Rejected: not sent either.
+  expect(prompt).not.toContain('Go runs through');
+  expect(judge(derivedNow(), 'skill:go', 'rejected', 3)).toBe('');
+  expect(keptLines().map((l) => l.key)).toEqual(['led']);
+  // The kept line no longer holds (its fact is gone): it is not sent, and the block is left out.
+  db.query('DELETE FROM facts WHERE text = ?').run('Managed a team of 5 engineers.');
+  expect(keptLines()).toEqual([]);
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  prompt = writePrompt();
+  expect(prompt).not.toContain(KEPT_LINES);
+  expect(prompt).not.toContain(led);
+});
+
+test('a number whose value stands in a project\'s background and in no fact of the employer is flagged; a kept line is no context', () => {
+  withProjects();
+  fact(1, 'Managed a team of 5 engineers.');
+  expect(judge(derivedNow(), 'led', 'kept', 2)).toBe('');
+  const resume = (summary: string, bullets: string[]) => `# Avery Lindqvist\n\n## Summary\n${summary}\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n${bullets.map((b) => `- ${b}`).join('\n')}\n`;
+  const flagged = (text: string) => codeFlags(text, 2).filter((f) => ['context-number', 'kept-line', 'number-mark'].includes(f.kind));
+  // From the facts: 640 users (a metric), 9 hours (a baseline), 4 people (the team): nothing flagged.
+  expect(flagged(resume('Engineer who builds dispatch software.', ['Build the dispatch console for 640 users across 12 depots.', 'Cut the nightly billing run from 9 hours to 40 minutes with a team of about 4 people.']))).toEqual([]);
+  // 35 stands only in the project's situation.
+  const depots = flagged(resume('Engineer who builds dispatch software.', ['Build the dispatch console that replaced paper planning in 35 depots.']));
+  expect(depots.map((f) => [f.kind, f.severity, f.items])).toEqual([['context-number', 'high', ['35']]]);
+  expect(depots[0].text).toBe('“Build the dispatch console that replaced paper planning in 35 depots.” uses 35, which your record has only in a project’s background, not in a fact. Take it out, or use a number a fact states.');
+  // A kept line is no context for numbers (the writer is sent it as "in [number] of [number] roles"): only a copy is caught.
+  expect(flagged(resume('Engineer who led teams in 2 of 3 roles.', ['Build the dispatch console for 640 users.']))).toEqual([]);
+  const copied = flagged(resume('Your record shows you managing, hiring or growing a team in 2 of 3 roles.', ['Build the dispatch console for 640 users.']));
+  expect(copied.map((f) => f.kind)).toEqual(['kept-line']);
+  // A resume that prints the mark is flagged, by exact match.
+  const marked = flagged(resume('Engineer who builds dispatch software.', ['Replaced paper planning in [number] depots.']));
+  expect(marked.map((f) => [f.kind, f.severity])).toEqual([['number-mark', 'high']]);
+  // All three are for the writer to put right.
+  expect(fixable(resume('Your record shows you managing, hiring or growing a team in 2 of 3 roles.', ['Build the console for 35 depots.', 'Ran [number] depots.']), 2).length).toBe(3);
+});
+
+test('a number from a project\'s background is sent back to the writer and taken out', async () => {
+  withProjects();
+  const bad = WRITTEN.replace('- Build the dispatch console that 640 users across 12 depots open every day.', '- Build the dispatch console that replaced paper planning in 35 depots.');
+  const good = WRITTEN;
+  calls = [];
+  fakeAsk((c) => {
+    calls.push(c);
+    const k = kind(c);
+    if (k === 'write') return { resume: bad, changes: [], questions: [] };
+    if (k === 'glance') return answered(true);
+    if (k === 'fix') return { resume: good, changes: ['Took out a number that no fact states.'] };
+    return { score: 9, note: 'Clear.', problems: [] };
+  });
+  const c = await compose(POSTING, 2, TERMS, REQS);
+  expect(calls.map(kind)).toEqual(['write', 'glance', 'fix', 'glance']);
+  expect(calls.find((x) => kind(x) === 'fix')!.prompt).toContain('uses 35, which your record has only in a project’s background');
+  expect(c.resume).not.toContain('35 depots');
+});
+
+// ---------- Stage 3 review ----------
+
+// The facts the bank sent before projects of roles reached it (the rule at commit a32e6ce): every fact of an employer's
+// rows and of the rows filed under them, and General (no role, or a role that is gone).
+function keysBefore(): string[] {
+  const roles = db.query('SELECT * FROM roles').all() as RoleRow[];
+  const ids = new Set(employers(roles).flatMap((g) => [...g.rows, ...g.children].map((r) => r.id)));
+  return (db.query('SELECT id, role_id FROM facts ORDER BY id').all() as { id: number; role_id: number | null }[])
+    .filter((f) => f.role_id === null || ids.has(f.role_id) || !roles.some((r) => r.id === f.role_id)).map((f) => `fact:${f.id}`).sort();
+}
+const keysNow = () => (JSON.stringify(bank()).match(/"key":"fact:\d+"/g) ?? []).map((k) => k.slice(7, -1)).sort();
+
+test('every fact the bank sent before is sent, once, however roles, projects and repositories are arranged', () => {
+  const same = (step: string) => { const now = keysNow(); expect([step, new Set(now).size === now.length, now]).toEqual([step, true, keysBefore()]); };
+  same('a plain role');
+  const role = (addRole({ title: 'Platform Contractor', company: 'Fernway', start: '2015-01', end: '2015-12' }) as { id: number }).id;
+  const p = (addProject({ title: 'Fernway migration', roleId: role, when: '2015', situation: 'A move of 40 services.' }) as { id: number }).id;
+  addFact({ projectId: String(p), text: 'Moved Fernway to the new cloud.', metric: '40 services' });
+  addFact({ roleId: role, text: 'Ran Fernway on-call.' });
+  same('a role with a project');
+  expect(patchRole(role, { standing: '', reach: '', partOf: 1 }).ok).toBe(true);
+  same('that role made part of another employer');
+  expect(keysNow()).toContain(`fact:${idOf('Moved Fernway to the new cloud.')}`);
+  db.run("INSERT INTO roles (id, company, title, part_of) VALUES (90, 'harborlight/dispatch', '', 1)");
+  fact(90, 'Wrote the dispatch repository.');
+  same('a repository filed under an employer');
+  db.run("INSERT INTO roles (id, company, title, start, end, standing) VALUES (91, 'lantern-notes', '', '2022-05', '2023-01', 'personal')");
+  fact(91, 'Built a notes app.');
+  same('a side project');
+  db.run("INSERT INTO roles (id, company, title, standing) VALUES (92, 'avery/sketchbook', '', '')");
+  fact(92, 'Drew a sketch a day.');
+  same('an unplaced repository');
+  fact(null, 'Speaks at meetups.');
+  same('General');
+  const own = (addProject({ title: 'Dispatch console', roleId: 1 }) as { id: number }).id;
+  db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(own, idOf('Built the dispatch console that schedulers use every day.'));
+  db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(own, idOf('Rebuilt the quoting API.'));
+  same('a fact whose project is a project of another role');
+});
+
+test('a line of How you work about what was learned never reaches the resume writer', async () => {
+  for (let i = 0; i < 4; i++) {
+    const p = project(1, `Project ${i}`, { learned: 'I learned to ship small changes often.' });
+    fileIn(fact(1, `Shipped invented change ${i}.`), p);
+  }
+  const learned = derivedNow().find((l) => l.key.startsWith('learned:'))!;
+  expect(judge(derivedNow(), learned.key, 'kept', 2)).toBe('');
+  expect(keptLines().map((l) => l.key)).toContain(learned.key);
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  expect(writePrompt()).not.toContain('ship small changes');
+});
+
+test('a requirement backed by a project weighs as its role does, and the fit of an unchanged record is unchanged', () => {
+  const roles = db.query('SELECT * FROM roles').all() as RoleRow[];
+  const fit = fitOf(weigh(REQS, roles, Date.UTC(2026, 10, 17)));
+  const p = project(1, 'Dispatch console');
+  fileIn(idOf('Built the dispatch console that schedulers use every day.'), p);
+  expect(fitOf(weigh(REQS, roles, Date.UTC(2026, 10, 17)))).toBe(fit);
+  const req: Requirement = { text: 'Dispatch software', need: 'must', coverage: 'strong', evidence: '', roles: ['role:1'] };
+  const [byRole] = weigh([req], roles, Date.UTC(2026, 10, 17)), [byProject] = weigh([{ ...req, roles: [`project:${p}`] }], roles, Date.UTC(2026, 10, 17));
+  expect([byProject.weight, byProject.basis]).toEqual([byRole.weight, byRole.basis]);
+  expect(byRole.weight).toBeGreaterThan(0.8);
+});
+
+test('the writer is told that a requirement\'s best evidence is never a project, once the bank sends one', async () => {
+  const line = '"best" is never a project ("project:3"): name the project\'s strongest fact instead.';
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  expect(writePrompt()).not.toContain(line);
+  withProjects();
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  expect(writePrompt()).toContain(line);
+});
+
+test('the skim\'s fix is told what a project is, when a resume is written and when it is reviewed', async () => {
+  withProjects();
+  model(WRITTEN, answered(false));
+  await compose(POSTING, 2, TERMS, REQS);
+  expect(calls.filter((c) => kind(c) === 'fix').every((c) => c.prompt.includes(CONTEXT))).toBe(true);
+  delete process.env.EGG_COUNCIL;
+  const id = job(WRITTEN);
+  model(WRITTEN, answered(false));
+  await review(db.query('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow, false);
+  const fixes = calls.filter((c) => kind(c) === 'fix');
+  expect(fixes.length).toBeGreaterThan(0);
+  expect(fixes.every((c) => c.prompt.includes(CONTEXT))).toBe(true);
+});
+
+test('a project written as a heading of its own is named as a project, sent back to the writer, and still never kept', () => {
+  project(1, 'Dispatch console');
+  const roles = db.query('SELECT * FROM roles').all() as RoleRow[];
+  const page = (sub: string) => `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n${sub}\n- Built the console.\n\n## Skills\nGo\n`;
+  for (const sub of ['#### Dispatch console', '**Dispatch console** (2022 – 2023)']) {
+    const found = checkEntries(page(sub), roles, projectNames());
+    expect(found.map((f) => f.text)).toEqual([expect.stringContaining('It is a project of Director of Engineering at Harborlight Systems in your record: its facts are bullets of that role, never an entry or a heading with dates of its own.')]);
+    // What is accepted or refused is the same: the version is not kept.
+    expect(repairEntries(page(sub), roles, projectNames()).unresolved.length).toBe(1);
+    expect(codeFlags(page(sub), 2).filter((f) => f.kind === 'project-heading').length).toBe(1);
+    expect(fixable(page(sub), 2).some((t) => t.includes('It is a project of'))).toBe(true);
+  }
+  // A heading that is no project keeps the old words.
+  expect(checkEntries(page('#### Lantern Notes'), roles, projectNames()).map((f) => f.text)).toEqual(['The resume has an entry “Lantern Notes”. Your record has no job or project by that name, or with that title and those dates.']);
+  expect(CONTEXT).toContain('A project is never a heading or a sub-heading of its own, and never has dates of its own: its facts are bullets of its role.');
+});
+
+// ---------- Numbers no fact holds are left out of what the writer is given ----------
+
+test('a number no fact of the project holds is sent as [number]; one it holds stays; the bullet that uses a fact\'s value is quiet', async () => {
+  const console = project(1, 'Dispatch console', { situation: 'Schedulers planned 35 depots on paper.', result: 'The console reached 640 users in 12 depots.' });
+  fileIn(idOf('Built the dispatch console that schedulers use every day.'), console);
+  fact(1, 'Cut support calls.', '35% fewer calls');
+  model();
+  await compose(POSTING, 2, TERMS, REQS);
+  const prompt = writePrompt(), harbor = bankOf(prompt).entries.find((e: { heading: string }) => e.heading.includes('Harborlight')).roles[0];
+  expect(harbor.projects[0].context).toEqual({ situation: 'Schedulers planned [number] depots on paper.', result: 'The console reached 640 users in 12 depots.' });
+  expect(prompt).not.toContain('35 depots');
+  expect(prompt).toContain('"[number]" stands where a number was left out because no fact holds it. Never print "[number]", and never put a number of your own in its place.');
+  // 35 stands in a fact of the employer ("35% fewer calls"), so a bullet with it is not flagged: the writer never saw "35 depots".
+  const page = `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Rolled the console out to 35 depots.\n`;
+  expect(codeFlags(page, 2).filter((f) => f.kind === 'context-number')).toEqual([]);
+  // The stored text is as the person wrote it.
+  expect(db.query('SELECT situation FROM projects WHERE id = ?').get(console)).toEqual({ situation: 'Schedulers planned 35 depots on paper.' });
+});
+
+test('true numbers written another way are quiet; a number from another employer\'s project is caught', () => {
+  const quoting = project(2, 'Quoting', { situation: 'Quotes went to 35 depots by fax, in 3 parts.' });
+  fileIn(idOf('Rebuilt the quoting API.'), quoting);
+  fact(2, 'Led 3 junior engineers through the rewrite.');
+  fact(1, 'Managed a team of 5 engineers.');
+  expect(judge(derivedNow(), 'led', 'kept', 2)).toBe('');
+  db.run("UPDATE facts SET text = 'Cut the nightly billing run from 6 hours to 40 minutes.' WHERE text = 'Cut the nightly billing run.'");
+  const page = (harbor: string[], quill: string[]) => `# Avery Lindqvist\n\n## Summary\nEngineer with 12 years in logistics.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n${harbor.map((b) => `- ${b}`).join('\n')}\n\n### Senior Engineer, Quillfeather Labs\nJan 2016 – Feb 2021\n${quill.map((b) => `- ${b}`).join('\n')}\n`;
+  const flagged = (text: string) => codeFlags(text, 2).filter((f) => f.kind === 'context-number').map((f) => f.items);
+  expect(flagged(page(['Cut the nightly billing run from 6 hrs to 40 min.', 'Built a dispatch console for 640 daily users across 12 depots.'], ['Led 3 engineers through the quoting rewrite.', 'Led a team of 3 through the rewrite.']))).toEqual([]);
+  // 35 stands in Quillfeather's project and in no fact of Harborlight: copied across employers, it is caught.
+  expect(flagged(page(['Rolled the console out to 35 depots.'], ['Rebuilt the quoting API.']))).toEqual([['35']]);
+});
+
+test('a resume that prints [number] is sent back to the writer and put right', async () => {
+  withProjects();
+  const marked = WRITTEN.replace('- Build the dispatch console that 640 users across 12 depots open every day.', '- Build the dispatch console that replaced paper planning in [number] depots.');
+  calls = [];
+  fakeAsk((c) => {
+    calls.push(c);
+    const k = kind(c);
+    if (k === 'write') return { resume: marked, changes: [], questions: [] };
+    if (k === 'glance') return answered(true);
+    if (k === 'fix') return { resume: WRITTEN, changes: ['Took out the mark.'] };
+    return { score: 9, note: 'Clear.', problems: [] };
+  });
+  const c = await compose(POSTING, 2, TERMS, REQS);
+  expect(calls.map(kind)).toEqual(['write', 'glance', 'fix', 'glance']);
+  expect(calls.find((x) => kind(x) === 'fix')!.prompt).toContain('prints “[number]”');
+  expect(c.resume).not.toContain('[number]');
+});
+
+test('a number with no noun, "go 9 weeks" and "35/45" are taken out of what the writer is sent, and copies of them are caught', async () => {
+  const hosting = project(1, 'Hosting', { situation: '20% of drivers quit each year. Releases would go 9 weeks apart. We reached 35/45 depots.', did: 'Took 12 of the depots live.' });
+  fileIn(fact(1, 'Cut hosting costs by 20%.', '20% lower hosting costs'), hosting);
+  fileIn(fact(1, 'Brought 12 depots onto the console.', 'team of 12'), hosting);
+  let prompt = '';
+  fakeAsk((c) => { prompt = c.prompt; return { title: 'Staff Engineer', company: 'Nimbus Yard', place: '', verdict: 'v', strengths: [], risks: [], gaps: [], knockouts: [], checks: [], terms: [], requirements: [] }; });
+  await assess(POSTING);
+  const context = (JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0]).context;
+  expect(context).toEqual({ situation: '[number] of drivers quit each year. Releases would go [number] weeks apart. We reached [number]/[number] depots.', what_i_did: 'Took [number] of the depots live.' });
+  for (const hidden of ['20% of drivers', 'go 9 weeks', '35/45', '12 of the depots']) expect([hidden, prompt.includes(hidden)]).toEqual([hidden, false]);
+  const page = (b: string) => `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- ${b}\n`;
+  const flagged = (b: string) => codeFlags(page(b), 2).filter((f) => f.kind === 'context-number').map((f) => f.items);
+  expect(flagged('Shipped every 9 weeks.')).toEqual([['9']]);
+  expect(flagged('Rolled out to 35 of 45 depots.')).toEqual([['35', '45']]);
+  // 20 and 12 stand in facts of the employer: quiet by the check, and the writer never saw them in the background.
+  expect([flagged('Cut driver attrition 20%.'), flagged('Took 12 depots live.')]).toEqual([[], []]);
+});
+
+test('a project\'s parts are refused past 4,000 characters, in words, and never cut', () => {
+  const long = 'x'.repeat(4001);
+  for (const part of ['situation', 'did', 'result', 'learned']) {
+    const made = addProject({ title: `Long ${part}`, roleId: 1, [part]: long });
+    expect([part, made.ok]).toEqual([part, false]);
+    expect((made as { error: string }).error).toMatch(/at most 4,000 characters/);
+  }
+  const p = (addProject({ title: 'Short parts', roleId: 1, situation: 'x'.repeat(4000) }) as { id: number }).id;
+  const edit = patchProject(p, { result: long });
+  expect(edit.ok).toBe(false);
+  expect(db.query('SELECT situation, result FROM projects WHERE id = ?').get(p)).toEqual({ situation: 'x'.repeat(4000), result: '' });
+});
+
+test('a number that ends a clause in the background is not sent because a fact ends on the same number', async () => {
+  const p = project(1, 'Hosting', { situation: 'Attrition fell 20%. Depots by city: Dallas 12, Austin 9, Denver 14.' });
+  fileIn(fact(1, 'Cut hosting costs by 20%.'), p);
+  let prompt = '';
+  fakeAsk((c) => { prompt = c.prompt; return { title: 'Staff Engineer', company: 'Nimbus Yard', place: '', verdict: 'v', strengths: [], risks: [], gaps: [], knockouts: [], checks: [], terms: [], requirements: [] }; });
+  await assess(POSTING);
+  const context = JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0].context;
+  expect(context).toEqual({ situation: 'Attrition fell [number]. Depots by city: Dallas [number], Austin [number], Denver [number].' });
+  for (const hidden of ['fell 20%', 'Denver 14', 'Austin 9']) expect([hidden, prompt.includes(hidden)]).toEqual([hidden, false]);
+  // 14 stands in the background and in no fact of Harborlight: a bullet with it is caught.
+  const page = `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Opened 14 depots in Denver.\n`;
+  expect(codeFlags(page, 2).filter((f) => f.kind === 'context-number').map((f) => f.items)).toEqual([['14']]);
 });

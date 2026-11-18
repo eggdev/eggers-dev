@@ -4,7 +4,7 @@
 // It also keeps the questions that code raises for the person in step with the bank (lib/checks.ts): after each
 // source is read, and once when it starts. A LinkedIn export's positions are kept as data when it is read (lib/linkedin.ts).
 import { writeFileSync } from 'node:fs';
-import { applyExtraction, associate, bankSignature, db, type SourceRow } from './lib/db.ts';
+import { applyExtraction, associate, bankSignature, db, profileSignature, type SourceRow } from './lib/db.ts';
 import { syncProjects } from './lib/projects.ts';
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
@@ -17,7 +17,7 @@ import { holdSince, rewriteDue } from './lib/raised.ts';
 import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
-import { draft } from './lib/outreach.ts';
+import { draft, storeDrafts } from './lib/outreach.ts';
 import { runQueued } from './lib/propose.ts';
 // The log of slow work follows the status columns by itself; the worker adds only where a piece has got to.
 import { setStage } from './lib/activity.ts';
@@ -68,7 +68,8 @@ const PROFILE_FILE = inData('profile.md');
 async function writeProfile() {
   db.run("UPDATE profile SET status = 'running', note = '' WHERE id = 1");
   console.log('writing the profile');
-  const signature = bankSignature();
+  // The part of the record the profile is written from (lib/db.ts): a fact filed in a project does not make it stale.
+  const signature = profileSignature();
   try {
     const p = await write();
     db.query("UPDATE profile SET status = 'done', note = '', body = ?, gaps = ?, signature = ?, updated_at = ? WHERE id = 1").run(p.markdown.trim(), p.gaps.map((g) => g.trim()).filter(Boolean).join('\n'), signature, Date.now());
@@ -180,9 +181,10 @@ void (async () => {
     if (!job) { await Bun.sleep(900); continue; }
     db.query("UPDATE jobs SET outreach_status = 'running', outreach_note = '' WHERE id = ?").run(job.id);
     try {
-      const doors = await draft(job, inData('inbox'));
-      db.query("UPDATE jobs SET outreach = ?, outreach_status = 'done' WHERE id = ?").run(JSON.stringify(doors), job.id);
-      console.log(`outreach: ${doors.length} drafts for job ${job.id}`);
+      // Drafts left out (a number with no fact behind it) are said on the job; when all are, the earlier ones stay.
+      const drafted = await draft(job, inData('inbox'));
+      storeDrafts(job.id, drafted);
+      console.log(`outreach: ${drafted.doors.length} drafts for job ${job.id}${drafted.left ? `, ${drafted.left} left out` : ''}`);
     } catch (e) { db.query("UPDATE jobs SET outreach_status = 'failed', outreach_note = ? WHERE id = ?").run((e as Error).message, job.id); console.log(`outreach: failed: ${(e as Error).message}`); }
   }
 })();

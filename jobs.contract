@@ -567,6 +567,9 @@ component JobScreen
               Action(label=(copied == `${job.id}:${d.id}` ? "Copied" : "Copy the message"), press=copyDoor(d.id, d.message), disabled=false, keys="", testId=`door-copy-${d.id}`)
           if inHand(drafting)
             WorkLine(word=statusWord("work", drafting), place=workPlace(work, "draft-messages", job.id), text=draftingLine(work, job.id), testId="doors-writing")
+          // Drafts left out because a number in them has no fact behind it (lib/outreach.ts, storeDrafts).
+          if job.doorsStatus == "done" and job.doorsNote != ""
+            QuietLine(text=job.doorsNote, testId="doors-note")
           if job.doorsStatus == "failed" or doorsError != ""
             FailLine(text=(doorsError != "" ? doorsError : `Drafting failed. ${job.doorsNote}`), testId="doors-error")
           Action(label=(job.doors.length > 0 ? "Draft again" : "Draft messages"), press=draftDoors, disabled=(doorsBusy or inHand(drafting)), keys="", testId="doors-draft")

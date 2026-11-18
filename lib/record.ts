@@ -9,7 +9,7 @@ import { syncProjects } from './projects.ts';
 import { howYouWork, shownLines, verdicts, type DerivedInput } from './derived.ts';
 import { inventory } from './metrics.ts';
 import { suggestedResults } from './propose.ts';
-import { openRaised } from './raised.ts';
+import { handWrote, openRaised } from './raised.ts';
 import { allSkills } from './skills.ts';
 
 type Body = Record<string, unknown>;
@@ -27,7 +27,7 @@ const done = (kind: 'role' | 'project' | 'fact', id: number, ref: string, wrote:
 };
 // When the owner last wrote to the record by hand: the worker holds its rewrite of unsent resumes for a while after
 // it (lib/raised.ts, holdSince), so one sitting of edits causes one rewrite.
-export const handWrote = (now: number) => db.query('UPDATE record_written SET at = max(at, ?) WHERE id = 1').run(now);
+export { handWrote };
 // A title, an employer or a project's name: one line of at most 200 characters. The owner's text is never cut.
 export const MAX_NAME = 200;
 // One line: no control or format character (a tab, a zero-width space) and no line or paragraph separator.
@@ -129,6 +129,10 @@ export function derivedNow() {
   const facts = db.query('SELECT id, role_id, project_id, text, metric, kind FROM facts ORDER BY id').all() as FactLean[];
   return howYouWork(derivedInput(tree(rolesNow(), projectsNow(), facts)));
 }
+// The lines the owner kept, among those Experience shows now: what a resume's or a message's writer may be given to
+// choose which facts lead (lib/jobs.ts, brief; lib/outreach.ts). A line that no longer holds, one said not to be true
+// and one not yet judged are never given.
+export const keptLines = () => shownLines(derivedNow(), verdicts()).filter((l) => l.verdict === 'kept');
 
 const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 // One fact whole (GET /facts/:id): its story, evidence, skills and provenance too. null when it is gone.
@@ -254,6 +258,13 @@ export function deleteRole(id: number, now = Date.now()): Done {
 
 const projectRow = (id: number) => db.query('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | null;
 const PARTS = ['lives', 'situation', 'did', 'result', 'learned'] as const;
+// A project's longer parts: each at most this long, refused in words when longer and never cut (as a title is).
+export const MAX_PART = 4000;
+const PART_WORDS: Record<string, string> = { situation: 'the situation', did: 'what you did', result: 'the result', learned: 'what you learned' };
+const partsRefused = (parts: Partial<Record<string, string>>): Done | null => {
+  const long = Object.keys(PART_WORDS).find((k) => (parts[k] ?? '').length > MAX_PART);
+  return long ? refuse(`Keep ${PART_WORDS[long]} to at most 4,000 characters. Nothing was saved.`) : null;
+};
 const partsOf = (b: Body) => { const p = (b.parts && typeof b.parts === 'object' ? b.parts : b) as Body; return Object.fromEntries(PARTS.filter((k) => sent(p, k)).map((k) => [k, str(p[k])])) as Partial<Record<(typeof PARTS)[number], string>>; };
 
 // Where a new project or fact goes: an existing role, a side project, or a role made on the spot from "title at
@@ -291,6 +302,8 @@ export function addProject(b: Body, now = Date.now()): Done {
   const w = given(b, 'when') ? parseWhen(str(b.when), 'project') : { start: str(b.start), end: str(b.end) };
   if (!w || !dateOk(w.start) || !dateOk(w.end)) return refuse(WHEN);
   const parts = partsOf(b), cols = PARTS.filter((k) => parts[k] !== undefined), vals = cols.map((k) => parts[k]!);
+  const tooLong = partsRefused(parts);
+  if (tooLong) return tooLong;
   const more = { names: cols.map((c) => `, ${c}`).join(''), marks: cols.map(() => ', ?').join('') };
   return runRefusable(() => {
     const home = roleFor(b, now);
@@ -324,6 +337,8 @@ export function patchProject(id: number, b: Body, now = Date.now()): Done {
   if (role !== null && (!Number.isInteger(role) || !isRole(role))) return refuse('Choose the role it belongs to.');
   // Only what differs from what is stored is written: a Save with no change writes nothing. A carried project's name
   // and dates are its `roles` row's, so writing them there would change the record's signature.
+  const tooLong = partsRefused(partsOf(b));
+  if (tooLong) return tooLong;
   const parts = Object.entries(partsOf(b)).filter(([k, v]) => p[k as keyof ProjectRow] !== v);
   const carrier = p.via_role === null ? null : roleRow(p.via_role);
   const rowChanges: [string, string | number | null][] = [], ownChanges: [string, string][] = [];
