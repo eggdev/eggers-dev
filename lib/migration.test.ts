@@ -3,7 +3,8 @@
 // columns and tables must be there, and an analysis stored before "implied" requirements, flags and the skim
 // existed must still read. The person and their jobs are invented.
 import { afterAll, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OLD_ANALYSIS, OLD_FACT_COLUMNS, OLD_RESUME, oldDatabase, oldTreeDatabase } from './oldschema.ts';
@@ -161,3 +162,57 @@ test('a database as stage 2 left it keeps its signature when the writer is given
     expect(got.jobs).toEqual([{ resume_status: 'done', bank_sig: before.sig }]);
   }
 }, 60_000);
+
+// No marks of where a value came from (the owner, 2026-11-18). A database the last version left, with marks stored on a
+// role and the trigger that cleared them, opens with today's code twice and then by two processes at once. The trigger is
+// gone; the marks stay in their column, unread; every value of the role, the signature and the stored resume are as they
+// were; nothing is queued; and a role edited afterwards keeps its column as it was.
+const MARKS_BEFORE = '8b4a558';
+const MARKS_CHILD = (root: string, edit: boolean) => `
+const { db, bankSignature } = await import('${root}/db.ts');
+await import('${root}/projects.ts'); await import('${root}/gaps.ts'); await import('${root}/queue.ts');
+const { dueIn } = await import('${root}/activity.ts');
+const record = await import('${root}/record.ts');
+if (${edit}) record.patchRole(1, { location: 'Duluth, MN' });
+console.log(JSON.stringify({ sig: bankSignature(), due: dueIn(Date.now(), bankSignature),
+  roles: db.query('SELECT id, company, title, start, end, location, summary, standing, reach, part_of, note, label FROM roles ORDER BY id').all(),
+  official: db.query('SELECT official FROM roles WHERE id = 1').get().official, trigger: db.query("SELECT count(*) AS n FROM sqlite_master WHERE name = 'roles_mark_cleared'").get().n,
+  jobs: db.query('SELECT resume, resume_status, bank_sig, edited FROM jobs ORDER BY id').all(), tree: record.readTree().roles.map((r) => Object.keys(r).includes('marks')) }));
+`;
+const MARKS_HAS = Bun.spawnSync(['git', 'cat-file', '-e', `${MARKS_BEFORE}^{commit}`], { cwd: join(lib, '..') }).exitCode === 0;
+if (!MARKS_HAS) console.log(`migration: the marks test is skipped, because commit ${MARKS_BEFORE} is not in this clone (a shallow checkout).`);
+const marksOpen = async (root: string, at: string, edit = false) => {
+  const p = Bun.spawn(['bun', '-e', MARKS_CHILD(root, edit)], { env: { ...process.env, DB: at, NODE_ENV: 'test' }, stdout: 'pipe', stderr: 'pipe' });
+  const [exit, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  if (exit !== 0) throw new Error(err.slice(-1500));
+  return JSON.parse(out.trim().split('\n').pop()!);
+};
+
+test.skipIf(!MARKS_HAS)('a database with marks stored by the last version opens with its roles as they were, and the marks unread', async () => {
+  const oldLib = join(dir, 'marks-old');
+  expect(Bun.spawnSync(['sh', '-c', `mkdir -p "${oldLib}" && git archive ${MARKS_BEFORE} lib | tar -x -C "${oldLib}"`], { cwd: join(lib, '..') }).exitCode).toBe(0);
+  symlinkSync(join(lib, '..', 'node_modules'), join(oldLib, 'node_modules'));
+  const at = join(dir, 'marks.db');
+  oldTreeDatabase(at);
+  const was = await marksOpen(join(oldLib, 'lib'), at);
+  expect(was.trigger).toBe(1);
+  const d = new Database(at);
+  d.run(`UPDATE roles SET official = '{"company":"hr","title":"hr","start":"memory","end":"memory","type":"hr","location":"memory"}' WHERE id = 1`);
+  d.close();
+  const marks = '{"company":"hr","title":"hr","start":"memory","end":"memory","type":"hr","location":"memory"}';
+  const first = await marksOpen(lib, at), second = await marksOpen(lib, at);
+  const together = await Promise.all([marksOpen(lib, at), marksOpen(lib, at)]);
+  for (const got of [first, second, ...together]) {
+    expect(got.roles).toEqual(was.roles);
+    expect(got.sig).toBe(was.sig);
+    expect(got.due).toBe(0);
+    expect(got.jobs).toEqual(was.jobs);
+    expect(got.official).toBe(marks);
+    expect(got.trigger).toBe(0);
+    expect(got.tree.every((x: boolean) => x === false)).toBe(true);
+  }
+  // A role edited afterwards: its value changes, and the column stays as it was (no trigger clears it, no code writes it).
+  const edited = await marksOpen(lib, at, true);
+  expect(edited.roles[0].location).toBe('Duluth, MN');
+  expect(edited.official).toBe(marks);
+}, 120_000);

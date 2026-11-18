@@ -1,5 +1,7 @@
 # Design direction
 
+Rule 4 was changed by the owner on 2026-11-18: the owner's record is taken as given, with no mark of where a value came from.
+
 The studio is a typeset record of a working life. It looks like a well-set document and a catalogue
 record. It behaves like a short queue of things that need the owner, with slow work kept out of the way.
 
@@ -16,9 +18,9 @@ still open; the lab (`lab/`) exists to choose them.
 3. **One ink, one paper, at most two greys.** `grey` is for secondary text. `line` is for rules. Emphasis
    comes from weight and position. Red (`-exact-system-red`) is only for a failure or a destructive action.
    An accent colour, if the owner keeps one, marks only the one item in focus and links.
-4. **Every fact, role, job and resume is a record.** A record has a permanent reference number, a date or
-   date range, and a provenance line (where it came from and when). Its fields always come in the same order:
-   reference, name, dates, extent, status, provenance.
+4. **Every fact, role, job and resume is a record.** A record has a permanent reference number and a date or
+   date range. Its fields always come in the same order: reference, name, dates, extent, status. The owner's record
+   is taken as the owner gave it: no screen marks where a value of it came from or how sure it is.
 5. **One score for each thing, and status is one plain word.** Status words come from the fixed list in
    section 5. A word outside the list is a defect.
 
@@ -71,7 +73,7 @@ Found when the lab drew these values:
 
 - Two rules never touch. A section head has a rule above it; the first record under it has none.
 - A record in `catalogue` style takes three lines, not six: name; then dates, extent and status on one
-  line; then provenance. The field order does not change.
+  line; then, for a job, where its posting was found. The field order does not change.
 - On a phone the gutter takes about 70px of 390px. `refs` set to `inline` suits a phone better.
 - With `notes` at 0 the notes column is not drawn, so the main column keeps the page.
 
@@ -80,7 +82,7 @@ Found when the lab drew these values:
 | Name | What it is here |
 | --- | --- |
 | Accession number | The permanent reference on a record: `F-0142` a fact, `R-07` a role, `J-023` a job, `V-023-C` a resume version. Set in tabular figures. Never reused. |
-| Provenance line | One grey line: source, then date. "From the 2024 review notes, confirmed 3 Mar 2026." |
+| Where a posting was found | On a job only: one grey line under it, "From Greenhouse" or "Pasted in by you". A posting is not the owner's own information. |
 | Extent and date range | "2019–2023 · 48 facts" on a role. An en dash between years, a middle dot between parts. |
 | Sidenote | A note in the margin column, on the row of the bullet it concerns. Under 640px wide it moves below the bullet, indented. |
 | Running balance | While a posting is mapped: "7 of 9 requirements answered · 2 open". |
@@ -100,7 +102,6 @@ up with a whole bullet or paragraph, never with one line inside it, so each resu
 One word, in `text` size, in grey unless it needs the owner. The whole list:
 
 - A job: `New`, `Reading`, `Read`, `Writing`, `Ready`, `Sent`, `Quiet`, `Closed`, `Failed`.
-- A fact or role: `Confirmed`, `Unsure`.
 - A question: `Open`, `Answered`, `Snoozed`.
 - Slow work: `Waiting` (always with its place: "Waiting, 2 ahead"), `Running`, `Done`, `Failed`.
 - The public page: `Draft`, `Live`, `Offline`.
@@ -133,9 +134,8 @@ stand beside the roles. Facts that belong to no role stand in a group named Gene
 
 Where each kind of information lives:
 
-- **Role.** The official record of a job: employer, title, start, end, employment type and location. Each field
-  carries where it comes from: "As HR records it", "From memory", or "Source not marked". A role also holds how far
-  its work reached users. Stored in `roles`; the marks are `roles.official`.
+- **Role.** A job: employer, title, start, end, employment type and location, as the owner gave them. A role also
+  holds how far its work reached users. Stored in `roles`.
 - **Project.** A piece of work with a name, dates and four parts: Result, Situation, What I did, What I learned. A
   side project also says where it lives. A project in a role is a row of `projects`. A repository's project group, a
   side project and a repository nobody has placed are rows of `roles` that the resume pipeline already reads, and
@@ -158,7 +158,7 @@ The arrangement the owner chose in the lab (`lab/experience.html`, saved as `lab
   "(optional)". A form saves only on Add or Save, and has Cancel. A child is added from inside its parent. A new
   item opens at once and is marked "Just added" until the next action, even when a search or the view would hide it.
 - "Read as" gives three views of the same data: Roles (the tree), Projects and Facts (sorted).
-- An open role shows all six fields of its official record, each with its mark. An open project shows all four parts.
+- An open role shows its six fields as plain values. An open project shows all four parts.
 - No note line at the top, and no drafts of what the studio could write.
 - The values the screen uses (the first view, facts before "Show all", the step per level, the width for two
   columns) are `experienceLook()` in `look.contract`.
@@ -170,6 +170,9 @@ What was rejected, and why:
 - A blank line as the only way to add: it captures a headline and nothing else.
 - Naming every missing part on the closed line: it reads as a form to fill in.
 - A completeness meter: it measures quantity, not quality.
+- Marking where each value comes from (as HR records it, from memory, not marked), and the line on a fact that said
+  where it was read from: rejected by the owner on 2026-11-18. The record is as factual as the owner can make it, and
+  such a mark is never shown to a reader of a resume.
 
 What makes the studio write unsent resumes again (each changes what a resume is written from):
 
@@ -186,7 +189,7 @@ What makes the studio write unsent resumes again (each changes what a resume is 
 - Giving a fact its number before, its team or the owner's own part.
 
 What does not: adding a project to a role while it holds no fact, What I learned, where a side project lives, changing
-a role's location, setting where a field comes from, a verdict on a line of How you work, a suggestion not kept, an
+a role's location, a verdict on a line of How you work, a suggestion not kept, an
 answer of "There was none" or "I don't know", a skill's mark, the review of the skills list, and a Save that changes
 nothing. A skill's mark and the review write no resume again; once the list is reviewed, each unsent resume's Skills
 line is written again from the list, with no model, once no mark has been saved for 2 minutes (section 9). The studio waits 15 minutes after the last

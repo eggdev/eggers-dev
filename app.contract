@@ -916,10 +916,10 @@ component App
   action stopEdit
     editing = ""
   // Each save sends only the fields the owner changed (`changed`, by name): a Save with no change changes nothing.
-  action saveRole(id: string, changed: string[], title: string, company: string, start: string, end: string, employment: string, location: string, reach: string, marks: string[])
+  action saveRole(id: string, changed: string[], title: string, company: string, start: string, end: string, employment: string, location: string, reach: string)
     changeOn = `role:${id}`
     lastChange = "edit"
-    send changed = saveRole(id, changed, title.trim(), company.trim(), start.trim(), end.trim(), employment, location.trim(), reach, marks)
+    send changed = saveRole(id, changed, title.trim(), company.trim(), start.trim(), end.trim(), employment, location.trim(), reach)
   action saveProject(id: string, changed: string[], title: string, dates: string, lives: string, result: string, situation: string, did: string, learned: string, place: string)
     changeOn = `project:${id}`
     lastChange = "edit"

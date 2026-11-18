@@ -90,9 +90,9 @@ fn lookNarrow(): number = 640
 // writing (its resume being written) is Writing; ready (its resume passes the PDF's check) is Ready; applied and
 // interviewed are Sent; no-response and quiet (no reply 14 days after it was sent) are Quiet; rejected, offer and
 // closed are Closed; failed (the reading) and write-failed (the resume) are Failed.
-// A job: New, Reading, Read, Writing, Ready, Sent, Quiet, Closed, Failed. A fact or role: Confirmed, Unsure.
+// A job: New, Reading, Read, Writing, Ready, Sent, Quiet, Closed, Failed.
 // A question: Open, Answered, Snoozed. Slow work: Waiting, Running, Done, Failed. The public page: Draft, Live, Offline.
-fn statusWord(kind: string, old: string): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = kind == "job" ? (old == "queued" or old == "found" ? "New" : old == "running" ? "Reading" : old == "done" ? "Read" : old == "writing" ? "Writing" : old == "ready" ? "Ready" : old == "applied" or old == "interviewed" ? "Sent" : old == "no-response" or old == "quiet" ? "Quiet" : old == "rejected" or old == "offer" or old == "closed" ? "Closed" : old == "failed" or old == "write-failed" ? "Failed" : "New") : kind == "fact" or kind == "role" ? (old == "unsure" ? "Unsure" : "Confirmed") : kind == "question" ? (old == "answered" ? "Answered" : old == "snoozed" ? "Snoozed" : "Open") : kind == "work" ? (old == "running" ? "Running" : old == "done" ? "Done" : old == "failed" ? "Failed" : "Waiting") : kind == "public" ? (old == "live" ? "Live" : old == "offline" ? "Offline" : "Draft") : "Open"
+fn statusWord(kind: string, old: string): enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline"> = kind == "job" ? (old == "queued" or old == "found" ? "New" : old == "running" ? "Reading" : old == "done" ? "Read" : old == "writing" ? "Writing" : old == "ready" ? "Ready" : old == "applied" or old == "interviewed" ? "Sent" : old == "no-response" or old == "quiet" ? "Quiet" : old == "rejected" or old == "offer" or old == "closed" ? "Closed" : old == "failed" or old == "write-failed" ? "Failed" : "New") : kind == "question" ? (old == "answered" ? "Answered" : old == "snoozed" ? "Snoozed" : "Open") : kind == "work" ? (old == "running" ? "Running" : old == "done" ? "Done" : old == "failed" ? "Failed" : "Waiting") : kind == "public" ? (old == "live" ? "Live" : old == "offline" ? "Offline" : "Draft") : "Open"
 
 // A page: one column, flush left, at most `measure` wide, with a side gutter. Its children are its sections.
 component Page
@@ -208,7 +208,7 @@ component Indented
 // A status: one word from the fixed list, in grey unless it needs the owner; Failed in red (DESIGN.md rule 3).
 component Status
   props
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     needsYou: bool
     testId: string
   view
@@ -251,11 +251,11 @@ component RefRow
 fn joinDot(parts: string[]): string = parts.filter(p => p != "").join(" · ")
 
 // A record's second line: its dates and extent, then its status word (DESIGN.md rule 4: reference, name, dates,
-// extent, status, provenance). `showWord` false leaves the status out where the data holds none.
+// extent, status). `showWord` false leaves the status out where the data holds none.
 component RecordMeta
   props
     span: string
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     showWord: bool
     // Where it waits, after a Waiting ("2 ahead"); "" for none.
     place: string
@@ -274,8 +274,9 @@ component RecordMeta
             text `, ${place}` font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-place`
 
 // A record in a list or at the head of its page, drawn as the look says (`look().record`). Catalogue: the name;
-// then dates, extent and status on one line; then the provenance (DESIGN.md, three lines, not six). Ledger, on a
-// wide window: one row, the parts in aligned columns, the provenance under the name. `href` makes the name a link
+// then dates, extent and status on one line; then, for a job, where its posting was found (DESIGN.md: three lines,
+// not six; the owner's own record has no such line). Ledger, on a wide window: one row, the parts in aligned columns,
+// that line under the name. `href` makes the name a link
 // to the record's own page ("" draws it as text); `strong` sets it in the heavy weight, for a record that heads
 // the records under it. `code` "" is a row with no reference number. Extra lines (a marker, a note) go in the slot,
 // under the record. testIds: the link or name is `testId`, the reference `testId-ref`, the second line
@@ -288,7 +289,7 @@ component Record
     strong: bool
     dates: string
     extent: string
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     showWord: bool
     place: string
     provenance: string
@@ -359,7 +360,7 @@ component RecordHead
     name: string
     dates: string
     extent: string
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     showWord: bool
     place: string
     provenance: string
@@ -470,7 +471,7 @@ component OutLink
 // happening and how long it usually takes.
 component WorkLine
   props
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     place: string
     text: string
     testId: string
@@ -525,7 +526,7 @@ component ActivityRow
     stage: string
     started: string
     usual: string
-    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Confirmed", "Unsure", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
+    word: enum<"New", "Reading", "Read", "Writing", "Ready", "Sent", "Quiet", "Closed", "Failed", "Open", "Answered", "Snoozed", "Waiting", "Running", "Done", "Draft", "Live", "Offline">
     place: string
     reason: string
     wide: bool
@@ -976,41 +977,36 @@ component Crumb
       else
         text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" overflow-wrap="break-word" testId=testId
 
-// One field of an official record: its name in grey, its value, and where the value comes from in grey after it.
-// On a wide window the names stand in a column of their own; on a narrow one each name is over its value.
+// One field of a record: its name in grey, then its value. On a wide window the names stand in a column of their own;
+// on a narrow one each name is over its value.
 component FieldRow
   props
     label: string
     value: string
-    mark: string
     wide: bool
     testId: string
   view
     if wide
       row align-items="baseline" column-gap=lookGutter()
         text label width=lookLabelWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
-        FieldValue(value=value, mark=mark, testId=testId)
+        FieldValue(value=value, testId=testId)
     else
       column
         text label font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
-        FieldValue(value=value, mark=mark, testId=testId)
+        FieldValue(value=value, testId=testId)
 
 component FieldValue
   props
     value: string
-    mark: string
     testId: string
   view
-    row flex=1 min-width=0 align-items="baseline" flex-wrap="wrap" column-gap="0.3em"
+    row flex=1 min-width=0 align-items="baseline"
       if value != ""
         text value font-size=lookText() font-weight=400 line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
-        if mark != ""
-          text "·" aria-hidden=true font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey"
-          text mark font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-mark`
       else
         text "Not recorded" font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=testId
 
-// Two fields side by side on a wide window (a value and where it comes from), one over the other on a narrow one.
+// Two fields side by side on a wide window, one over the other on a narrow one.
 component FieldPair
   props
     wide: bool

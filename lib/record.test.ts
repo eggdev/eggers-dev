@@ -1,8 +1,9 @@
 // `bun test lib`: the record's writes by hand (lib/record.ts) on a scratch database (lib/scratch.ts). What they prove:
 // filing a fact into a project of its own role moves the signature (a resume's writer is given it), and taking it out
 // puts it back; a fact the owner filed survives a
-// re-read of its source; a side project made by hand reads as a personal project on a resume; a mark clears when its
-// value changes, whoever changes it; a partial edit of a fact keeps its story; a reference is never handed out twice.
+// re-read of its source; a side project made by hand reads as a personal project on a resume; a role is stored as the
+// owner gave it, with no mark of where a value came from; a partial edit of a fact keeps its story; a reference is
+// never handed out twice.
 // Every name, employer and number is invented.
 import { beforeEach, expect, test } from 'bun:test';
 import { db, fact, role, seed } from './scratch.ts';
@@ -13,7 +14,7 @@ import type { RoleRow } from './db.ts';
 
 beforeEach(() => seed());
 const ok = <T extends { ok: boolean }>(d: T) => { if (!d.ok) throw new Error(JSON.stringify(d)); return d as Extract<T, { ok: true }>; };
-const marks = (id: number) => JSON.parse((db.query('SELECT official FROM roles WHERE id = ?').get(id) as { official: string }).official);
+const official = (id: number) => (db.query('SELECT official FROM roles WHERE id = ?').get(id) as { official: string }).official;
 const placed = (id: number) => db.query('SELECT role_id, project_id, status FROM facts WHERE id = ?').get(id);
 
 test('filing a fact into a project of its own role moves the signature, and back to Day to day it is as it was', () => {
@@ -65,27 +66,25 @@ test('a side project made by hand is one personal row the resume pipeline reads 
   expect(db.query("SELECT id FROM roles WHERE company = 'Lantern Notes'").get()).toBeNull();
 });
 
-test('a mark clears when its value changes, whoever changes it, unless the same change sets one', () => {
-  ok(patchRole(1, { official: { title: 'hr', company: 'hr', start: 'memory' } }));
-  expect(marks(1)).toEqual({ title: 'hr', company: 'hr', start: 'memory' });
-  // The owner changes the title and keeps it marked as HR records it.
-  ok(patchRole(1, { title: 'Director of Platform', official: { title: 'hr' } }));
-  expect(marks(1)).toEqual({ title: 'hr', company: 'hr', start: 'memory' });
-  // A change with no mark clears that field's mark only.
-  ok(patchRole(1, { start: 'Apr 2021' }));
-  expect(marks(1)).toEqual({ title: 'hr', company: 'hr' });
-  expect(db.query('SELECT start FROM roles WHERE id = 1').get()).toEqual({ start: '2021-04' });
-  // A writer that knows nothing of marks (a LinkedIn answer updates the row directly) clears it too.
+test('a role is stored as the owner gave it: no mark of where a value came from is read or written', () => {
+  // The marks the last version stored stay in their column; nothing reads them, and no change writes or clears them.
+  db.run(`UPDATE roles SET official = '{"title":"hr","start":"memory"}' WHERE id = 1`);
+  ok(patchRole(1, { title: 'Director of Platform', start: 'Apr 2021' }));
+  expect(db.query('SELECT title, start, official FROM roles WHERE id = 1').get()).toEqual({ title: 'Director of Platform', start: '2021-04', official: '{"title":"hr","start":"memory"}' });
   db.run("UPDATE roles SET company = 'Harborlight' WHERE id = 1");
-  expect(marks(1)).toEqual({ title: 'hr' });
-  // Employment type is a view of standing and label: a change to either clears its mark.
-  ok(patchRole(1, { employment: 'contract', official: { type: 'hr' } }));
-  expect(marks(1)).toEqual({ title: 'hr', type: 'hr' });
-  db.run("UPDATE roles SET label = 'Part-time' WHERE id = 1");
-  expect(marks(1)).toEqual({ title: 'hr' });
-  // A field typed by the owner in a new role is marked From memory.
-  const r = ok(addRole({ line: 'Head of Platform at Fernway', when: 'Mar 2023 – now', employment: 'employee' }));
-  expect(marks(r.id)).toEqual({ company: 'memory', title: 'memory', start: 'memory', type: 'memory' });
+  expect(official(1)).toBe('{"title":"hr","start":"memory"}');
+  // An old open tab may still send marks: they are ignored, with no error, and change nothing.
+  const row = db.query('SELECT * FROM roles WHERE id = 2').get();
+  expect(ok(patchRole(2, { official: { title: 'hr', location: 'memory' } })).wrote).toBe(false);
+  expect(ok(patchRole(2, { official: 'not an object' })).wrote).toBe(false);
+  expect(db.query('SELECT * FROM roles WHERE id = 2').get()).toEqual(row);
+  expect(ok(patchRole(2, { location: 'Remote', official: { location: 'hr' } })).wrote).toBe(true);
+  expect(db.query('SELECT location, official FROM roles WHERE id = 2').get()).toEqual({ location: 'Remote', official: '{}' });
+  // A new role writes no mark either.
+  const r = ok(addRole({ line: 'Head of Platform at Fernway', when: 'Mar 2023 – now', employment: 'employee', official: { title: 'hr' } }));
+  expect(db.query('SELECT title, company, start, end, standing, official FROM roles WHERE id = ?').get(r.id)).toEqual({ title: 'Head of Platform', company: 'Fernway', start: '2023-03', end: '', standing: 'employer', official: '{}' });
+  // The tree gives no marks.
+  expect(Object.keys(readTree().roles[0])).not.toContain('marks');
 });
 
 test('a partial edit of a fact keeps its story and its result', () => {
@@ -95,7 +94,8 @@ test('a partial edit of a fact keeps its story and its result', () => {
   ok(patchFact(1, { detail: 'A new story.' }));
   expect(db.query('SELECT text, detail, metric FROM facts WHERE id = 1').get()).toEqual({ text: 'Built the dispatch console.', detail: 'A new story.', metric: '640 users' });
   expect(patchFact(1, { text: '  ' })).toEqual({ ok: false, error: 'Enter the fact.', status: 400 });
-  expect(fullFact(1)).toMatchObject({ ref: 'F-0001', detail: 'A new story.', metric: '640 users', source: 'Added by hand' });
+  expect(fullFact(1)).toMatchObject({ ref: 'F-0001', detail: 'A new story.', metric: '640 users' });
+  expect(Object.keys(fullFact(1)!)).not.toContain('source');
 });
 
 test('a reference is never handed out twice, even by a writer that sets no id', () => {
@@ -195,8 +195,7 @@ const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const shown = (ym: string) => (ym.length === 7 ? `${months[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}` : ym);
 const asTheFormSends = (id: number) => {
   const t = readTree().roles.find((r) => r.id === String(id))!;
-  return { title: t.title, company: t.company, start: shown(t.start), end: shown(t.end), employment: t.employment, location: t.location, reach: t.reach,
-    official: { company: t.marks.company ?? '', title: t.marks.title ?? '', start: t.marks.start ?? '', end: t.marks.end ?? '', type: t.marks.type ?? '', location: t.marks.location ?? '' } };
+  return { title: t.title, company: t.company, start: shown(t.start), end: shown(t.end), employment: t.employment, location: t.location, reach: t.reach };
 };
 
 test('a role saved with no change writes nothing, in each stored form of its employment type', () => {
@@ -338,12 +337,6 @@ test('a hand write holds the rewrite of unsent resumes for 15 minutes, as an ans
   // An unchanged Save keeps no time.
   ok(patchRole(2, { location: 'Remote' }, T + 60_000));
   expect(holdSince()).toBe(T);
-});
-
-test('mark clearing never stops a role write, even when its marks are not JSON', () => {
-  db.run("UPDATE roles SET official = 'not json' WHERE id = 1");
-  db.run("UPDATE roles SET title = 'Director of Platform' WHERE id = 1");
-  expect(db.query('SELECT title, official FROM roles WHERE id = 1').get()).toEqual({ title: 'Director of Platform', official: 'not json' });
 });
 
 test('every insert into roles or facts takes its id from nextId (only lib/linkedin.ts cannot)', async () => {

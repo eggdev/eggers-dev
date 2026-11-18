@@ -68,9 +68,9 @@ db.run(`CREATE TABLE IF NOT EXISTS projects (
 for (const column of ['project_id INTEGER', "baseline TEXT NOT NULL DEFAULT ''", "team TEXT NOT NULL DEFAULT ''", "own_part TEXT NOT NULL DEFAULT ''"]) {
   try { db.run(`ALTER TABLE facts ADD COLUMN ${column}`); } catch { /* already there */ }
 }
-// official: where each field of a role's official record comes from, as JSON {company, title, start, end, type,
-// location} with values hr | memory; a field not in it is not marked. propose_status and propose_note follow a request
-// to propose projects for the role (a later stage).
+// official: where each field of a role came from, as an earlier version marked it. Since 2026-11-18 (the owner: the
+// record is taken as given) nothing reads or writes it; it stays only so no stored data is dropped. propose_status and
+// propose_note follow a request to propose projects for the role.
 for (const column of ["official TEXT NOT NULL DEFAULT '{}'", "propose_status TEXT NOT NULL DEFAULT ''", "propose_note TEXT NOT NULL DEFAULT ''"]) {
   try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
 }
@@ -99,22 +99,9 @@ db.run(`CREATE TABLE IF NOT EXISTS project_proposals (
 // here reaches an existing database. One transaction that takes the write lock first (immediate): the server and the
 // worker start together, and neither writes between the drop and the create.
 db.transaction(() => {
-  // A changed value loses its mark unless the same change sets one. A trigger, so it holds for every writer, the
-  // LinkedIn and timeline answers too: those update `roles` directly and never touch `official`. A mark that is not
-  // JSON is left alone, so it can never stop a role being written.
+  // The trigger that cleared a role's mark when its value changed is gone with the marks: dropped at every start, which
+  // is safe when it is already gone and when two processes start together (one at a time, under the write lock).
   db.run('DROP TRIGGER IF EXISTS roles_mark_cleared');
-  db.run(`CREATE TRIGGER roles_mark_cleared AFTER UPDATE OF company, title, start, end, location, standing, label ON roles
-    WHEN NEW.official = OLD.official AND NEW.official != '{}' AND json_valid(NEW.official)
-    BEGIN
-      UPDATE roles SET official = json_remove(NEW.official,
-        CASE WHEN NEW.company IS NOT OLD.company THEN '$.company' ELSE '$.none' END,
-        CASE WHEN NEW.title IS NOT OLD.title THEN '$.title' ELSE '$.none' END,
-        CASE WHEN NEW.start IS NOT OLD.start THEN '$.start' ELSE '$.none' END,
-        CASE WHEN NEW.end IS NOT OLD.end THEN '$.end' ELSE '$.none' END,
-        CASE WHEN NEW.location IS NOT OLD.location THEN '$.location' ELSE '$.none' END,
-        CASE WHEN NEW.standing IS NOT OLD.standing OR NEW.label IS NOT OLD.label THEN '$.type' ELSE '$.none' END)
-      WHERE id = NEW.id;
-    END`);
   for (const table of ['roles', 'facts']) {
     db.run(`DROP TRIGGER IF EXISTS ${table}_id_floor`);
     db.run(`CREATE TRIGGER ${table}_id_floor AFTER DELETE ON ${table}

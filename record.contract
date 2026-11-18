@@ -9,8 +9,8 @@ use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activ
 // The record as one tree (lib/tree.ts, GET /tree): Role → Project → Fact, side projects beside the roles, and
 // "General" for facts that belong to no role. Each item carries its reference number. A fact's story and evidence
 // are read with the fact itself (`FactFull`), when it is opened.
-// A role is the official record: employer (company), title, start, end, employment type and location, each with where
-// it comes from (mark…: hr | memory | "" for not marked). employment: employee | contract | part-time | own | "".
+// A role: employer (company), title, start, end, employment type and location, as the owner gave them (the record is
+// taken as given: no mark of where a value came from). employment: employee | contract | part-time | own | "".
 shape TreeRole
   id: string
   ref: string
@@ -21,12 +21,6 @@ shape TreeRole
   location: string
   employment: string
   reach: string
-  markCompany: string
-  markTitle: string
-  markStart: string
-  markEnd: string
-  markType: string
-  markLocation: string
   // The owner's request for suggested projects on this role: "" | queued | running | done | failed, and its note
   // (how many were suggested, or why it failed).
   proposeStatus: string
@@ -109,7 +103,7 @@ shape Proposals
   role: string
   items: Proposal[]
 
-// One fact whole: its story, what supports it and where it came from ("added" is "3 Mar 2026", "" when unknown).
+// One fact whole: its story and what supports it.
 shape FactFull
   loaded: bool
   id: string
@@ -119,9 +113,6 @@ shape FactFull
   metric: string
   skills: string
   evidence: string
-  source: string
-  added: string
-  edited: bool
 
 // A place a fact or a project can go, as the choosers list it.
 shape Home
@@ -191,8 +182,6 @@ fn many(n: number, one: string, more: string): string = `${n} ${n == 1 ? one : 
 // Reference numbers (DESIGN.md section 4), from the database id and never from a position: R-07, F-0142.
 fn roleRef(id: string): string = id.length >= 2 ? `R-${id}` : `R-0${id}`
 fn factRef(id: string): string = id.length >= 4 ? `F-${id}` : id.length == 3 ? `F-0${id}` : id.length == 2 ? `F-00${id}` : `F-000${id}`
-// A fact's provenance line: where it came from, and when. Only what the record holds.
-fn factFrom(f: FactFull): string = `${f.source == "Added by hand" ? (f.added == "" ? "Added by hand" : `Added by hand on ${f.added}`) : (f.added == "" ? `From ${f.source}` : `From ${f.source}, added ${f.added}`)}.${f.edited ? " Edited by you since." : ""}`
 // The roles that say Present beside this one, while the person has not said how they relate.
 fn othersOf(os: Overlap[], id: string): string[] = os.filter(o => o.a == id or o.b == id).map(o => o.a == id ? o.b : o.a)
 // A failed read in the owner's words: no machine terms here (DESIGN.md rule 10).
@@ -213,7 +202,6 @@ fn stripEnd(s: string): string = s.endsWith(".") ? s.slice(0, s.length - 1) : s
 fn firstSentence(t: string): string = stripEnd(match first(t.trim().split(". ")) { case some(s) => s, case none => "" })
 fn employmentLabel(e: string): string = e == "employee" ? "Employee" : e == "contract" ? "Contract" : e == "part-time" ? "Part-time" : e == "own" ? "Own company" : ""
 fn reachLabel(v: string): string = v == "live" ? "In production" : v == "retired" ? "Was in production" : v == "never" ? "Never reached users" : ""
-fn markLabel(m: string): string = m == "hr" ? "As HR records it" : m == "memory" ? "From memory" : "Source not marked"
 fn roleName(r: TreeRole): string = r.title == "" ? r.company : `${r.title}, ${r.company}`
 // A role in a chooser or a filter: two roles at one employer are told apart by title, and the years tell apart a
 // title held twice.
@@ -763,20 +751,20 @@ component ItemPane
           if s.editing == s.open
             EditRoleForm(role=r, error=changeHere, busy=s.busy, wide=s.wide, save=saveRole, cancel=stopEdit)
           else
-            column gap=lookTight() testId="official"
-              FieldRow(label="Employer", value=r.company, mark=markLabel(r.markCompany), wide=s.wide, testId="official-company")
-              FieldRow(label="Official title", value=r.title, mark=markLabel(r.markTitle), wide=s.wide, testId="official-title")
-              FieldRow(label="Start", value=ymText(r.start), mark=markLabel(r.markStart), wide=s.wide, testId="official-start")
-              FieldRow(label="End", value=(r.end == "" and r.start != "" ? "Present" : ymText(r.end)), mark=markLabel(r.markEnd), wide=s.wide, testId="official-end")
-              FieldRow(label="Employment type", value=employmentLabel(r.employment), mark=markLabel(r.markType), wide=s.wide, testId="official-type")
-              FieldRow(label="Location", value=r.location, mark=markLabel(r.markLocation), wide=s.wide, testId="official-location")
+            column gap=lookTight() testId="role-fields"
+              FieldRow(label="Employer", value=r.company, wide=s.wide, testId="role-company")
+              FieldRow(label="Official title", value=r.title, wide=s.wide, testId="role-title")
+              FieldRow(label="Start", value=ymText(r.start), wide=s.wide, testId="role-start")
+              FieldRow(label="End", value=(r.end == "" and r.start != "" ? "Present" : ymText(r.end)), wide=s.wide, testId="role-end")
+              FieldRow(label="Employment type", value=employmentLabel(r.employment), wide=s.wide, testId="role-type")
+              FieldRow(label="Location", value=r.location, wide=s.wide, testId="role-location")
             if r.reach != ""
-              FieldRow(label="Reached users", value=reachLabel(r.reach), mark="", wide=s.wide, testId="role-reach")
+              FieldRow(label="Reached users", value=reachLabel(r.reach), wide=s.wide, testId="role-reach")
             if s.deleting == s.open
               DeleteAsk(question=`Delete ${r.ref}, its ${projectCount(projectsOf(tree, r.id).filter(p => not p.carried).length)} and ${factCount(tree.facts.filter(f => f.roleId == r.id and (f.projectId == "" or projectsOf(tree, r.id).filter(p => p.id == f.projectId and not p.carried).length > 0)).length)}? A repository filed under it stays, not placed. This cannot be undone.`, label=`Delete ${r.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
             else
               Actions(testId="pane-actions")
-                Action(label="Edit official record", press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
+                Action(label="Edit the role", press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
                 DangerAction(label="Delete role", press=askDelete(s.open), disabled=false, testId="pane-delete")
           TreeList(testId="in-projects")
             for p in projectsOf(tree, r.id) key=p.id
@@ -848,7 +836,6 @@ component ItemPane
         for f in tree.facts.filter(x => x.id == id) key=f.id
           ItemHead(code=f.ref, name=f.text, strong=false, sub=joinParts([f.metric, kindLabel(f.kind)]), mark=justMark(s.open, s), full=s.beside, close=close)
           if fact.loaded and fact.id == f.id
-            QuietLine(text=factFrom(fact), testId="fact-from")
             if s.editing == s.open
               EditFactForm(fact=f, detail=fact.detail, error=changeHere, busy=s.busy, save=saveFact, cancel=stopEdit)
             else
@@ -857,7 +844,8 @@ component ItemPane
               Labelled(label="Category", value=kindLabel(f.kind), testId="fact-kind")
               if fact.skills != ""
                 Labelled(label="Skills", value=fact.skills, testId="fact-skills")
-              Labelled(label="Evidence", value=(fact.evidence == "" ? "None recorded." : fact.evidence), testId="fact-evidence")
+              if fact.evidence != ""
+                Labelled(label="Evidence", value=fact.evidence, testId="fact-evidence")
               MoveFact(fact=f, homes=factHomes(tree), error=(s.deleting == "" ? changeHere : ""), busy=s.busy, move=moveFact)
               if s.deleting == s.open
                 DeleteAsk(question=`Delete ${f.ref}? It is removed from your record and stays out when its source is read again. This cannot be undone.`, label=`Delete ${f.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
@@ -1076,31 +1064,7 @@ component AddFactForm
         MainAction(label="Add fact", press=submit, disabled=busy, keys="", testId="new-save")
         Action(label="Cancel", press=cancel, disabled=false, keys="", testId="new-cancel")
 
-// A field of the official record and where its value comes from. A value the owner changes, with no mark chosen, is
-// marked From memory.
-component OfficialField
-  props
-    label: string
-    value: string
-    mark: string
-    hint: string
-    wide: bool
-    field: string
-    edit: action
-    pick: action
-  view
-    FieldPair(wide=wide)
-      PairField(label=label)
-        input value=value input=edit placeholder=hint aria-label=label autocomplete="off" testId=`edit-${field}`
-      PairField(label="Where it comes from")
-        select value=mark change=pick aria-label=`Where the ${label.toLowerCase()} comes from` testId=`edit-${field}-mark`
-          option "Not marked" value=""
-          option "As HR records it" value="hr"
-          option "From memory" value="memory"
-
-// Whether a field's mark is to be sent: it was changed, or its value was (a changed value with no mark is "From memory").
-fn markChanged(mark: string, stored: string, valueChanged: bool): bool = mark != stored or valueChanged
-// The official record of a role, edited: six fields, each with where it comes from, and whether its work reached users.
+// The role, edited: its six fields as plain fields, two to a row on a wide window, and whether its work reached users.
 component EditRoleForm
   props
     role: TreeRole
@@ -1116,12 +1080,6 @@ component EditRoleForm
   state employment = role.employment
   state location = role.location
   state reach = role.reach
-  state mTitle = role.markTitle
-  state mCompany = role.markCompany
-  state mStart = role.markStart
-  state mEnd = role.markEnd
-  state mType = role.markType
-  state mLocation = role.markLocation
   action editTitle(v: string)
     title = v
   action editCompany(v: string)
@@ -1136,27 +1094,21 @@ component EditRoleForm
     employment = v
   action pickReach(v: string)
     reach = v
-  action markTitle(v: string)
-    mTitle = v
-  action markCompany(v: string)
-    mCompany = v
-  action markStart(v: string)
-    mStart = v
-  action markEnd(v: string)
-    mEnd = v
-  action markType(v: string)
-    mType = v
-  action markLocation(v: string)
-    mLocation = v
   action submit
-    save(role.id, [title != role.title ? "title" : "", company != role.company ? "company" : "", start != ymText(role.start) ? "start" : "", end != ymText(role.end) ? "end" : "", employment != role.employment ? "employment" : "", location != role.location ? "location" : "", reach != role.reach ? "reach" : "", markChanged(mCompany, role.markCompany, company != role.company) ? "mark:company" : "", markChanged(mTitle, role.markTitle, title != role.title) ? "mark:title" : "", markChanged(mStart, role.markStart, start != ymText(role.start)) ? "mark:start" : "", markChanged(mEnd, role.markEnd, end != ymText(role.end)) ? "mark:end" : "", markChanged(mType, role.markType, employment != role.employment) ? "mark:type" : "", markChanged(mLocation, role.markLocation, location != role.location) ? "mark:location" : ""].filter(k => k != ""), title, company, start, end, employment, location, reach, [mCompany == "" and company != role.company ? "memory" : mCompany, mTitle == "" and title != role.title ? "memory" : mTitle, mStart == "" and start != ymText(role.start) ? "memory" : mStart, mEnd == "" and end != ymText(role.end) ? "memory" : mEnd, mType == "" and employment != role.employment ? "memory" : mType, mLocation == "" and location != role.location ? "memory" : mLocation])
+    save(role.id, [title != role.title ? "title" : "", company != role.company ? "company" : "", start != ymText(role.start) ? "start" : "", end != ymText(role.end) ? "end" : "", employment != role.employment ? "employment" : "", location != role.location ? "location" : "", reach != role.reach ? "reach" : ""].filter(k => k != ""), title, company, start, end, employment, location, reach)
   view
-    InPlaceForm(label="Official record", testId="edit-role-form")
-      StrongLine(text="Official record", testId="edit-role-head")
-      OfficialField(label="Official title", value=title, mark=mTitle, hint="", wide=wide, field="title", edit=editTitle, pick=markTitle)
-      OfficialField(label="Employer", value=company, mark=mCompany, hint="", wide=wide, field="company", edit=editCompany, pick=markCompany)
-      OfficialField(label="Start", value=start, mark=mStart, hint="Mar 2023", wide=wide, field="start", edit=editStart, pick=markStart)
-      OfficialField(label="End", value=end, mark=mEnd, hint="Leave blank if you still work here", wide=wide, field="end", edit=editEnd, pick=markEnd)
+    InPlaceForm(label="Edit the role", testId="edit-role-form")
+      StrongLine(text="Edit the role", testId="edit-role-head")
+      FieldPair(wide=wide)
+        PairField(label="Official title")
+          input value=title input=editTitle aria-label="Official title" autocomplete="off" testId="edit-title"
+        PairField(label="Employer")
+          input value=company input=editCompany aria-label="Employer" autocomplete="off" testId="edit-company"
+      FieldPair(wide=wide)
+        PairField(label="Start")
+          input value=start input=editStart placeholder="Mar 2023" aria-label="Start" autocomplete="off" testId="edit-start"
+        PairField(label="End")
+          input value=end input=editEnd placeholder="Leave blank if you still work here" aria-label="End" autocomplete="off" testId="edit-end"
       FieldPair(wide=wide)
         PairField(label="Employment type")
           select value=employment change=pickEmployment aria-label="Employment type" testId="edit-employment"
@@ -1165,12 +1117,8 @@ component EditRoleForm
             option "Contract" value="contract"
             option "Part-time" value="part-time"
             option "Own company" value="own"
-        PairField(label="Where it comes from")
-          select value=mType change=markType aria-label="Where the employment type comes from" testId="edit-employment-mark"
-            option "Not marked" value=""
-            option "As HR records it" value="hr"
-            option "From memory" value="memory"
-      OfficialField(label="Location", value=location, mark=mLocation, hint="", wide=wide, field="location", edit=editLocation, pick=markLocation)
+        PairField(label="Location")
+          input value=location input=editLocation aria-label="Location" autocomplete="off" testId="edit-location"
       FieldLabel(label="Reached users (weighs this work for a job’s fit)")
         select value=reach change=pickReach aria-label="Reached users" align-self="flex-start" max-width="100%" testId="edit-reach"
           option "Not set" value=""

@@ -140,7 +140,9 @@ test('the tree lists roles, projects and facts with references, and no story or 
     { id: '2', ref: 'F-0002', roleId: '2', projectId: '', text: 'Rebuilt the quoting API.', metric: '', kind: 'project' }]);
   expect(t.counts).toEqual({ roles: 3, projects: 1, sides: 0, unplaced: 0, facts: 2 });
   const one = (await call('GET', '/facts/1')).body;
-  expect(one).toMatchObject({ ref: 'F-0001', detail: 'The story.', skills: 'TypeScript, Go', source: 'Added by hand' });
+  expect(one).toMatchObject({ ref: 'F-0001', detail: 'The story.', skills: 'TypeScript, Go' });
+  // Where it was read from is not given: no screen says where a value of the owner's record came from.
+  for (const k of ['source', 'added', 'edited']) expect(Object.keys(one)).not.toContain(k);
   expect((await call('GET', '/facts/99')).status).toBe(404);
 });
 
@@ -160,7 +162,7 @@ test('a project and a fact go to a role made on the spot, which must read title 
   const f = await call('POST', '/facts', { text: 'Moved 40 services.', projectId: p.body.id });
   expect(f).toMatchObject({ status: 201, body: { ok: true, kind: 'fact', id: '3', ref: 'F-0003' } });
   const t = (await call('GET', '/tree')).body;
-  expect(t.roles.find((r: { id: string }) => r.id === '5')).toMatchObject({ title: 'Head of Platform', company: 'Fernway', marks: { company: 'memory', title: 'memory' } });
+  expect(t.roles.find((r: { id: string }) => r.id === '5')).toMatchObject({ title: 'Head of Platform', company: 'Fernway' });
   expect(t.facts.find((x: { id: string }) => x.id === '3')).toMatchObject({ roleId: '5', projectId: p.body.id });
   // A partial edit keeps the rest; the project goes and its fact stays, in Day to day.
   expect((await call('PATCH', '/facts/1', { metric: '650 users' })).status).toBe(200);
@@ -327,4 +329,15 @@ test('a job with broken stored data, while the Skills lines are due: its outcome
   const r = new Database(file, { readonly: true });
   expect(r.query('SELECT outcome FROM jobs WHERE id = ?').get(id)).toEqual({ outcome: 'applied' });
   r.close();
+});
+
+// The owner's record is taken as the owner gave it: no route says where a value of it came from.
+test('the tree gives no marks; a role patched with marks from an old tab answers ok and changes nothing', async () => {
+  const t = (await call('GET', '/tree')).body;
+  expect(t.roles.length).toBeGreaterThan(0);
+  for (const r of t.roles) expect(Object.keys(r)).not.toContain('marks');
+  const row = () => { const d = new Database(file, { readonly: true }); try { return d.query('SELECT * FROM roles WHERE id = 2').get(); } finally { d.close(); } };
+  const before = row();
+  expect(await call('PATCH', '/roles/2', { official: { title: 'hr', start: 'memory' } })).toMatchObject({ status: 200, body: { ok: true } });
+  expect(row()).toEqual(before);
 });

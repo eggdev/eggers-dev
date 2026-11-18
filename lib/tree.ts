@@ -2,8 +2,8 @@
 // belong to no role. A pure module: the rows are passed in, and nothing here opens the database or asks a model.
 //
 // Where each kind of information lives:
-// - A role is a `roles` row at the level `role` (levelOf below). Its official record is that row: employer, title,
-//   start, end, employment type (a view of standing and label) and location, each with a mark in `official`.
+// - A role is a `roles` row at the level `role` (levelOf below): employer, title, start, end, employment type (a view
+//   of standing and label) and location, as the owner gave them. No mark of where a value came from is read.
 // - A project is a `projects` row. A repository's project group, a side project and a repository nobody placed are
 //   `roles` rows too, as the resume pipeline has always read them: their project points at the row (`via_role`), and
 //   takes its name and dates from it. Any other project lives in its role (`projects.role_id`).
@@ -13,8 +13,7 @@
 import type { RoleRow } from './db.ts';
 
 export type Level = 'role' | 'project' | 'side' | 'unplaced';
-export type Marks = Partial<Record<'company' | 'title' | 'start' | 'end' | 'type' | 'location', 'hr' | 'memory'>>;
-export type TreeRoleRow = RoleRow & { official?: string };
+export type TreeRoleRow = RoleRow;
 export type ProjectRow = { id: number; role_id: number | null; via_role: number | null; title: string; start: string; end: string; lives: string; situation: string; did: string; result: string; learned: string };
 export type FactLean = { id: number; role_id: number | null; project_id: number | null; text: string; metric: string; kind: string };
 
@@ -47,13 +46,6 @@ export const employmentFields = (e: Employment, standing: string): { standing: s
   : e === 'employee' ? { standing: 'employer', label: '' }
   : { standing: '', label: '' };
 
-export const marksOf = (official: string | undefined): Marks => {
-  try {
-    const o = JSON.parse(official ?? '{}') as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(o).filter(([k, v]) => ['company', 'title', 'start', 'end', 'type', 'location'].includes(k) && (v === 'hr' || v === 'memory'))) as Marks;
-  } catch { return {}; }
-};
-
 // Newest first; a row with no start yet comes first, so a role just added without dates is not lost at the bottom.
 const ym = (s: string) => (s === '' ? '' : s.length === 4 ? `${s}-01` : s);
 const newestFirst = <T extends { id: number; start: string }>(a: T, b: T) =>
@@ -62,7 +54,7 @@ const newestFirst = <T extends { id: number; start: string }>(a: T, b: T) =>
 const datedFirst = <T extends { id: number; start: string }>(a: T, b: T) =>
   (a.start === '' ? 1 : 0) - (b.start === '' ? 1 : 0) || ym(b.start).localeCompare(ym(a.start)) || a.id - b.id;
 
-export type TreeRole = { id: string; ref: string; title: string; company: string; start: string; end: string; location: string; employment: Employment; standing: string; reach: string; label: string; note: string; marks: Marks };
+export type TreeRole = { id: string; ref: string; title: string; company: string; start: string; end: string; location: string; employment: Employment; standing: string; reach: string; label: string; note: string };
 // place: role (in a role), side (the person's own), unplaced (a repository nobody placed). carried: its name and dates
 // are a `roles` row's.
 export type TreeProject = { id: string; ref: string; roleId: string; place: 'role' | 'side' | 'unplaced'; carried: boolean; title: string; start: string; end: string; lives: string; situation: string; did: string; result: string; learned: string };
@@ -108,7 +100,7 @@ export function tree(rows: TreeRoleRow[], projects: ProjectRow[], facts: FactLea
   const ordered = [...shown].sort((a, b) => rank[a.place] - rank[b.place] || (a.place === 'role' ? datedFirst : newestFirst)({ id: a.n, start: a.s }, { id: b.n, start: b.s }));
   return {
     roles: roles.map((r) => ({ id: String(r.id), ref: roleRef(r.id), title: r.title, company: r.company, start: r.start, end: r.end, location: r.location, employment: employmentOf(r),
-      standing: r.standing, reach: r.reach, label: r.label ?? '', note: r.note ?? '', marks: marksOf(r.official) })),
+      standing: r.standing, reach: r.reach, label: r.label ?? '', note: r.note ?? '' })),
     projects: ordered.map(({ n: _n, s: _s, ...p }) => p),
     facts: [...facts].sort((a, b) => a.id - b.id).map((f) => {
       const at = placeOf(f, rows, projects);

@@ -128,9 +128,9 @@ test "facts are in the record with no review step; a role shows its reference an
   clock data
   expect text "pane-ref" == "R-01"
   expect text "pane-title" == "Staff Engineer"
-  expect text "official-company" == "Acme"
-  expect text "official-company-mark" == "From memory"
-  expect text "official-type" == "Not recorded"
+  expect text "role-company" == "Acme"
+  expect tree missing "role-company-mark"
+  expect text "role-type" == "Not recorded"
   expect text "in-day-1" == "Day to day at Acme · 2 facts"
   // How the work counts for a job: its employment type and whether it reached users.
   tap "pane-edit"
@@ -140,8 +140,8 @@ test "facts are in the record with no review step; a role shows its reference an
   tap "edit-save"
   clock data
   clock settle
-  expect text "official-type" == "Employee"
-  expect text "official-type-mark" == "From memory"
+  expect text "role-type" == "Employee"
+  expect tree missing "role-type-mark"
   expect text "role-reach" == "In production"
   tap "in-day-1"
   clock settle
@@ -150,7 +150,8 @@ test "facts are in the record with no review step; a role shows its reference an
   clock data
   expect text "pane-title" == "Built the billing export service."
   expect text "pane-ref" == "F-0001"
-  expect tree has "fact-from"
+  // The record is taken as the owner gave it: no line says where a fact was read from.
+  expect tree missing "fact-from"
   expect text "fact-detail-text" == "Finance closed the month by hand. Designed and built the export in Go."
   expect text "crumb-role-1" == "Staff Engineer, Acme"
   expect text "crumb-day-1" == "Day to day at Acme"
@@ -1052,7 +1053,7 @@ test "a fact moves from Day to day into a project of its role and back, and dele
   clock settle
   expect text "in-fact-6" == "Moved 40 services in two quarters."
 
-test "a role's official record shows its six fields, each with where it comes from, and a mark the owner sets"
+test "a role shows its six fields as plain values, with no mark of where they came from, and an edited field saves"
   size 1280x800
   clock data
   tap "nav-record"
@@ -1060,25 +1061,30 @@ test "a role's official record shows its six fields, each with where it comes fr
   clock data
   tap "role-4"
   clock settle
-  expect text "official-company" == "Fernway"
-  expect text "official-company-mark" == "From memory"
-  expect text "official-title" == "Head of Platform"
-  expect text "official-start" == "Mar 2023"
-  expect text "official-end" == "Present"
-  expect text "official-end-mark" == "Source not marked"
-  expect text "official-type" == "Not recorded"
-  expect text "official-location" == "Not recorded"
+  expect text "role-company" == "Fernway"
+  expect text "role-title" == "Head of Platform"
+  expect text "role-start" == "Mar 2023"
+  expect text "role-end" == "Present"
+  expect text "role-type" == "Not recorded"
+  expect text "role-location" == "Not recorded"
+  expect tree missing "role-company-mark"
+  expect tree missing "role-title-mark"
+  expect tree missing "role-end-mark"
+  expect text "pane-edit" == "Edit the role"
   tap "pane-edit"
   clock settle
-  type "edit-title-mark" "hr"
+  expect text "edit-role-head" == "Edit the role"
+  expect tree has "edit-title"
+  expect tree missing "edit-title-mark"
+  expect tree missing "edit-employment-mark"
+  expect tree missing "edit-location-mark"
   type "edit-location" "Duluth, MN"
   tap "edit-save"
   clock data
   clock settle
-  expect text "official-title-mark" == "As HR records it"
-  expect text "official-location" == "Duluth, MN"
-  expect text "official-location-mark" == "From memory"
-  expect text "official-company-mark" == "From memory"
+  expect text "role-location" == "Duluth, MN"
+  expect text "role-title" == "Head of Platform"
+  expect tree missing "role-location-mark"
 
 test "a search finds a role and hides the rest, says when nothing matches, and clears"
   clock data
@@ -1150,7 +1156,7 @@ test "the record's questions are listed in Experience, each leading to its item,
   tap "role-7"
   clock settle
   clock data
-  expect text "official-start" == "Apr 2019"
+  expect text "role-start" == "Apr 2019"
 
 test "a line of How you work is kept, its verdict undone, said not to be true, and that undone too"
   size 1280x800

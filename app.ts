@@ -161,9 +161,8 @@ const sources: Sources = {
     const t = (await get('/tree')) as { roles?: unknown; projects?: unknown; facts?: unknown; questions?: unknown; derived?: unknown };
     return {
       loaded: true,
-      roles: rows(t.roles).map((r) => { const m = obj(r.marks) ?? {}; return { id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end), location: text(r.location),
-        employment: text(r.employment), reach: text(r.reach), markCompany: text(m.company), markTitle: text(m.title), markStart: text(m.start), markEnd: text(m.end), markType: text(m.type), markLocation: text(m.location),
-        proposeStatus: text(r.proposeStatus), proposeNote: text(r.proposeNote) }; }),
+      roles: rows(t.roles).map((r) => ({ id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end), location: text(r.location),
+        employment: text(r.employment), reach: text(r.reach), proposeStatus: text(r.proposeStatus), proposeNote: text(r.proposeNote) })),
       projects: rows(t.projects).map((p) => ({ id: text(p.id), ref: text(p.ref), roleId: text(p.roleId), place: text(p.place), carried: p.carried === true, title: text(p.title), start: text(p.start), end: text(p.end),
         lives: text(p.lives), situation: text(p.situation), did: text(p.did), result: text(p.result), learned: text(p.learned),
         suggestedResult: text(p.suggestedResult), suggestedFact: text(p.suggestedFact), proposal: text(p.proposal) })),
@@ -186,14 +185,14 @@ const sources: Sources = {
   judgeLine: ([key, verdict]) => write('POST', `/derived/${id(key)}`, { verdict }),
   // One fact whole, while it is open.
   loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
-    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '', source: '', added: '', edited: false };
+    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '' };
     if (fact === '') return none;
     // A fact deleted while it was open is gone, not a failed read.
     const res = await fetch(`${API}/facts/${id(fact)}`, { exactTimeout: 10000, headers });
     if (res.status === 404) return none;
     if (!res.ok) throw new Error(`The server answered ${res.status}.`);
     const f = (await res.json()) as Record<string, unknown>;
-    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence), source: text(f.source), added: text(f.added), edited: f.edited === true };
+    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence) };
   },
   // The role as one line ("title at employer"), or, once a line was refused as unclear, its title and employer apart.
   addRole: ([line, title, company, when, employment, location]) => made('POST', '/roles', { ...(line !== '' ? { line } : { title, company }), when, employment, location }),
@@ -203,13 +202,8 @@ const sources: Sources = {
   // home: day:<role>, project:<id>, general, or new (the role newRole names).
   addFact: ([body, home, newRole, metric]) => made('POST', '/facts', { text: body, metric, ...where(home, newRole) }),
   // Only the fields named in `changed` are sent, so a Save with no change asks the server to change nothing.
-  // marks: where each field comes from, in the order company, title, start, end, type, location ('' clears one); a
-  // mark is sent when its name ("mark:title") is in `changed`.
-  saveRole: ([role, changed, title, company, start, end, employment, location, reach, marks]) => {
-    const keys = ['company', 'title', 'start', 'end', 'type', 'location'];
-    const official = Object.fromEntries(keys.map((k, i) => [k, marks[i] ?? '']).filter(([k]) => changed.includes(`mark:${k}`)));
-    return made('PATCH', `/roles/${id(role)}`, { ...only(changed, { title, company, start, end, employment, location, reach }), official });
-  },
+  saveRole: ([role, changed, title, company, start, end, employment, location, reach]) =>
+    made('PATCH', `/roles/${id(role)}`, only(changed, { title, company, start, end, employment, location, reach })),
   // place: role:<id> or side for a project that is placed here; '' leaves it where it is.
   saveProject: ([project, changed, title, when, lives, result, situation, did, learned, place]) =>
     made('PATCH', `/projects/${id(project)}`, { ...only(changed, { title, when, lives, result, situation, did, learned }), ...(!changed.includes('place') ? {} : place === 'side' ? { side: true } : place.startsWith('role:') ? { roleId: place.slice(5) } : {}) }),

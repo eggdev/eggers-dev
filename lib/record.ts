@@ -4,7 +4,7 @@
 // confirmed (a later reading of its source leaves it alone), and every refusal is said in words, before anything
 // is changed.
 import { db, deleteFact, KINDS, nextId } from './db.ts';
-import { employmentFields, employmentOf, factRef, marksOf, levelOf, placeOf, projectRef, roleRef, tree, type Employment, type FactLean, type ProjectRow, type TreeRoleRow } from './tree.ts';
+import { employmentFields, employmentOf, factRef, levelOf, placeOf, projectRef, roleRef, tree, type Employment, type FactLean, type ProjectRow, type TreeRoleRow } from './tree.ts';
 import { syncProjects } from './projects.ts';
 import { howYouWork, shownLines, verdicts, type DerivedInput } from './derived.ts';
 import { inventory } from './metrics.ts';
@@ -86,7 +86,6 @@ export function parseRoleLine(s: string): { title: string; company: string } | n
   return m && m[1].trim() !== '' && m[2].trim() !== '' ? { title: m[1].trim(), company: m[2].trim() } : null;
 }
 const EMPLOYMENT: Employment[] = ['', 'employee', 'contract', 'part-time', 'own'];
-const MARK_KEYS = ['company', 'title', 'start', 'end', 'type', 'location'] as const;
 const dateOk = (v: string) => v === '' || /^\d{4}(-(0[1-9]|1[0-2]))?$/.test(v);
 
 // ---------- Reading the tree ----------
@@ -134,16 +133,14 @@ export function derivedNow() {
 // and one not yet judged are never given.
 export const keptLines = () => shownLines(derivedNow(), verdicts()).filter((l) => l.verdict === 'kept');
 
-const DAY = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-// One fact whole (GET /facts/:id): its story, evidence, skills and provenance too. null when it is gone.
+// One fact whole (GET /facts/:id): its story, evidence and skills too. null when it is gone. Where it was read from is
+// not given: the owner's record is taken as the owner gave it, and no screen says where a value came from.
 export function fullFact(id: number) {
-  const f = db.query('SELECT f.*, s.title AS source FROM facts f LEFT JOIN sources s ON s.id = f.source_id WHERE f.id = ?').get(id) as
-    (FactLean & { detail: string; skills: string; evidence: string; source_id: number | null; source: string | null; status: string; created_at: number; baseline: string; team: string; own_part: string }) | null;
+  const f = db.query('SELECT * FROM facts WHERE id = ?').get(id) as (FactLean & { detail: string; skills: string; evidence: string; baseline: string; team: string; own_part: string }) | null;
   if (!f) return null;
   const at = placeOf(f, rolesNow(), projectsNow());
   return { id: String(f.id), ref: factRef(f.id), roleId: at.role === null ? '' : String(at.role), projectId: at.project === null ? '' : String(at.project), kind: f.kind, text: f.text, detail: f.detail,
-    metric: f.metric, skills: f.skills, evidence: f.evidence, source: f.source_id === null ? 'Added by hand' : f.source ?? 'A source since deleted',
-    added: f.created_at > 0 ? DAY.format(f.created_at) : '', edited: f.source_id !== null && f.status === 'confirmed', baseline: f.baseline, team: f.team, ownPart: f.own_part };
+    metric: f.metric, skills: f.skills, evidence: f.evidence, baseline: f.baseline, team: f.team, ownPart: f.own_part };
 }
 
 // ---------- Roles ----------
@@ -152,7 +149,7 @@ const roleRow = (id: number) => db.query('SELECT * FROM roles WHERE id = ?').get
 const isRole = (id: number) => { const rows = rolesNow(), r = rows.find((x) => x.id === id); return r !== undefined && levelOf(r, rows) === 'role'; };
 
 // A new role, from {title, company} or from {line: "title at employer"}, with start, end or when, employment and
-// location if given. Each field the owner typed is marked "From memory" unless `official` says otherwise.
+// location if given, stored as the owner gave them. A key `official` (marks an older screen sent) is ignored.
 export function addRole(b: Body, now = Date.now()): Done {
   let title = str(b.title), company = str(b.company);
   if (given(b, 'line')) {
@@ -173,22 +170,20 @@ export function addRole(b: Body, now = Date.now()): Done {
   const employment = str(b.employment) as Employment;
   if (!EMPLOYMENT.includes(employment)) return refuse('Choose one of the listed employment types.');
   const kind = employmentFields(employment, ''), location = str(b.location);
-  const typed: Record<string, string> = { company, title, start, end, type: employment, location };
-  const marks = Object.fromEntries(MARK_KEYS.filter((k) => typed[k] !== '').map((k) => [k, markOf(b, k) || 'memory']));
-  const made = db.query(`INSERT INTO roles (id, company, title, start, end, location, standing, label, official) VALUES (${nextId('roles')}, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
-    .get(company, title, start, end, location, kind.standing, kind.label, JSON.stringify(marks)) as { id: number };
+  const made = db.query(`INSERT INTO roles (id, company, title, start, end, location, standing, label) VALUES (${nextId('roles')}, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+    .get(company, title, start, end, location, kind.standing, kind.label) as { id: number };
   return done('role', made.id, roleRef(made.id), true, now);
 }
-const markOf = (b: Body, k: string) => { const o = b.official as Record<string, unknown> | undefined; const v = o && typeof o === 'object' ? o[k] : undefined; return v === 'hr' || v === 'memory' ? v : ''; };
 
-// A role's fields, each optional: today's (standing, reach and partOf together; end, note, label) and the official
-// record (title, company, start, end, employment, location) with its marks in `official`. A value that changes loses
-// its mark unless `official` sets one (the trigger in lib/db.ts); `official` may also set or clear a mark alone.
+// A role's fields, each optional: standing, reach and partOf together, as before; end, note and label; and the role's
+// title, company, start, end, employment type and location. An `official` key (where each field came from, as an
+// older screen sent it) is ignored, with no error, and writes nothing.
 export function patchRole(id: number, b: Body, now = Date.now()): Done {
   const role = roleRow(id);
   if (!role) return refuse(GONE_ROLE, 404);
-  // standing and partOf go with reach, as before; reach may also be sent alone, beside the official record.
+  // standing and partOf go with reach, as before; reach may also be sent alone, beside the role's other fields.
   const kindSent = sent(b, 'standing') || given(b, 'partOf');
+  // A body with only `official` is an older screen's Save: a change of nothing, never a change of kind.
   const other = ['end', 'note', 'label', 'title', 'company', 'start', 'location', 'employment', 'reach'].some((k) => sent(b, k)) || given(b, 'official');
   if ((kindSent || !other) && (!['', 'employer', 'own', 'contract', 'personal'].includes(b.standing as string) || !['', 'live', 'retired', 'never'].includes(b.reach as string))) return refuse('Choose one of the listed kinds.');
   if (sent(b, 'reach') && !['', 'live', 'retired', 'never'].includes(b.reach as string)) return refuse('Choose one of the listed kinds.');
@@ -207,8 +202,6 @@ export function patchRole(id: number, b: Body, now = Date.now()): Done {
   if (sent(b, 'label') && !['', 'Contract', 'Part-time'].includes(label)) return refuse('Choose Contract, Part-time or no label.');
   const employment = str(b.employment) as Employment;
   if (sent(b, 'employment') && !EMPLOYMENT.includes(employment)) return refuse('Choose one of the listed employment types.');
-  const official = b.official as Record<string, unknown> | undefined;
-  if (given(b, 'official') && (typeof official !== 'object' || official === null || Object.entries(official).some(([k, v]) => !(MARK_KEYS as readonly string[]).includes(k) || !['', 'hr', 'memory'].includes(v as string)))) return refuse('Choose where each field comes from.');
   // What would change. A field equal to what is stored is left alone, so a Save with no change writes nothing, and
   // the record's signature (which every unsent resume follows) stays as it was. Employment type is a view of standing
   // and label: it is written only when the type itself is not the one stored, since one type has several stored forms.
@@ -224,16 +217,9 @@ export function patchRole(id: number, b: Body, now = Date.now()): Done {
   if (sent(b, 'label')) want('label', label);
   if (sent(b, 'employment') && employment !== employmentOf(role)) { const k = employmentFields(employment, role.standing); want('standing', k.standing); want('label', k.label); }
   if (sent(b, 'reach') && !kindSent) want('reach', b.reach as string);
-  const before = marksOf(role.official);
-  // The marks after the values: a changed value loses its mark (the trigger in lib/db.ts) unless `official` sets one.
-  const cleared = new Set(changes.map(([c]) => (c === 'standing' || c === 'label' ? 'type' : c)));
-  const marks: Record<string, string> = Object.fromEntries(Object.entries(before).filter(([k]) => !cleared.has(k)));
-  for (const [k, v] of Object.entries(official ?? {})) { if (v === '') delete marks[k]; else marks[k] = v as string; }
-  const marksChange = JSON.stringify(Object.entries(marks).sort()) !== JSON.stringify(Object.entries(before).sort());
-  if (changes.length === 0 && !marksChange) return done('role', id, roleRef(id), false, now);
+  if (changes.length === 0) return done('role', id, roleRef(id), false, now);
   db.transaction(() => {
     for (const [col, v] of changes) db.query(`UPDATE roles SET "${col}" = ? WHERE id = ?`).run(v, id);
-    if (marksChange || (official && changes.length > 0)) db.query('UPDATE roles SET official = ? WHERE id = ?').run(JSON.stringify(marks), id);
   })();
   syncProjects();
   return done('role', id, roleRef(id), true, now);

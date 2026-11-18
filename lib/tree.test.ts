@@ -5,7 +5,7 @@ import { expect, test } from 'bun:test';
 import type { RoleRow } from './db.ts';
 import { diffPositions } from './linkedin.ts';
 import { timeline } from './timeline.ts';
-import { employmentFields, employmentOf, factRef, levelOf, marksOf, projectRef, roleRef, tree, type ProjectRow } from './tree.ts';
+import { employmentFields, employmentOf, factRef, levelOf, projectRef, roleRef, tree, type ProjectRow } from './tree.ts';
 
 const row = (id: number, more: Partial<RoleRow>): RoleRow => ({ id, company: `Company ${id}`, title: '', start: '2021-01', end: '', location: '', summary: '', standing: '', reach: '', part_of: null, note: '', label: '', ...more });
 
@@ -59,8 +59,6 @@ test('employment type is a view of standing and label, and is stored back the sa
   expect(employmentOf({ standing: '', label: '' })).toBe('');
   for (const e of ['employee', 'part-time', 'contract', 'own', ''] as const) expect(employmentOf(employmentFields(e, 'employer'))).toBe(e);
   expect(employmentFields('contract', 'employer')).toEqual({ standing: 'contract', label: '' });
-  expect(marksOf('{"title":"hr","start":"memory","junk":"hr","end":"maybe"}')).toEqual({ title: 'hr', start: 'memory' });
-  expect(marksOf('not json')).toEqual({});
 });
 
 test('the tree puts each fact in its place: a project of its role, Day to day, a carried project, a side project, General', () => {

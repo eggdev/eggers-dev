@@ -30,9 +30,10 @@ test('two processes that start together on an old database both start, every tim
   }
   const d = new Database(file, { readonly: true });
   expect(d.query('SELECT via_role FROM projects ORDER BY id').all()).toEqual([{ via_role: 3 }, { via_role: 4 }, { via_role: 5 }]);
-  // The triggers are there once each, made again at every start.
+  // The triggers are there once each, made again at every start. The one that cleared a role's marks is gone: no mark
+  // of where a value came from is kept any more (the owner, 2026-11-18).
   expect(d.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN ('roles_mark_cleared', 'roles_id_floor', 'facts_id_floor', 'roles_id_above_floor') ORDER BY name").all())
-    .toEqual([{ name: 'facts_id_floor' }, { name: 'roles_id_above_floor' }, { name: 'roles_id_floor' }, { name: 'roles_mark_cleared' }]);
+    .toEqual([{ name: 'facts_id_floor' }, { name: 'roles_id_above_floor' }, { name: 'roles_id_floor' }]);
   d.close();
 }, 120_000);
 
