@@ -376,8 +376,9 @@ test "a posting is added and waits to be read; once read it is ranked by fit and
   expect disabled "job-write-again"
   tap "job-resume"
   clock settle
-  expect text "resume-for" == "J-001. Written for Staff Engineer, Billing at Globex, from your record."
-  expect text "resume-flag-0" == "The resume lists no job under Experience, and your record has jobs."
+  // The resume as the screen (rule 7): written (A), then edited (B). A note on the whole resume is in its block.
+  expect text "resume-for" == "V‑001‑B. Written for J‑001, Staff Engineer, Billing at Globex, from your record."
+  expect text "note-whole-0" == "Failed check The resume lists no job under Experience, and your record has jobs."
   expect tree has "resume-body"
   expect text "change-0" == "Moved the billing export to the top, since the posting centres on billing."
 
@@ -1409,3 +1410,105 @@ test "a save made over a resume that changed meanwhile is refused in words, and 
   expect text "resume-error" == "This resume changed while you were editing. Your text is still here: look at the new version, then save again."
   expect text "resume-text" == "# Ada Example\n\n## Summary\n\nEngineer who leads billing teams."
   expect tree has "resume-save"
+
+// Rule 7, stage 2: the resume as the screen. Job 1 is given a resume whose lines name their facts (the stub makes the facts
+// and roles it names). Rows are the resume's lines by number: 4 the summary, 7 and 15 the role headings, 9 to 13 and 16
+// the bullets, 21 a dated line under a section no resume has.
+test "the resume screen shows its head, the facts each line uses in the gutter, a fact opened beside its line, and notes on their rows"
+  size 1280x900
+  at "/job/1/resume"
+  request POST "/jobs/1/result" {"title": "Staff Engineer", "company": "Nimbus Yard", "place": "Remote", "verdict": "A fair fit.", "requirements": [{"text": "Rail scheduling", "need": "must", "coverage": "strong", "evidence": "The yard scheduler.", "roles": []}, {"text": "Kafka in production", "need": "must", "coverage": "none", "evidence": "Nothing in the record."}], "resume": "# Ada Example\nada@example.com\n\n## Summary\nEngineer who builds rail schedulers.\n\n## Experience\n### Staff Engineer, Lanternfly Rail\nApr 2022 – Jun 2024\n- Built the rail yard scheduler that runs 300 trains a day.\n- Cut planning from 3 hours to 20 minutes for 900 crews.\n- Ran the incident reviews.\n- Mentor two engineers.\n- Cut costs for [number] depots.\n\n### Engineer, Ostrander Freight\n- Moved the freight board to the cloud.\n\n## Skills\nGo\n\n## Awards\nWon a prize, 2018 – 2019", "links": {"v": 1, "lines": [{"where": "summary", "entry": "", "text": "Engineer who builds rail schedulers.", "facts": [{"text": "Built the rail yard scheduler.", "metric": "300 trains a day", "role": "Staff Engineer at Lanternfly Rail", "start": "2022-04", "end": "2024-06"}], "edited": 0}, {"where": "bullet", "entry": "lanternfly rail", "text": "Built the rail yard scheduler that runs 300 trains a day.", "facts": ["Built the rail yard scheduler."], "edited": 0}, {"where": "bullet", "entry": "lanternfly rail", "text": "Cut planning from 3 hours to 20 minutes for 900 crews.", "facts": [{"text": "Cut planning time.", "metric": "from 3 hours to 20 minutes", "role": "Staff Engineer at Lanternfly Rail"}], "edited": 0}, {"where": "bullet", "entry": "lanternfly rail", "text": "Ran the incident reviews.", "facts": [{"text": "Ran the weekly incident review.", "role": "Staff Engineer at Lanternfly Rail"}], "edited": 0}, {"where": "bullet", "entry": "lanternfly rail", "text": "Mentor two engineers.", "facts": [{"text": "Moved the freight board to the cloud.", "role": "Engineer at Ostrander Freight"}], "edited": 0}, {"where": "bullet", "entry": "lanternfly rail", "text": "Cut costs for [number] depots.", "facts": ["Ran the weekly incident review."], "edited": 0}, {"where": "bullet", "entry": "ostrander freight", "text": "Moved the freight board to the cloud.", "facts": ["Moved the freight board to the cloud."], "edited": 0}]}}
+  reload
+  clock data
+  clock settle
+  expect text "resume-balance" == "1 of 2 requirements answered · 1 open"
+  expect text "resume-open-1" == "Kafka in production"
+  expect text "resume-open-1-note" == "Nothing in your record answers it yet."
+  expect text "resume-edit" == "Edit"
+  expect text "resume-pdf" == "Get the PDF"
+  expect tree has "resume-version"
+  expect tree has "resume-change-1-row"
+  expect tree missing "resume-legacy"
+  // The facts each line uses stand in the gutter; a heading has the role it is about.
+  expect tree has "ref-4-f0"
+  expect tree has "ref-7-r0"
+  expect tree has "ref-9-f0"
+  expect tree has "ref-16-f0"
+  // A fact opens beside its line, and closes.
+  tap "ref-9-f0"
+  clock settle
+  expect text "fact-9-span" == "Apr 2022 – Jun 2024 · 300 trains a day"
+  tap "ref-9-f0"
+  clock settle
+  expect tree missing "fact-9"
+  tap "ref-9-f0"
+  clock settle
+  tap "fact-9-close"
+  clock settle
+  expect tree missing "fact-9"
+  // A failed check, a flag and a question, each on its own row.
+  clock data
+  clock settle
+  expect text "note-10-0" == "Failed check 900 is in none of the facts this line uses. F‑0019 says “Cut planning time. (from 3 hours to 20 minutes)”."
+  expect text "note-15-0" == "Question When did you start as Engineer at Ostrander Freight?"
+  expect tree has "note-15-0-go"
+  // Three notes on one line, failed checks first: two, then "1 more note on this line", then all, then "Show fewer".
+  // (The number two stands in a project's background an earlier test wrote, and in no fact: a true finding.) The line
+  // shows F-0021 in its gutter, so no note says it names no fact.
+  expect text "note-12-0" == "Failed check F‑0021 is in your record under Ostrander Freight, not under this job."
+  expect tree has "note-12-1"
+  expect tree missing "note-12-2"
+  expect text "more-12" == "1 more note on this line"
+  tap "more-12"
+  clock settle
+  expect text "note-12-2" == "Flag This bullet opens in the wrong tense for the job: the present tense is for your current job, the past tense for the others."
+  expect tree missing "note-12-3"
+  expect text "more-12" == "Show fewer notes on this line"
+  // The whole resume's notes: two, then more.
+  expect tree has "note-whole-1"
+  expect tree missing "note-whole-2"
+  tap "resume-whole-more"
+  clock settle
+  expect tree has "note-whole-2"
+  // A line with nothing to say shows nothing.
+  expect tree missing "notes-9"
+  expect tree missing "notes-11"
+
+test "each note is part of its own line's row, wide and narrow, and with the fact references turned off the roles' stay"
+  size 1280x900
+  at "/job/1/resume"
+  // resumeLook().cite "none", as a test server can ask for it.
+  request POST "/test/look" {"cite": "none"}
+  reload
+  clock data
+  clock settle
+  expect tree missing "ref-9-f0"
+  expect tree has "ref-7-r0"
+  expect text "row-13" == "–Cut costs for [number] depots.Failed check A number is missing here: no fact of your record holds it."
+  resize 390x844
+  clock settle
+  expect text "row-13" == "–Cut costs for [number] depots.Failed check A number is missing here: no fact of your record holds it."
+  request POST "/test/look" {"cite": ""}
+
+test "under 640px the resume's notes and an opened fact sit under their line, and the gutter stays"
+  size 390x844
+  at "/job/1/resume"
+  reload
+  clock data
+  clock settle
+  expect tree has "ref-9-f0"
+  expect text "note-10-0" == "Failed check 900 is in none of the facts this line uses. F‑0019 says “Cut planning time. (from 3 hours to 20 minutes)”."
+  tap "ref-9-f0"
+  clock settle
+  expect text "fact-9-span" == "Apr 2022 – Jun 2024 · 300 trains a day"
+
+test "a resume with no record of which facts each line uses says so once, and shows no fact references"
+  size 1280x900
+  at "/job/1/resume"
+  request POST "/jobs/1/result" {"title": "Staff Engineer", "company": "Nimbus Yard", "place": "Remote", "verdict": "A fair fit.", "requirements": [{"text": "Rail scheduling", "need": "must", "coverage": "strong", "evidence": "The yard scheduler.", "roles": []}, {"text": "Kafka in production", "need": "must", "coverage": "none", "evidence": "Nothing in the record."}], "resume": "# Ada Example\nada@example.com\n\n## Summary\nEngineer who builds rail schedulers.\n\n## Experience\n### Staff Engineer, Lanternfly Rail\nApr 2022 – Jun 2024\n- Built the rail yard scheduler that runs 300 trains a day.\n- Cut planning from 3 hours to 20 minutes for 900 crews.\n- Ran the incident reviews.\n- Mentor two engineers.\n- Cut costs for [number] depots.\n\n### Engineer, Ostrander Freight\n- Moved the freight board to the cloud.\n\n## Skills\nGo\n\n## Awards\nWon a prize, 2018 – 2019"}
+  reload
+  clock data
+  clock settle
+  expect text "resume-legacy" == "The studio has no record of which facts each line of this resume uses. Write it again to record them."
+  expect tree missing "ref-9-f0"
+  expect tree has "ref-7-r0"

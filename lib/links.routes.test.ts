@@ -96,3 +96,18 @@ test('a save made over a text that changed since the editor opened it is refused
   expect((await call('PATCH', '/jobs/1', { resume: `${stored.resume}\n- Mine.`, base: stored.resume })).status).toBe(200);
   expect(read<{ resume: string }>('SELECT resume FROM jobs WHERE id = 1')[0].resume).toBe(`${stored.resume}\n- Mine.`);
 });
+
+// ---------- The resume as the screen (rule 7, stage 2) ----------
+test('GET /jobs/:id/resume gives the rows, the facts each line uses and the balance the job page counts', async () => {
+  const r = await call('GET', '/jobs/1/resume');
+  expect(r.status).toBe(200);
+  const v = JSON.parse(r.text);
+  expect(Object.keys(v)).toEqual(['ref', 'version', 'letter', 'date', 'changes', 'title', 'company', 'pdf', 'edited', 'linked', 'legacy', 'balance', 'whole', 'rows', 'facts']);
+  expect([v.ref, v.linked, v.legacy, v.pdf]).toEqual(['J\u2011001', true, '', '/jobs/1/resume.pdf']);
+  expect(v.rows.find((x: { kind: string }) => x.kind === 'role').refs.map((x: { code: string }) => x.code)).toEqual(['R\u201101']);
+  expect(Object.keys(v.balance)).toEqual(['answered', 'asked', 'open', 'more']);
+  for (const f of v.facts) expect(Object.keys(f)).toEqual(['id', 'code', 'text', 'number', 'place', 'when']);
+  const page = JSON.parse((await call('GET', '/jobs/1')).text);
+  expect([page.covered, page.asked]).toEqual([v.balance.answered, v.balance.asked]);
+  expect((await call('GET', '/jobs/999/resume')).status).toBe(404);
+});

@@ -84,6 +84,18 @@ fn lookRefWidth(): string = `${look().textSize * 5 / 16}rem`
 // Under this width (px) the margin notes move under the main column, and two columns become one.
 fn lookNarrow(): number = 640
 
+// The resume as the screen (rule 7), as the owner chose it in the lab (lab/resume-keeper.json): `cite` "gutter" sets each
+// line's fact references in a column to its left, "none" leaves them out (the role references and the notes stay);
+// `maxNotes` notes beside one line before "N more". The widths are look()'s measure and margin, the space look()'s rowGap.
+shape ResumeLook
+  cite: string
+  maxNotes: number
+fn resumeLook(): ResumeLook = ResumeLook(cite="gutter", maxNotes=2)
+// The gutter of a resume's rows: the fact references and the role references, narrower on a phone.
+fn resumeGutter(wide: bool): string = wide ? `${look().textSize * 5.25 / 16}rem` : `${look().textSize * 4.6 / 16}rem`
+// The resume screen's page: the gutter, the resume column, the notes column and the space between them.
+fn resumeWidth(): string = `${look().textSize * 5.25 / 16 + look().measure + look().margin + 2}rem`
+
 // The status words (DESIGN.md section 5). A word outside this list is a defect, so the type refuses one. Every old
 // state maps here and nowhere else. A job's state is one key (jobs.contract's `jobPhase` picks it): queued and found
 // (a posting found on the watchlist) are New; running is Reading; done (read, its resume not ready to send) is Read;
@@ -1056,3 +1068,72 @@ component PaneSection
   view
     column gap=look().rowGap padding-top=look().rowGap testId=testId
       children
+
+// ---------- The resume as the screen ----------
+
+// A reference beside a resume's line that opens what it names (a fact): grey, tabular, a button that says whether it is open.
+component RefTap
+  props
+    code: string
+    open: bool
+    press: action
+    testId: string
+  view
+    button press=press aria-expanded=open aria-label=`Fact ${code}` text-align="start" testId=testId
+      text code font-size=lookText() font-weight=(open ? look().strong : 400) line-height=lookLeading() font-variant-numeric="tabular-nums" white-space="nowrap" color=(open ? "look.ink" : "look.grey")
+
+// A note beside a resume's line: its lead word heavy ("Failed check" in red, "Flag", "Question"), then its words, as one
+// paragraph. A note with no lead word (what the owner did to the line) is grey.
+component NoteLine
+  props
+    lead: string
+    text: string
+    fail: bool
+    testId: string
+  view
+    text font-size=lookText() font-weight=400 line-height=lookLeading() color=(lead == "" ? "look.grey" : "look.ink") overflow-wrap="break-word" testId=testId
+      if lead != ""
+        text lead font-weight=look().strong color=(fail ? "-exact-system-red" : "look.ink") testId=`${testId}-lead`
+      text (lead != "" ? ` ${text}` : text) testId=`${testId}-text`
+
+// A role's heading on the resume screen: heavy, and a heading to a screen reader.
+component RoleHead
+  props
+    text: string
+    testId: string
+  view
+    text text role="heading" aria-level=3 font-size=lookText() font-weight=look().strong line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
+
+// One line of a dated list: a short mark (a version's letter) heavy, its date in grey tabular figures, then the words.
+// The words go under the mark and the date when the text is set too large for one row.
+component DatedLine
+  props
+    mark: string
+    date: string
+    text: string
+    testId: string
+  view
+    row flex-wrap="wrap" column-gap=lookGutter() align-items="baseline" testId=`${testId}-row`
+      text mark width=lookNumberWidth() flex-shrink=0 font-size=lookText() font-weight=look().strong line-height=lookLeading() testId=`${testId}-mark`
+      text date width=lookRefWidth() flex-shrink=0 font-size=lookText() font-weight=400 line-height=lookLeading() font-variant-numeric="tabular-nums" color="look.grey" white-space="nowrap" testId=`${testId}-date`
+      text text flex-grow=1 flex-basis="12rem" min-width=0 font-size=lookText() font-weight=400 line-height=lookLeading() overflow-wrap="break-word" testId=testId
+
+// A fact opened beside a resume's line: its reference and words, its dates and number, where it sits in the record,
+// and Close. Never where it was read from or how sure it is (DESIGN.md rule 4).
+component FactCard
+  props
+    code: string
+    text: string
+    span: string
+    place: string
+    close: action
+    testId: string
+  view
+    column gap=0 role="group" aria-label=`Fact ${code}` testId=testId
+      text font-size=lookText() font-weight=400 line-height=lookLeading() overflow-wrap="break-word" testId=`${testId}-text`
+        text code font-variant-numeric="tabular-nums" color="look.grey"
+        text ` ${text}`
+      if span != ""
+        QuietLine(text=span, testId=`${testId}-span`)
+      QuietLine(text=place, testId=`${testId}-place`)
+      Action(label="Close", press=close, disabled=false, keys="", testId=`${testId}-close`)

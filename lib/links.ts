@@ -18,7 +18,7 @@
 // This file opens no database and asks no model.
 import type { RoleRow } from './db.ts';
 import { employers, groupOf, normCompany } from './entries.ts';
-import { counts } from './numbers.ts';
+import { counts, held } from './numbers.ts';
 import { lf, parseResume } from './resume.ts';
 import { factRef } from './tree.ts';
 
@@ -201,13 +201,24 @@ export function linkLines(markdown: string, cites: Cite[], companies: string[] =
 }
 
 // What `jobs.links` holds, read; null for '' (written before links) or anything that cannot be read.
+// Every line must have the shape this version writes; anything else (another version, a line that is not an object, facts
+// that are not a list of numbers) is read as no links at all, never as part of them, and never throws.
+const lineOk = (l: unknown): l is LinkLine => {
+  if (!l || typeof l !== 'object') return false;
+  const x = l as Record<string, unknown>;
+  return (x.where === 'summary' || x.where === 'bullet') && typeof x.entry === 'string' && typeof x.text === 'string' && typeof x.edited === 'number'
+    && Array.isArray(x.facts) && x.facts.every((f) => Number.isInteger(f)) && (x.refused === undefined || (Array.isArray(x.refused) && x.refused.every((r) => typeof r === 'string')));
+};
 export function parseLinks(stored: string | null | undefined): Links | null {
   if (!stored) return null;
-  try { const l = JSON.parse(stored) as Links; return l && l.v === 1 && Array.isArray(l.lines) ? l : null; } catch { return null; }
+  try { const l = JSON.parse(stored) as Links; return l && l.v === 1 && Array.isArray(l.lines) && l.lines.every(lineOk) ? l : null; } catch { return null; }
 }
 export const storeLinks = (links: Links | null) => (links ? JSON.stringify(links) : '');
 
 // Each line's link, found by where it is, its entry and its words; lines of the same words are taken in order.
+// One lookup for every reader of links (the check, the resume screen): called once for each line in the order of the
+// page, each line takes the next link of its words, so two lines of the same words each keep their own.
+export const linkFinder = (links: Links) => lookup(links);
 function lookup(links: Links): (p: { where: Where; entry: string; text: string }) => LinkLine | undefined {
   const byKey = new Map<string, LinkLine[]>();
   for (const l of links.lines) { const k = keyOf(l); byKey.set(k, [...(byKey.get(k) ?? []), l]); }
@@ -326,7 +337,10 @@ export function carry(before: string, after: string, links: Links | null, compan
 // ---------- The check ----------
 
 export type CitedFact = { id: number; role_id: number | null; text: string; detail: string; metric: string; baseline: string; team: string; own_part: string; skills: string };
-export type LinkFinding = { kind: 'link-unknown' | 'link-elsewhere' | 'link-number' | 'unlinked'; severity: 'high' | 'warn' | 'info'; text: string; place: Place };
+// data: what the finding is about, for a screen that words it for the owner (lib/resumeview.ts): the numbers in none of
+// the cited facts, the facts concerned, and for a fact of another job the employer it belongs to ('' for no job).
+export type LinkFinding = { kind: 'link-unknown' | 'link-elsewhere' | 'link-number' | 'unlinked'; severity: 'high' | 'warn' | 'info'; text: string; place: Place;
+  data?: { numbers?: string[]; facts?: number[]; under?: string[]; refused?: string[] } };
 const andList = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 const short = (s: string, most = 90) => (s.length > most ? `${s.slice(0, most - 1).trimEnd()}…` : s);
 
@@ -348,33 +362,34 @@ export function checkLinks(markdown: string, links: Links | null, data: { facts:
   const find = lookup(links);
   for (const p of places(markdown, companies).places) {
     const l = find(p), label = p.where === 'summary' ? 'The summary' : `“${p.text}”`;
-    const say = (kind: LinkFinding['kind'], severity: LinkFinding['severity'], text: string) => findings.push({ kind, severity, text, place: p });
+    const say = (kind: LinkFinding['kind'], severity: LinkFinding['severity'], text: string, data?: LinkFinding['data']) => findings.push({ kind, severity, text, place: p, ...(data ? { data } : {}) });
     if (!l || (l.facts.length === 0 && !(l.refused ?? []).length)) {
       if (l && l.edited > 0) say('unlinked', 'info', `${p.where === 'summary' ? 'You wrote the summary' : `You wrote “${p.text}”`}, so no fact of your record is linked to it.`);
       else say('unlinked', 'warn', `${label} names no fact of your record that it draws on.`);
       continue;
     }
     const gone = l.facts.filter((id) => !byId.has(id)), refused = l.refused ?? [];
-    if (gone.length) say('link-unknown', 'high', `${label} cites ${andList(gone.map((id) => factRef(id)))}, which ${gone.length === 1 ? 'is' : 'are'} no longer in your record. A link is never moved to another fact: cite one your record has.`);
-    if (refused.length) say('link-unknown', 'high', `${label} cites ${andList(refused)}, which ${refused.length === 1 ? 'is' : 'are'} not a fact. Only a fact of your record stands behind a line.`);
+    if (gone.length) say('link-unknown', 'high', `${label} cites ${andList(gone.map((id) => factRef(id)))}, which ${gone.length === 1 ? 'is' : 'are'} no longer in your record. A link is never moved to another fact: cite one your record has.`, { facts: gone });
+    if (refused.length) say('link-unknown', 'high', `${label} cites ${andList(refused)}, which ${refused.length === 1 ? 'is' : 'are'} not a fact. Only a fact of your record stands behind a line.`, { refused });
     let valid = l.facts.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
     const g = p.where === 'bullet' ? groupOf(p.entry) : undefined;
     if (g) {
       const ids = new Set([...g.rows, ...g.children].map((r) => r.id)), away = valid.filter((f) => f.role_id === null || !ids.has(f.role_id));
       if (away.length) {
         const where = [...new Set(away.map((f) => employerOf(f.role_id)?.company ?? 'no job'))];
-        say('link-elsewhere', 'high', `${label} cites ${andList(away.map((f) => factRef(f.id)))}, which your record has under ${andList(where)}, not under ${g.company}. A line cites only facts of its own job.`);
+        say('link-elsewhere', 'high', `${label} cites ${andList(away.map((f) => factRef(f.id)))}, which your record has under ${andList(where)}, not under ${g.company}. A line cites only facts of its own job.`,
+          { facts: away.map((f) => f.id), under: away.map((f) => employerOf(f.role_id)?.company ?? '') });
         valid = valid.filter((f) => !away.includes(f));
       }
     }
     if (valid.length === 0) { say('unlinked', 'warn', `${label} has no fact left that stands behind it.`); continue; }
     linked.add(keyOf(p));
     const stated = valid.map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part, f.skills].join(' ')).join(' ');
-    const held = new Set(counts(stated, { versions: data.versions }).map((x) => x.value));
-    const off = [...new Set(counts(p.text, { versions: data.versions }).filter((x) => !held.has(x.value)).map((x) => x.text))];
+    const has = held(stated, { versions: data.versions });
+    const off = [...new Set(counts(p.text, { versions: data.versions }).filter((x) => !has.has(x.value)).map((x) => x.text))];
     if (off.length) {
       const says = valid.slice(0, 2).map((f) => `${factRef(f.id)} says “${short(f.text)}${f.metric ? ` (${f.metric})` : ''}”.`).join(' ');
-      say('link-number', 'high', `${label} uses ${andList(off)}, which ${off.length === 1 ? 'is' : 'are'} in none of the facts it cites. ${says}${l.edited > 0 ? ' Those facts were linked before you edited the line.' : ''} Take ${off.length === 1 ? 'it' : 'them'} out, or cite the fact that states ${off.length === 1 ? 'it' : 'them'}.`);
+      say('link-number', 'high', `${label} uses ${andList(off)}, which ${off.length === 1 ? 'is' : 'are'} in none of the facts it cites. ${says}${l.edited > 0 ? ' Those facts were linked before you edited the line.' : ''} Take ${off.length === 1 ? 'it' : 'them'} out, or cite the fact that states ${off.length === 1 ? 'it' : 'them'}.`, { numbers: off, facts: valid.slice(0, 2).map((f) => f.id) });
     }
   }
   return { findings, linked };

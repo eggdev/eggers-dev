@@ -16,7 +16,12 @@ import { BULLETS, ENTRIES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.t
 export type Seat = { seat: string; model: string; score: number; note: string; scores: number[] };
 // questions are what the readers wanted and the bank could not give: for the person to answer (Talk).
 // parser is the rule-based score (lib/ats.ts) of the version kept, where one was taken.
-export type Review = { score: number; rounds: number; passed: boolean; seats: Seat[]; changes: string[]; questions?: string[]; parser?: number };
+// problems: the lines the readers named as weak in the version kept (each with the seat, the words quoted and why), for the
+// resume screen to show beside the line they stand in (lib/resumeview.ts). Absent from a review stored before them.
+export type Weak = { seat: string; quote: string; why: string };
+// problemsSig: the signature of the text those lines were read in, as code left it (lib/jobs.ts sets it): the screen shows
+// them only while the stored resume is still that text.
+export type Review = { score: number; rounds: number; passed: boolean; seats: Seat[]; changes: string[]; questions?: string[]; parser?: number; problems?: Weak[]; problemsSig?: string };
 export type Parser = (resume: string) => { score: number; notes: string[] };
 type Problem = { quote: string; why: string; fix: string };
 type Reading = { score: number; note: string; problems: Problem[] };
@@ -140,10 +145,10 @@ const clamp = (n: number) => Math.max(1, Math.min(10, Math.round(n * 2) / 2));
 // carry its lines' keys (lib/links.ts, annotate): the reviser sees them, and the readers and the rule-based check never do.
 // `seen` hears each rewrite as the reviser returned it, so the keys it gave a line are known even when an earlier version is kept.
 export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES, context = '', links = '', seen?: (resume: string) => void): Promise<{ resume: string; review: Review }> {
-  let resume = draft.trim(), best = { resume, score: 0, seats: [] as Seat[], changes: [] as string[], parser: -1 };
+  let resume = draft.trim(), best = { resume, score: 0, seats: [] as Seat[], changes: [] as string[], parser: -1, problems: [] as Weak[] };
   const changes: string[] = [], history = SEATS.map(() => [] as number[]);
   let questions: string[] = [];
-  const done = (rounds: number) => ({ resume: best.resume, review: { score: best.score, rounds, passed: passes(best.score, best.seats), ...(best.parser >= 0 ? { parser: best.parser } : {}), seats: best.seats.map((s, i) => ({ ...s, scores: history[i] })), changes: best.changes, questions } });
+  const done = (rounds: number) => ({ resume: best.resume, review: { score: best.score, rounds, passed: passes(best.score, best.seats), ...(best.parser >= 0 ? { parser: best.parser } : {}), seats: best.seats.map((s, i) => ({ ...s, scores: history[i] })), changes: best.changes, questions, ...(best.problems.length ? { problems: best.problems } : {}) } });
   for (let rewrites = 0; ; rewrites++) {
     const readings = await Promise.all(SEATS.map(async (s) => {
       try { return { seat: s.seat, model: named(s.model()), r: await read(s, resume, posting, cwd, wishes, context).catch(() => read(s, resume, posting, cwd, wishes, context)) }; }
@@ -161,7 +166,8 @@ export async function council(draft: string, posting: string, bank: string, limi
     // A version that meets the parser bar is kept over one that does not, whatever the readers gave each.
     const p = parser?.(resume), ready = !p || p.score >= REQUIRED, bestReady = best.parser < 0 || best.parser >= REQUIRED;
     if (p) log(`parser score ${p.score}${ready ? '' : `, short of ${REQUIRED}`}`);
-    if (best.score === 0 || (ready && !bestReady) || (ready === bestReady && score > best.score)) best = { resume, score, seats, changes: [...changes], parser: p?.score ?? -1 };
+    const weak = readings.flatMap((x) => (x.r ? (x.r.problems ?? []).map((q) => ({ seat: x.seat, quote: String(q.quote ?? '').trim(), why: String(q.why ?? '').trim() })).filter((q) => q.quote !== '' && q.why !== '') : []));
+    if (best.score === 0 || (ready && !bestReady) || (ready === bestReady && score > best.score)) best = { resume, score, seats, changes: [...changes], parser: p?.score ?? -1, problems: weak };
     if ((passes(score, seats) && ready) || rewrites >= most) return done(rewrites);
     const heard = readings.filter((x): x is typeof x & { r: Reading } => x.r !== undefined).map((x) => ({ seat: x.seat, r: x.r }));
     const short = p && !ready ? `\n\nA rule-based score of the page stands at ${p.score} of 100 and must reach ${REQUIRED}. What holds it down:\n${p.notes.map((n) => `- ${n}`).join('\n')}` : '';

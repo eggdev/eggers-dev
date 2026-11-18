@@ -436,12 +436,22 @@ export async function compose(posting: string, pages: number, terms: string[], r
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil, draft], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) throw new FactsError(versions[0].unresolved);
   const passedOver = versions.indexOf(kept) > 0 ? ['A later version of this resume named a job your record does not have, so the version before it was kept.'] : [];
-  const scored = reviewed.review && linksOn() ? { ...reviewed.review, changes: plainKeys(reviewed.review.changes), ...(reviewed.review.questions ? { questions: plainKeys(reviewed.review.questions) } : {}) } : reviewed.review;
+  // The readers' weak lines are of the council's version, as code left it: they hold only while the stored text is that one.
+  const read = reviewed.review?.problems?.length ? { ...reviewed.review, problemsSig: sigOf(afterCouncil.resume) } : reviewed.review;
+  const scored = read && linksOn() ? { ...read, changes: plainKeys(read.changes), ...(read.questions ? { questions: plainKeys(read.questions) } : {}) } : read;
   const skim = skimmed?.skim && linksOn() ? { ...skimmed.skim, open: plainKeys(skimmed.skim.open), questions: plainKeys(skimmed.skim.questions) } : skimmed?.skim;
   return { resume: kept.resume, links: kept.links, changes: plainKeys([...r.changes, ...(skimmed && versions.indexOf(kept) === 0 ? skimmed.changes : [])]), review: scored, terms: termsOf(terms, kept.resume, words, skills),
     map: { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) }, skim,
     questions: plainKeys((r.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3)),
     repairs: [...passedOver, ...[...putBack].map((text) => `The writer changed a fact, and it was put back from your record. ${text}`)] };
+}
+
+// A job's analysis after its posting is read again (worker.ts, readJob): the new reading, and everything the last resume
+// came with, kept whole until a new one is written: what changed, the council's review (with its readers' weak lines),
+// the posting map, the skim, the writer's questions, what was repaired, and the flags (each with where it belongs).
+// A key added to an analysis that a resume comes with must be kept here (lib/resumeview.test.ts holds it).
+export function readAgain(fresh: Analysis, before?: Analysis): Analysis {
+  return { ...fresh, changes: before?.changes ?? [], review: before?.review, map: before?.map, skim: before?.skim, questions: before?.questions, written: before?.written, flags: before?.flags };
 }
 
 // Keeps what compose wrote on its job, as the worker does: the resume, and in the job's analysis the review, the
@@ -484,7 +494,8 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
   const analysis: Analysis = job.analysis ? JSON.parse(job.analysis) : { ...EMPTY }, roles = allRoles(), whole = JSON.stringify(bank()), log = (l: string) => console.log(`  ${l}`);
   if (job.edited === 1) {
     const read = await council(job.resume, job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, 0, contextRules());
-    analysis.review = read.review;
+    // The readers read the stored text itself: their weak lines stand while it does.
+    analysis.review = read.review.problems?.length ? { ...read.review, problemsSig: sigOf(job.resume) } : read.review;
     db.query('UPDATE jobs SET analysis = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(analysis), Date.now(), job.id);
     reflag(job.id);
     return read.review;
@@ -499,7 +510,8 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
     ...(w.rule ? { show: w.show } : {}) });
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) { keepEarlier(job.id, new FactsError(versions[0].unresolved).message); return undefined; }
-  analysis.review = got.review && linksOn() ? { ...got.review, changes: plainKeys(got.review.changes), ...(got.review.questions ? { questions: plainKeys(got.review.questions) } : {}) } : got.review;
+  const read = got.review?.problems?.length ? { ...got.review, problemsSig: sigOf(afterCouncil.resume) } : got.review;
+  analysis.review = read && linksOn() ? { ...read, changes: plainKeys(read.changes), ...(read.questions ? { questions: plainKeys(read.questions) } : {}) } : read;
   const skim = versions.indexOf(kept) === 0 ? skimmed?.skim : undefined;
   analysis.skim = skim && linksOn() ? { ...skim, open: plainKeys(skim.open), questions: plainKeys(skim.questions) } : skim;
   analysis.map = { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) };

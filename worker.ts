@@ -9,7 +9,7 @@ import { syncProjects } from './lib/projects.ts';
 import { discover } from './lib/discover.ts';
 import { hub } from './lib/github.ts';
 import { read } from './lib/ingest.ts';
-import { assess, compose, FactsError, fetchPosting, finishWritten, keepEarlier, publish, refreshDueSkills, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
+import { assess, compose, FactsError, readAgain, fetchPosting, finishWritten, keepEarlier, publish, refreshDueSkills, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
@@ -97,7 +97,7 @@ async function readJob(job: JobRow) {
     // What the last resume's review, skim and flags said stays with that resume until a new one is written.
     const before = job.analysis ? (JSON.parse(job.analysis) as Analysis) : undefined;
     db.query("UPDATE jobs SET status = 'done', note = '', title = ?, company = ?, place = ?, fit = ?, analysis = ?, terms_raw = ?, resume_status = 'queued', resume_note = '', updated_at = ? WHERE id = ?")
-      .run(a.title || 'Untitled role', a.company, a.place, a.fit, JSON.stringify({ ...a.analysis, changes: before?.changes ?? [], review: before?.review, map: before?.map, skim: before?.skim, questions: before?.questions, written: before?.written, flags: before?.flags }), JSON.stringify(a.terms), Date.now(), job.id);
+      .run(a.title || 'Untitled role', a.company, a.place, a.fit, JSON.stringify(readAgain(a.analysis, before)), JSON.stringify(a.terms), Date.now(), job.id);
     console.log(`  fit ${a.fit}; resume queued`);
   } catch (e) {
     db.query("UPDATE jobs SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, job.id);

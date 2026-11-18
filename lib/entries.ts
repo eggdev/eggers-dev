@@ -79,7 +79,7 @@ export function canonical(g: Group): Canon {
   };
 }
 
-const sameRange = (x: Range, r: RoleRow) => r.start !== '' && sameDate(x.start, r.start) && sameDate(x.end, r.end);
+export const sameRange = (x: Range, r: RoleRow) => r.start !== '' && sameDate(x.start, r.start) && sameDate(x.end, r.end);
 const rowRange = (r: RoleRow) => rangeText(r.start, r.end);
 
 // Which employer an entry is: by its company, else by its title and dates when exactly one employer has both.

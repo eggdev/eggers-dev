@@ -136,22 +136,6 @@ function partsOf(body: string): { head: string; lines: { kind: string; text: str
   end();
   return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') })).filter((p) => p.head !== '' || p.lines.length > 0);
 }
-// A resume's Markdown as the lines its page sets: the name (# …) and the line under it (its contact line), each
-// section (## …), each role (### …), each bullet, and each paragraph, the inline marks taken out.
-function resumeLinesOf(body: string): { id: string; kind: string; text: string }[] {
-  const out: { kind: string; text: string }[] = [];
-  let para: string[] = [];
-  const end = () => { if (para.length > 0) out.push({ kind: out.length > 0 && out[out.length - 1].kind === 'name' ? 'contact' : 'para', text: plain(para.join(' ')) }); para = []; };
-  for (const line of body.split('\n')) {
-    const head = /^(#{1,6})\s+(.*)$/.exec(line), item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
-    if (line.trim() === '' || /^\s*(---+|\*\*\*+)\s*$/.test(line)) end();
-    else if (head) { end(); out.push({ kind: head[1].length === 1 ? 'name' : head[1].length === 2 ? 'section' : 'role', text: plain(head[2]) }); }
-    else if (item) { end(); out.push({ kind: 'item', text: plain(item[1]) }); }
-    else para.push(line.trim());
-  }
-  end();
-  return out.filter((l) => l.text !== '').map((l, i) => ({ id: String(i), ...l }));
-}
 // A flag's severity, the most serious first.
 const SEVERITY = ['high', 'warn', 'info'];
 
@@ -239,15 +223,38 @@ const sources: Sources = {
       sent: text(j.sent), quiet: j.quiet === true, from: text(j.from), resumeStatus: text(j.resumeStatus), hasResume: j.hasResume === true,
       atsScore: typeof j.atsScore === 'number' ? j.atsScore : -1, atsRequired: typeof j.atsRequired === 'number' ? j.atsRequired : 85 })) }),
   // The job a route shows; none is selected while the list alone is on screen.
+  // The resume as the screen (rule 7): its rows, the facts its lines use, its notes, the balance and the version head. The
+  // room above each row comes from the kinds: twice a row before a section, a row and three quarters before a role, half
+  // a row under a section head or a heading's dates, none for a heading's dates and the contact line, else one row.
+  loadResumeView: async ([job]): Promise<Result<'loadResumeView'>> => {
+    const v = obj(await get(`/jobs/${id(job)}/resume`)) ?? {};
+    const balance = obj(v.balance) ?? {};
+    const note = (n: Record<string, unknown>) => ({ id: text(n.id), kind: text(n.kind), lead: text(n.lead), text: text(n.text), route: text(n.route), action: text(n.action) });
+    const raw = rows(v.rows ?? []);
+    const req = (o: Record<string, unknown>) => ({ id: text(o.id), text: text(o.text), note: text(o.note) });
+    // A test server (--stub-github) may answer cite "none": the screen is then drawn with no fact references, as
+    // resumeLook().cite "none" would draw it (POST /test/look). The real server never sends it.
+    const cite = text(v.cite) === 'none' ? 'none' : '';
+    return { loaded: true, ref: text(v.ref), version: text(v.version), letter: text(v.letter), date: text(v.date),
+      changes: rows(v.changes ?? []).map((c) => ({ id: text(c.id), letter: text(c.letter), date: text(c.date), text: text(c.text) })), pdf: text(v.pdf) === '' ? '' : `${API}${text(v.pdf)}`,
+      linked: v.linked === true, legacy: text(v.legacy), answered: typeof balance.answered === 'number' ? balance.answered : 0, asked: typeof balance.asked === 'number' ? balance.asked : 0,
+      open: rows(balance.open ?? []).map(req), more: rows(balance.more ?? []).map(req), cite, whole: rows(v.whole ?? []).map(note),
+      rows: raw.map((r, i) => {
+        const kind = text(r.kind), before = i > 0 ? text(raw[i - 1].kind) : '';
+        const space = i === 0 ? 0 : kind === 'section' ? 2 : kind === 'role' ? 1.75 : kind === 'dates' || kind === 'contact' ? 0 : before === 'section' || before === 'dates' ? 0.5 : 1;
+        return { id: text(r.id), kind, text: text(r.text), space, refs: rows(r.refs ?? []).map((x) => ({ id: text(x.id), code: text(x.code), kind: text(x.kind), fact: text(x.fact), gone: x.gone === true })), notes: rows(r.notes ?? []).map(note) };
+      }),
+      facts: rows(v.facts ?? []).map((f) => ({ id: text(f.id), code: text(f.code), text: text(f.text), number: text(f.number), place: text(f.place), when: text(f.when) })) };
+  },
   loadJob: async ([job]): Promise<Result<'loadJob'>> => {
-    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', resumeLines: [], pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, skillsLine: '', doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
+    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, skillsLine: '', doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
     if (job === '') return none;
     const j = (await get(`/jobs/${id(job)}`)) as Record<string, unknown>;
     const list = (v: unknown) => rows(v ?? []).map((x) => text(x));
     const n = (v: unknown) => (typeof v === 'number' ? v : 0);
     return { loaded: true, id: text(j.id), url: text(j.url), title: text(j.title), company: text(j.company), place: text(j.place), status: text(j.status), note: text(j.note),
       fit: typeof j.fit === 'number' ? j.fit : -1, outcome: text(j.outcome), outcomeNote: text(j.outcomeNote), contact: text(j.contact),
-      posted: text(j.posted), added: text(j.added), sent: text(j.sent), quiet: j.quiet === true, from: text(j.from), posting: text(j.posting), resumeLines: resumeLinesOf(text(j.resume)), pdf: text(j.pdf) === '' ? '' : `${API}${text(j.pdf)}`, pages: j.pages === 1 ? 1 : 2, atsOk: j.atsOk === true,
+      posted: text(j.posted), added: text(j.added), sent: text(j.sent), quiet: j.quiet === true, from: text(j.from), posting: text(j.posting), pdf: text(j.pdf) === '' ? '' : `${API}${text(j.pdf)}`, pages: j.pages === 1 ? 1 : 2, atsOk: j.atsOk === true,
       atsScore: typeof j.atsScore === 'number' ? j.atsScore : -1, atsRequired: typeof j.atsRequired === 'number' ? j.atsRequired : 85, atsParts: text(j.atsParts),
       ats: rows(j.ats ?? []).map((a) => ({ id: text(a.id), label: text(a.label), ok: a.ok === true, note: text(a.note) })), covered: n(j.covered), asked: n(j.asked), verdict: text(j.verdict), strengths: list(j.strengths), risks: list(j.risks), changes: list(j.changes), gaps: list(j.gaps), resume: text(j.resume),
       weighed: j.weighed === true, termsIn: list(j.termsIn), termsBank: list(j.termsBank), termsMissing: list(j.termsMissing),

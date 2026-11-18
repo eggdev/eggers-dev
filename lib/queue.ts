@@ -83,6 +83,12 @@ export function allItems(now: number, hidden: Set<string> = new Set(), all = fal
   return [...raised, ...proposals, ...talk, ...quiet];
 }
 
+// The keys of the items Home shows now, read with no write (the resume screen says "Answer it on Home" only for these).
+export function homeKeys(now: number): Set<string> {
+  const hidden = new Set((db.query('SELECT key FROM queue_snoozes WHERE until > ?').all(now) as { key: string }[]).map((r) => r.key));
+  return new Set(allItems(now, hidden).filter((i) => !hidden.has(i.key)).map((i) => i.key));
+}
+
 // What Home shows: the items not snoozed, and how many are snoozed. Snoozes whose time has passed are dropped.
 export function queue(now: number): Queue {
   db.query('DELETE FROM queue_snoozes WHERE until <= ?').run(now);

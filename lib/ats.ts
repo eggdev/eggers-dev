@@ -51,6 +51,11 @@ function bulletsOf(markdown: string): { role: string; text: string; current: boo
 
 // Each bullet: (25 for an action verb in its role's tense + 45 for a measured result + 30 for a named method or
 // tool) less 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb.
+// Each bullet that opens in the wrong tense for its role (as `bullets` flags it), with the heading of its entry, so the
+// flag is placed on that bullet only (lib/checks.ts) and never on the same words under a role where the tense is right.
+export const wrongTense = (markdown: string): { role: string; text: string }[] =>
+  bulletsOf(markdown).filter((b) => !DUTY.test(b.text) && slip(lead(b.text), b.current)).map((b) => ({ role: b.role, text: b.text }));
+
 export function bullets(markdown: string, terms: string[] = []): Bullets {
   const all = bulletsOf(markdown), flags: Flag[] = [];
   // Whole words only, so "go" is not found in "going".

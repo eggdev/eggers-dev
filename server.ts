@@ -11,13 +11,15 @@ import { type Door } from './lib/outreach.ts';
 import { hub } from './lib/github.ts';
 import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from './lib/discover.ts';
 import { INBOX } from './lib/ingest.ts';
-import { CHANGED_WHILE_EDITING, fitOf, publish, refreshDueSkills, saveOwnerEdit, refreshOneSkillsLine, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { CHANGED_WHILE_EDITING, fitOf, publish, refreshDueSkills, saveOwnerEdit, refreshOneSkillsLine, reflag, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { answer, inputsOf, openRaised, raisedByKey } from './lib/raised.ts';
 import { QUIET_DAYS, queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
 import { keepSent, keepStanding, setResume } from './lib/versions.ts';
+import { parseLinks } from './lib/links.ts';
+import { resumeView } from './lib/resumeview.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { markFromList, skillsView } from './lib/skillsview.ts';
 import { type AtsCheck } from './lib/pdf.ts';
@@ -158,6 +160,8 @@ function readSourceAgain(id: number) {
   db.query("UPDATE sources SET status = 'queued', note = '' WHERE id = ?").run(id);
   return send({ ok: true });
 }
+// What a test server tells the resume screen about the facts' references (POST /test/look); '' on a real server.
+let stubCite = '';
 function readJobAgain(id: number) {
   const j = db.query('SELECT status FROM jobs WHERE id = ?').get(id) as { status: string } | null;
   if (!j) return send({ error: 'That job was deleted.' }, 404);
@@ -374,6 +378,8 @@ const served = Bun.serve({ hostname, port, routes: {
       const j = db.query('SELECT * FROM jobs WHERE id = ?').get(Number(req.params.id)) as JobRow | null;
       if (!j) return send({ error: 'That job was deleted.' }, 404);
       const a: Analysis = j.analysis ? JSON.parse(j.analysis) : { verdict: '', requirements: [], strengths: [], risks: [], changes: [], gaps: [] };
+      // What the reading of the record found: a requirement is answered unless nothing in the record answers it. The resume
+      // screen counts the same (lib/resumeview.ts, balanceOf).
       const covered = a.requirements.filter((r) => r.coverage !== 'none').length;
       const o = j;
       const ats: AtsCheck | null = j.ats ? JSON.parse(j.ats) : null;
@@ -449,6 +455,12 @@ const served = Bun.serve({ hostname, port, routes: {
       return send({ ok: true });
     },
     DELETE: (req) => { db.query('DELETE FROM jobs WHERE id = ?').run(Number(req.params.id)); return send({ ok: true }); },
+  },
+  // The resume as the screen (rule 7): its rows, the facts each line uses, the notes beside each line, the balance and the
+  // version head (lib/resumeview.ts).
+  '/jobs/:id/resume': {
+    OPTIONS: preflight,
+    GET: (req) => { const v = resumeView(Number(req.params.id)); return v ? send({ ...v, ...(STUB && stubCite ? { cite: stubCite } : {}) }) : send({ error: 'That job was deleted.' }, 404); },
   },
   // The resume as a PDF, printed when the job was read or its resume last edited; printed now if it is missing.
   '/jobs/:id/resume.pdf': {
@@ -553,9 +565,31 @@ const served = Bun.serve({ hostname, port, routes: {
     POST: async (req: Request & { params: { id: string } }) => {
       const b = await req.json().catch(() => ({}));
       const reqs = weigh(Array.isArray(b.requirements) ? b.requirements : [], db.query('SELECT * FROM roles').all() as RoleRow[], Date.now());
-      setResume(Number(req.params.id), str(b.resume), null, 'written', 'Written for this posting.', { set: { status: 'done', note: '', title: str(b.title), company: str(b.company), place: str(b.place), fit: fitOf(reqs),
+      // links: the facts each line uses, as lib/links.ts stores them ({v: 1, lines}), for trying the resume screen. A test
+      // cannot know the ids its earlier steps were given, so a fact may be given by its words (the newest fact with exactly
+      // those words), or as {text, metric?, role?: "title at employer", start?, end?}: made when the record has no such fact,
+      // in that role, which is made when the record has no role of that title and employer.
+      const byText = (f: unknown): number => {
+        if (typeof f === 'number') return f;
+        const o = (f && typeof f === 'object' ? f : { text: String(f) }) as Record<string, unknown>;
+        const had = db.query('SELECT id FROM facts WHERE text = ? ORDER BY id DESC LIMIT 1').get(str(o.text)) as { id: number } | null;
+        if (had || typeof f === 'string') return had?.id ?? 0;
+        let roleId: number | null = null;
+        const line = str(o.role), at = line.lastIndexOf(' at ');
+        if (at > 0) {
+          const title = line.slice(0, at), company = line.slice(at + 4);
+          const r = db.query('SELECT id FROM roles WHERE title = ? AND company = ?').get(title, company) as { id: number } | null;
+          roleId = r?.id ?? (addRole({ title, company, start: str(o.start), end: str(o.end), employment: 'employee' }) as { id: number }).id;
+        }
+        const made = addFact({ text: str(o.text), metric: str(o.metric), ...(roleId !== null ? { roleId: String(roleId) } : {}) }) as { ok: boolean; id: number };
+        return made.ok ? made.id : 0;
+      };
+      const given = b.links && typeof b.links === 'object' && Array.isArray(b.links.lines) ? { v: 1, lines: b.links.lines.map((l: Record<string, unknown>) => ({ ...l, edited: typeof l.edited === 'number' ? l.edited : 0, facts: Array.isArray(l.facts) ? l.facts.map(byText) : [] })) } : null;
+      setResume(Number(req.params.id), str(b.resume), parseLinks(given ? JSON.stringify(given) : ''), 'written', 'Written for this posting.', { set: { status: 'done', note: '', title: str(b.title), company: str(b.company), place: str(b.place), fit: fitOf(reqs),
         analysis: JSON.stringify({ verdict: str(b.verdict), requirements: reqs, strengths: b.strengths ?? [], risks: b.risks ?? [], changes: b.changes ?? [], gaps: b.gaps ?? [], knockouts: b.knockouts ?? [],
           terms: termsOf(Array.isArray(b.terms) ? b.terms : [], str(b.resume), ''), checks: b.checks ?? [] }), bank_sig: bankSignature(), updated_at: Date.now() } });
+      // A resume given with its links has its flags taken at once, as publish would, so its screen can be tried.
+      if (given) { syncQuestions(Date.now()); syncRecordQuestions(Date.now()); reflag(Number(req.params.id)); }
       return send({ ok: true });
     },
   } } : {}),
@@ -739,6 +773,8 @@ const served = Bun.serve({ hostname, port, routes: {
   // A test server only: the worker's pass over due Skills lines, as if the quiet were over, with no printing.
   ...(STUB ? { '/test/skills-due': { OPTIONS: preflight, POST: async () => send({ ok: true, written: await refreshDueSkills(Date.now() + SKILLS_QUIET_MS, async () => {}) }) } } : {}),
   // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
+  // A test server only: how the resume screen draws the facts' references ({cite: "none" | ""}), to try resumeLook().cite.
+  ...(STUB ? { '/test/look': { OPTIONS: preflight, POST: async (req: Request) => { const b = await req.json().catch(() => ({})); stubCite = b.cite === 'none' ? 'none' : ''; return send({ ok: true }); } } } : {}),
   ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
     const b = await req.json().catch(() => ({}));
     const refused = stubStep(str(b.kind) as Kind, Number(b.id), str(b.to), str(b.note), str(b.stage), typeof b.resume === 'string' ? b.resume : '');

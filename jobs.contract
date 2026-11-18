@@ -6,7 +6,7 @@
 // A job has one score, its fit ("Fit 72"), and one status word (`jobPhase` picks its state, look.contract's
 // `statusWord` names it). Every other number the reading or the checks produce is said in a sentence, under "How the
 // resume was checked", never as a second headline number.
-use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Aside, statusWord, joinDot, look from "./look.contract"
+use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Ref, RefTap, NoteLine, RoleHead, DatedLine, FactCard, statusWord, joinDot, look, lookGutter, lookTight, lookMeasure, lookMargin, lookText, lookLeading, resumeLook, resumeGutter, resumeWidth from "./look.contract"
 use WorkItem, workPlace, workUsual, workStage, workStatus, inHand, usualWords, durationWords from "./activity.contract"
 
 // A job in the list: its fit is 0 to 100 once read, -1 before.
@@ -155,13 +155,77 @@ shape JobFlag
   text: string
   items: string[]
 
-// One line of a resume as the page sets it: name (its owner's name), contact (the line under it), section, role,
-// para or item.
-shape ResumeLine
-  // Its place in the resume ("0", "1" …): a line is never moved, only the whole resume written again.
+// The resume as the screen (rule 7, GET /jobs/:id/resume, lib/resumeview.ts). A note beside a line: kind fail (a failed
+// check), flag, question or note (what the owner did to the line); lead is its first words ("Failed check", "Flag",
+// "Question", or none); route and action lead to where a question is answered.
+shape ResumeNote
+  id: string
+  kind: string
+  lead: string
+  text: string
+  route: string
+  action: string
+
+// A reference beside a line: a fact the line uses (kind "fact"; gone when it is no longer in the record) or a role
+// heading's own role (kind "role").
+shape ResumeRef
+  id: string
+  code: string
+  kind: string
+  fact: string
+  gone: bool
+
+// One line of the resume: kind name | contact | section | role | dates | para | bullet | item | plain. space: the room
+// above it, in rows (the app works it out from the kinds before it).
+shape ResumeRow
   id: string
   kind: string
   text: string
+  space: number
+  refs: ResumeRef[]
+  notes: ResumeNote[]
+
+// A fact a line uses, whole: its reference, its words, its number, where it sits in the record and its dates. Never
+// where it was read from or how sure it is (DESIGN.md rule 4).
+shape ResumeFact
+  id: string
+  code: string
+  text: string
+  number: string
+  place: string
+  when: string
+
+shape OpenRequirement
+  id: string
+  text: string
+  note: string
+
+shape ResumeChange
+  id: string
+  letter: string
+  date: string
+  text: string
+
+// open: what nothing in the record answers; more: what the record has more for than this resume uses. cite: "none" when a
+// test server asks for no fact references (POST /test/look, a way to try the look's value), else "".
+shape ResumeView
+  loaded: bool
+  ref: string
+  version: string
+  letter: string
+  date: string
+  changes: ResumeChange[]
+  pdf: string
+  linked: bool
+  legacy: string
+  answered: number
+  asked: number
+  open: OpenRequirement[]
+  more: OpenRequirement[]
+  cite: string
+  whole: ResumeNote[]
+  rows: ResumeRow[]
+  facts: ResumeFact[]
 
 // A job read against the record: the fit, why, and the resume written for it.
 shape Job
@@ -198,7 +262,6 @@ shape Job
   changes: string[]
   gaps: string[]
   resume: string
-  resumeLines: ResumeLine[]
   requirements: Need[]
   weighed: bool
   termsIn: string[]
@@ -600,84 +663,123 @@ component JobScreen
         DangerAction(label="Delete job", press=askRemove, disabled=false, testId="job-delete")
         QuietLine(text=(readingNow(job) ? "It can be read again once this reading finishes." : "Reading again scores the job against your record as it is now and writes its resume again."), testId="job-read-hint")
 
-// A resume as its page sets it, in the two sizes: the name as the title, each section under a rule, each role in
-// the heavy weight, the bullets as a list.
-component ResumeDoc
-  props
-    lines: ResumeLine[]
-  view
-    column gap=look().rowGap min-width=0 testId="resume-body"
-      for l in lines key=l.id
-        if l.kind == "name"
-          Title(text=l.text, testId=`resume-line-${l.id}`)
-        else if l.kind == "section"
-          column padding-top=look().rowGap
-            SectionHead(text=l.text, testId=`resume-line-${l.id}`)
-        else if l.kind == "role"
-          column padding-top=look().rowGap / 2
-            StrongLine(text=l.text, testId=`resume-line-${l.id}`)
-        else if l.kind == "item"
-          Bulleted(testId=`resume-item-${l.id}`)
-            Line(text=l.text, testId=`resume-line-${l.id}`)
-        else if l.kind == "contact"
-          QuietLine(text=l.text, testId=`resume-line-${l.id}`)
-        else
-          Line(text=l.text, testId=`resume-line-${l.id}`)
+fn openWord(v: ResumeView): string = `${v.answered} of ${v.asked} ${v.asked == 1 ? "requirement" : "requirements"} answered · ${v.open.length} open`
+fn shownNotes(notes: ResumeNote[], all: bool): ResumeNote[] = all ? notes : notes.slice(0, resumeLook().maxNotes)
+fn openKey(row: string, fact: string): string = `${row}:${fact}`
+// "1 more note on this line", "Show fewer notes on this line".
+fn moreWord(all: bool, n: number, where: string): string = all ? `Show fewer notes ${where}` : `${n} more ${n == 1 ? "note" : "notes"} ${where}`
+// The name of a line's notes for a screen reader: "Notes on “Built the rail yard scheduler…”".
+fn notesName(text: string): string = `Notes on “${text.length > 40 ? `${text.slice(0, 40)}…` : text}”`
 
-// The flags of a resume, in its margin on a wide window and above it on a narrow one.
-component ResumeFlags
+// The notes of one line, or of the whole resume: at most `maxNotes`, then "N more notes …" and "Show fewer notes …". A
+// question leads to where it is answered. testIds: each note `note-<id>` (its lead `note-<id>-lead`, its words
+// `note-<id>-text`, its way to the answer `note-<id>-go`), the "more" button `moreId`.
+component NoteList
   props
-    flags: JobFlag[]
-    skim: string
-    wide: bool
+    notes: ResumeNote[]
+    all: bool
+    more: action
+    where: string
+    moreId: string
   view
-    Aside(wide=wide, label="What to look at", testId="resume-flags")
-      QuietLine(text="What to look at", testId="resume-flags-head")
-      if skim != ""
-        Line(text=skim, testId="resume-skim")
-      for f in flags key=f.id
-        column gap=look().rowGap / 2
-          if f.severity == "high"
-            StrongLine(text=f.text, testId=`resume-flag-${f.id}`)
-          else
-            Line(text=f.text, testId=`resume-flag-${f.id}`)
-          for item, n in f.items key=item
-            QuietLine(text=item, testId=`resume-flag-${f.id}-item-${n}`)
+    for n in shownNotes(notes, all) key=n.id
+      column gap=lookTight()
+        NoteLine(lead=n.lead, text=n.text, fail=(n.kind == "fail"), testId=`note-${n.id}`)
+        if n.route != ""
+          GoTo(label=n.action, href=n.route, testId=`note-${n.id}-go`)
+    if notes.length > resumeLook().maxNotes
+      Action(label=moreWord(all, notes.length - resumeLook().maxNotes, where), press=more, disabled=false, keys="", testId=moreId)
 
-// The resume written for a job, as a document, with its flags beside it.
+// The resume written for a job, as the screen (rule 7): the head (the version, the count of requirements and what is open,
+// what the record has more for, Edit and the PDF, the last versions), then one row for each line of the resume, in three
+// columns: the references in the gutter, the line, and its notes beside it. Tapping a fact opens it at the top of the
+// line's notes; one is open at a time. Under 640px wide a row's notes and its opened fact go under the line, indented.
+// With `resumeLook().cite` "none" the facts' references go and the roles' stay. A test server can ask for that look
+// with POST /test/look {cite: "none"}; the address has no such option.
 component ResumeScreen
   props
     job: Job
+    view: ResumeView
     work: WorkItem[]
     wide: bool
     back: action
     edit: action
-  derive flagged = job.flags.length > 0 or job.skimConclusion != ""
+  state opened = ""
+  state more: string[] = []
   derive resumeBusy = readingNow(job) or writingNow(job)
   derive writingIt = workStatus(work, "write-resume", job.id, job.resumeStatus)
+  derive cites = (view.cite != "" ? view.cite : resumeLook().cite) == "gutter"
+  action toggleFact(row: string, fact: string)
+    opened = opened == openKey(row, fact) ? "" : openKey(row, fact)
+  action closeFact
+    opened = ""
+  action toggleMore(id: string)
+    more = more.includes(id) ? more.filter(x => x != id) : more.concat([id])
   view
-    WidePage(testId="resume")
-      Section(testId="resume-top")
-        Action(label="Back to the job", press=back, disabled=false, keys="", testId="resume-back")
+    column max-width=resumeWidth() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId="resume"
       Section(testId="resume-head")
-        QuietLine(text=`${jobRef(job.id)}. Written for ${jobName(job.title, job.company)}, from your record.`, testId="resume-for")
+        Action(label="Back to the job", press=back, disabled=false, keys="", testId="resume-back")
         if inHand(writingIt)
           WorkLine(word=statusWord("work", writingIt), place=workPlace(work, "write-resume", job.id), text=`Writing this resume again.${stageFor(work, "write-resume", job.id)} ${usuallyFor(work, "write-resume", job.id)} This is the last version.`, testId="resume-writing")
-        Actions(testId="resume-actions")
-          Action(label="Edit", press=edit, disabled=resumeBusy, keys="", testId="resume-edit")
-          if job.pdf != ""
-            GoTo(label="Get the PDF", href=job.pdf, testId="resume-pdf")
-      if wide and flagged
-        row align-items="start" gap=(look().rowGap + look().rowGap / 3)
-          Main()
-            ResumeDoc(lines=job.resumeLines)
-          ResumeFlags(flags=job.flags, skim=job.skimConclusion, wide=wide)
-      else
-        column gap=look().sectionGap
-          if flagged
-            ResumeFlags(flags=job.flags, skim=job.skimConclusion, wide=wide)
-          Section(testId="resume-doc")
-            ResumeDoc(lines=job.resumeLines)
+        if view.rows.length == 0
+          QuietLine(text="No resume has been written for this job yet.", testId="resume-none")
+        else
+          QuietLine(text=`${view.version}. Written for ${view.ref}, ${jobName(job.title, job.company)}, from your record.`, testId="resume-for")
+          if view.asked > 0
+            Line(text=openWord(view), testId="resume-balance")
+            for o in view.open key=o.id
+              Indented(testId=`resume-open-${o.id}-row`)
+                Line(text=o.text, testId=`resume-open-${o.id}`)
+                QuietLine(text=o.note, testId=`resume-open-${o.id}-note`)
+          if view.more.length > 0
+            QuietLine(text="Your record has more for these requirements than this resume uses:", testId="resume-more-head")
+            for o in view.more key=o.id
+              Indented(testId=`resume-more-${o.id}-row`)
+                Line(text=o.text, testId=`resume-more-${o.id}`)
+                QuietLine(text=o.note, testId=`resume-more-${o.id}-note`)
+          Actions(testId="resume-actions")
+            Action(label="Edit", press=edit, disabled=resumeBusy, keys="", testId="resume-edit")
+            if view.pdf != ""
+              GoTo(label="Get the PDF", href=view.pdf, testId="resume-pdf")
+          NoteLine(lead=`Version ${view.letter}`, text=(view.date != "" ? `· ${view.date}` : ""), fail=false, testId="resume-version")
+          for c in view.changes key=c.id
+            DatedLine(mark=c.letter, date=c.date, text=c.text, testId=`resume-change-${c.id}`)
+          if view.legacy != ""
+            QuietLine(text=view.legacy, testId="resume-legacy")
+          if view.whole.length > 0
+            column gap=lookTight() role="group" aria-label="Notes on the whole resume" testId="resume-whole"
+              NoteList(notes=view.whole, all=more.includes("whole"), more=toggleMore("whole"), where="on the whole resume", moreId="resume-whole-more")
+      if view.rows.length > 0
+        column role="article" aria-label=`Resume ${view.version}` testId="resume-body"
+          for r in view.rows key=r.id
+            // The line and its notes wrap under the gutter when the text is set too large for both on one row.
+            row flex-wrap="wrap" align-items="start" padding-top=`${r.space * look().rowGap}px` testId=`row-${r.id}`
+              column width=resumeGutter(wide) flex-shrink=0 gap=lookTight() testId=`row-${r.id}-refs`
+                for x in r.refs key=x.id
+                  if x.kind == "role" or x.gone
+                    Ref(code=x.code, testId=`ref-${r.id}-${x.id}`)
+                  else if cites
+                    RefTap(code=x.code, open=(opened == openKey(r.id, x.fact)), press=toggleFact(r.id, x.fact), testId=`ref-${r.id}-${x.id}`)
+              row flex-grow=1 flex-basis="12rem" min-width=0 flex-direction=(wide ? "row" : "column") align-items=(wide ? "start" : "stretch") gap=(wide ? 2 * lookGutter() : lookTight())
+                column flex-shrink=1 flex-grow=(r.kind == "section" ? 1 : 0) width=(wide and r.kind != "section" ? lookMeasure() : "auto") min-width=0
+                  if r.kind == "name"
+                    Title(text=r.text, testId=`line-${r.id}`)
+                  else if r.kind == "section"
+                    SectionHead(text=r.text, testId=`line-${r.id}`)
+                  else if r.kind == "role"
+                    RoleHead(text=r.text, testId=`line-${r.id}`)
+                  else if r.kind == "contact" or r.kind == "dates"
+                    QuietLine(text=r.text, testId=`line-${r.id}`)
+                  else if r.kind == "bullet" or r.kind == "item"
+                    Bulleted(testId=`item-${r.id}`)
+                      Line(text=r.text, testId=`line-${r.id}`)
+                  else
+                    Line(text=r.text, testId=`line-${r.id}`)
+                if r.kind != "section" and (r.notes.length > 0 or opened.startsWith(`${r.id}:`))
+                  column width=(wide ? lookMargin() : "auto") flex-shrink=0 padding-left=(wide ? 0 : lookGutter()) gap=look().rowGap role="group" aria-label=notesName(r.text) testId=`notes-${r.id}`
+                    for f in view.facts.filter(x => opened == openKey(r.id, x.id)) key=f.id
+                      FactCard(code=f.code, text=f.text, span=joinDot([f.when, f.number]), place=f.place, close=closeFact, testId=`fact-${r.id}`)
+                    NoteList(notes=r.notes, all=more.includes(r.id), more=toggleMore(r.id), where="on this line", moreId=`more-${r.id}`)
       if job.changes.length > 0
         Section(testId="resume-changes")
           SectionHead(text="What changed from your resume", testId="resume-changes-head")

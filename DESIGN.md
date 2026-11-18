@@ -261,3 +261,70 @@ new since then." Under it is one main action, "I have reviewed this list".
   itself takes seconds.
 - "Not marked" is sent as its word; an empty mark changes nothing. The review carries a mark only while one is held,
   and a refused review keeps the held mark on screen.
+
+## 10. The resume screen
+
+A job's resume is shown as the document it is, line by line, with what the studio knows about each line beside it
+(rule 7 of the resume rules). It opens from the job at `/job/:id/resume`. The arrangement the owner chose in the lab
+(`lab/resume.html`, saved as `lab/resume-keeper.json`):
+
+- **The head.** "Back to the job"; the version's reference and what it was written for ("V-023-C. Written for J-023,
+  Staff Engineer at Nimbus Yard, from your record."); the count ("7 of 9 requirements answered · 2 open") and under it
+  each open requirement with "Nothing in your record answers it yet."; Edit and Get the PDF; "Version C · 17 Nov 2026"
+  and under it one line for each of the last versions, newest first, at most 5, each with its letter, its date and its
+  reason ("C  17 Nov  You edited 1 line."). A resume with no version yet is version A, with no lines under it. A job
+  with no resume yet says so in one line, with the way back, and draws no document.
+- **The count** is what the reading of the record found, exactly as the job page counts it: a requirement is answered
+  unless nothing in the record answers it. Whether the resume's words answer a requirement is not known to code.
+- **What the record has more for,** from stored data and no model, under one grey line: "Your record has more for these
+  requirements than this resume uses:". Each item names the requirement and says only what is true: "F-0115, in R-07
+  Platform Engineer, Tamarack Analytics, which this resume does not show." or "F-0122, in R-02 Senior Engineer,
+  Corvane Logistics. No bullet under that job uses it." That second kind is said only for a job Experience shows, and
+  only with a record of which facts each line uses: lines outside Experience carry no such record, so of a fact whose
+  work is shown only there nothing is said. The resume shows a role or project wherever it names it:
+  Experience, the Earlier experience line, Projects or any other section. A side project, a repository filed under an
+  employer and one nobody placed are named with their project reference (P-…), as Experience names them. A best fact
+  deleted since is not mentioned. With no record of which facts each line uses, only "does not show" is said.
+- **One row for each line**, in three columns of fixed width: the gutter, the resume column (38rem) and the notes
+  column (16rem), rows 12px apart. A section head spans the resume and notes columns. Under 640px wide a row's notes
+  and an opened fact go under its line, indented; the gutter stays, narrower.
+- **The gutter** holds the facts a line uses, one under another, and on a heading the reference of each role it is
+  about (an entry that names two titles of one employer shows both; a side project shows its project reference). Two
+  lines of the same words each show their own facts. Tapping a fact opens it as the first thing in that row's notes:
+  its reference and words, its dates and number, and where it sits in the record. Tapping it again, or Close, closes
+  it. One fact is open at a time. One value (`resumeLook().cite`) turns the fact references off and leaves the role
+  and project references and the notes as they are. A reference never breaks at its hyphen.
+- **Notes on the line they concern:** a failed check leads with "Failed check" in red, another flag with "Flag", a
+  question with "Question" and a way to where it is answered: "Answer it on Home" only while Home's list holds it,
+  else the way to where Experience settles it. Then, in grey, what the owner did: "You edited this line on 14 Nov. It
+  used F-0153 before your edit." or "You wrote this line." Neither is worded as a fault. A note beside its line is
+  worded for the owner: it never quotes the line, never tells a writer what to do, and says what is wrong and what the
+  record says ("900 is in none of the facts this line uses. F-0004 says …"). The job page's list keeps its own words. At most 2 notes beside one line, then "N more" and "Show fewer". A line with nothing
+  to say shows nothing. A question about a fact is on every line that uses it; one about a role is on its heading. A
+  fact used and since deleted says "F-0142 is no longer in your record." on its line. Each note is true together with
+  the gutter of its row: "This line names no fact of your record." stands only on a line whose gutter shows no fact; a
+  line whose facts are of another job, or gone, has the note of each fact and no other. A heading whose title the record
+  lacks still shows its role (the employer's row of the same dates, else the newest), and its note names both titles.
+- **The whole resume's notes** (what cannot be placed on one line without a guess) are one short block under the head.
+- **A resume with no record of which facts each line uses** (written before links, or with links the studio cannot
+  read) says so once: "The studio has no record of which facts each line of this resume uses. Write it again to record
+  them." It shows no fact references.
+- **The readers' weak lines** from the council are shown only while the resume is the text they read; one that stands in
+  no single line goes to the whole-resume block with the words it quoted.
+
+A line's facts are the writer's statement of which facts it uses, checked by code for what code can check: that each
+fact exists, belongs to the line's job and holds the line's numbers. Code cannot check that the words of a line with no
+number say what its facts say; the owner's check is the fact opened beside the line. A link is never called verified.
+The owner's record is taken as given (rule 4): an opened fact never says where it was read from, when it was added, or
+how sure it is.
+
+What was rejected, and why:
+
+- Notes under each bullet: the document stops reading as a document. A rail of marks beside each bullet: a mark has to
+  be opened to say anything, and says nothing at a glance.
+- Fact references at the end of each line, in grey: they read as part of the resume. Hidden until asked: the owner
+  could not see which lines use no fact.
+- The resume drawn as a printed sheet: the PDF is the printed sheet; the screen is for working on it.
+- A note that needs judgment the code cannot give honestly ("the posting does not ask about users", "three lines
+  long", two facts that disagree): it would be a guess shown as a finding.
+- Suggested wording in place (struck words, Keep, Reject) and answering a question in the margin: a later stage.

@@ -4,7 +4,7 @@
 // - `syncQuestions`: brings the questions code raises for the person (lib/raised.ts) in step with the data: the
 //   timeline, the LinkedIn differences, and skills not yet marked.
 // A flag never changes a resume. What code repairs in a resume a model wrote is done before this (lib/entries.ts).
-import { bullets } from './ats.ts';
+import { bullets, wrongTense } from './ats.ts';
 import { db, type RoleRow } from './db.ts';
 import { checkEntries, emptyEntries, employers, normCompany, type ProjectName } from './entries.ts';
 import { checkLinks, keyMark, keyOf, linksOn, places, type CitedFact, type Links } from './links.ts';
@@ -87,7 +87,9 @@ export function codeFlags(markdown: string, pages: number, now = Date.now(), con
   if (skills.unconfirmed) out.push({ kind: 'skills-unconfirmed', severity: 'info', text: 'You have not reviewed your skills list yet, so this resume may name a skill you would not defend in an interview. Review the list once and this goes away.' });
   const tense = bullets(markdown).flags.filter((f) => /tense/.test(f.why));
   if (tense.length > 0) out.push({ kind: 'tense', severity: 'info', items: tense.map((f) => f.quote), text: `${tense.length} ${tense.length === 1 ? 'bullet opens' : 'bullets open'} in the wrong tense for the job: the present tense is for your current job, the past tense for the others.`,
-    ...placed(tense.flatMap((f) => resume.experience.filter((e) => e.bullets.includes(f.quote)).map((e): Anchor => ({ where: 'bullet', entry: entryOf(e), text: f.quote })))) });
+    // Placed on each bullet where the slip holds: under its own heading, in the order of the page (lib/resumeview.ts puts
+    // repeated anchors on successive lines of the same words), never on the same words under a role where it is right.
+    ...placed(wrongTense(markdown).flatMap((w) => [...resume.experience, ...resume.projects].filter((e) => e.heading === w.role && e.bullets.includes(w.text)).slice(0, 1).map((e): Anchor => ({ where: 'bullet', entry: entryOf(e), text: w.text })))) });
   // The finding stays a flag for as long as the data shows it, also after the person answered its question.
   const waiting = new Set(openRaised().map((q) => q.key));
   for (const f of shownFindings(resume, roles, now)) out.push({ kind: 'timeline', severity: 'warn', text: `${f.text} ${waiting.has(f.key) ? 'A question about it is waiting for you.' : 'Give the job an end date, a label or a one-line note to settle it.'}`, ...placed(shownFor(f.roles).map(roleAt)) });

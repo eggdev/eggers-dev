@@ -3,7 +3,7 @@
 // context and in no fact, by value alone. Each case is taken from a review of the earlier, noun-matching rule: a false
 // alarm that is quiet now, or a copy that is still caught. Everything is invented.
 import { expect, test } from 'bun:test';
-import { counts, quantities, redact, unsupported } from './numbers.ts';
+import { counts, held, quantities, redact, unsupported } from './numbers.ts';
 
 test('redaction: a number no fact of the project holds strictly becomes [number]; one it holds stays; names stay', () => {
   const held = quantities('Built the dispatch console that schedulers use every day. 640 users across 12 depots');
@@ -153,4 +153,15 @@ test('a dotted number after a capitalised word is no version by itself: it is re
     expect(redact(name)).toBe(name);
     expect([name, flag(name, '3 2 95 27001 200 2.0 24 7 9 80', '')]).toEqual([name, []]);
   }
+});
+
+// A count of tests or files is noise in a fact, so a line that reads the same value was called unsupported: the screen
+// said "212 is in none of the facts this line uses. F-0003 says “… (212 tests)”." The noise rule may make the check
+// quieter, never louder: a value is held when the stated text holds it with or without that rule.
+test('a value the stated text holds only inside a count of tests is held, by both checks', () => {
+  expect(counts('212 tests', {}).map((x) => x.value)).toEqual([]);
+  expect([...held('Wrote the test suite for the console. 212 tests')]).toContain(212);
+  expect(flag('Ran the console tests, all 212 of them.', 'All 212 of them ran each night.', 'Wrote the test suite for the console. 212 tests')).toEqual([]);
+  // A value no stated text holds in any form is still caught.
+  expect(flag('Ran the console tests, all 212 of them, in 9 minutes.', 'All 212 of them ran each night in 9 minutes.', 'Wrote the test suite for the console. 212 tests')).toEqual(['9']);
 });

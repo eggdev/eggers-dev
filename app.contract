@@ -13,7 +13,7 @@
 // the activity list, every 10 seconds, while the tab is shown (activity.contract).
 use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight, lookBeside, experienceLook from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
-use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
+use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, ResumeView, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
 use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
@@ -310,6 +310,9 @@ component App
   resource hub = loadGithub() when topName == "add" and kind == "github" as shape Hub else empty()
   resource jobs = loadJobs() when topName == "jobs" as shape JobList else empty()
   resource job = loadJob(selectedJob) when selectedJob != "" as shape Job else empty()
+  // The resume as the screen (rule 7), while it is shown: its rows, the facts its lines use, its notes, its balance.
+  derive resumeShown = topName == "resume" ? top(nav).params.id : ""
+  resource resumeView = loadResumeView(resumeShown) when resumeShown != "" as shape ResumeView else empty()
   // The found postings, on the job list and on the Watchlist (which says when a check is running).
   resource leads = loadLeads() when topName == "jobs" or topName == "companies" as shape LeadList else empty()
   resource lead = loadLead(selectedLead) when selectedLead != "" as shape LeadDetail else empty()
@@ -351,7 +354,7 @@ component App
   mutation contactSaved as shape Reply refreshes job
   mutation lengthSet as shape Reply refreshes job, jobs, activity
   mutation resumeAsked as shape Reply refreshes job, jobs, activity
-  mutation resumeSaved as shape Reply refreshes job then afterResume
+  mutation resumeSaved as shape Reply refreshes job, resumeView then afterResume
   mutation leadTaken as shape Reply refreshes leads, jobs, activity then afterTakeLead
   mutation leadDismissed as shape Reply refreshes leads then afterDismissLead
   mutation companyAdded as shape Reply refreshes companies then afterCompany
@@ -510,6 +513,7 @@ component App
     refresh profile
     refresh jobs
     refresh job
+    refresh resumeView
     refresh leads
     refresh talk
     refresh activity
@@ -1287,10 +1291,10 @@ component App
               if e.name == "resume"
                 column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-scroll" flex=1 min-height=0
-                    if not job.loaded or job.id != e.params.id
-                      RecordWait(title="Resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
+                    if not job.loaded or job.id != e.params.id or not resumeView.loaded
+                      RecordWait(title="Resume", waiting=(not failed(job) and not failed(resumeView)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
                     else
-                      ResumeScreen(job=job, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
+                      ResumeScreen(job=job, view=resumeView, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
               if e.name == "editResume"
                 column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-editor-scroll" flex=1 min-height=0

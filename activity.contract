@@ -192,6 +192,8 @@ members App
       refresh jobs
     if changedKinds.includes("read-posting") or changedKinds.includes("write-resume") or changedKinds.includes("draft-messages")
       refresh job
+    if changedKinds.includes("read-posting") or changedKinds.includes("write-resume")
+      refresh resumeView
     if changedKinds.includes("write-reply")
       refresh talk
     if changedKinds.includes("check-watchlist")

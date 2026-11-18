@@ -4,7 +4,7 @@
 // date is put back; no posting term is pasted into Skills; flags are stored; a hand edit is flagged, never rewritten.
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { db, fact, seed } from './scratch.ts';
-import { codeFlags, fixable, projectNames } from './checks.ts';
+import { codeFlags, fixable, projectNames, sigOf } from './checks.ts';
 import { assess, bank, compose, FactsError, fitOf, keepEarlier, publish, refreshSkills, review, storeComposed, topRequirements, weigh, type Analysis, type JobRow, type Requirement } from './jobs.ts';
 import { fakeAsk, type Ask } from './llm.ts';
 import { parseResume } from './resume.ts';
@@ -313,6 +313,20 @@ test('a review never rewrites a resume the person edited: the readers only score
   expect(analysisOf(id).review).toMatchObject({ score: 9 });
   // The changed title is a flag, as for any hand edit.
   expect(analysisOf(id).flags!.filter((f) => f.kind === 'facts').length).toBe(1);
+});
+
+// The readers' weak lines of an edited resume are stored with the signature of the text they read, so the resume screen
+// shows them while that text stands.
+test('a review of an edited resume keeps its readers’ weak lines with the signature of the text they read', async () => {
+  delete process.env.EGG_COUNCIL;
+  const mine = '# Avery Lindqvist\nmy own contact line\n\n## Summary\nEngineer, in my own words.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Built the console.\n\n## Skills\nGo\n';
+  fakeAsk(() => ({ score: 7, note: 'Thin.', problems: [{ quote: 'Built the console.', why: 'It says nothing of what came of it.', fix: 'Add the result.' }] }));
+  const id = job(mine);
+  db.query('UPDATE jobs SET edited = 1 WHERE id = ?').run(id);
+  await review(db.query('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow, false);
+  const r = analysisOf(id).review!;
+  expect(r.problems!.map((x) => x.quote)).toContain('Built the console.');
+  expect(r.problemsSig).toBe(sigOf(mine));
 });
 
 test('a review whose rewrite names a job the bank does not have keeps the resume, and does not store that review', async () => {
