@@ -789,7 +789,11 @@ component ResumeScreen
                   // A suggestion open on the line: its words struck and added in place, then Keep and Reject under it.
                   if r.sugs.filter(q => q.status == "open").length > 0
                     for x in r.sugs.filter(q => q.status == "open") key=x.id
-                      Struck(parts=x.parts, heading=(r.kind == "role"), testId=`line-${r.id}`)
+                      if r.kind == "bullet"
+                        Bulleted(testId=`item-${r.id}`)
+                          Struck(parts=x.parts, heading=false, testId=`line-${r.id}`)
+                      else
+                        Struck(parts=x.parts, heading=(r.kind == "role"), testId=`line-${r.id}`)
                       Choose(word=x.word, keep=choose(x.id, "keep"), reject=choose(x.id, "reject"), busy=deciding, testId=`sug-${r.id}`)
                   else if r.kind == "name"
                     Title(text=r.text, testId=`line-${r.id}`)

@@ -1,15 +1,19 @@
-// Rule 7, stage 3a: suggestions on a resume the owner edited, with no model. The studio never changes an edited text by
-// itself (DESIGN.md rule 7). Two kinds of line have words code can give exactly, from the owner's own list and record:
+// Rule 7, stages 3a and 3b: suggestions on a resume the owner edited, with no model. The studio never changes an edited
+// text by itself (DESIGN.md rule 7), and no model writes words for it. Three kinds of line have words code can give
+// exactly, from the owner's own list, record and words:
 // - the Skills line: the skills the owner marked "not confident" on the skills list are taken out of the line as it
 //   stands. Nothing is added, moved or reworded; a skill the list does not have stays (the skills flag speaks of it);
 // - a heading's title or employer, and the date range of a dates line, from the record (lib/entries.ts, lineFixes, the
-//   one-line repairs of repairEntries). The rest of a dates line (a place, a label) stays as the owner wrote it.
+//   one-line repairs of repairEntries). The rest of a dates line (a place, a label) stays as the owner wrote it;
+// - a bullet's opening (lib/wording.ts): the first word in the tense the job needs, or a duty opener such as
+//   "Responsible for building" as the owner's own verb ("Built"). The rest of the bullet stays byte for byte.
 // Each is the whole line before and after, a reason in words, and the owner's Keep or Reject.
 //
 // When one is made (an unchanged state writes nothing, and nothing is made at a start):
-// - after the owner's Save (lib/jobs.ts, saveOwnerEdit): the headings and dates lines;
+// - after the owner's Save (lib/jobs.ts, saveOwnerEdit): the headings, dates lines and bullets;
 // - after the skills list changes, in the pass that writes the Skills lines of resumes a model wrote (refreshDueSkills);
-// - after a role's title, employer or dates change (server.ts, follow): the headings and dates lines of that employer.
+// - after a role's title, employer or dates change (server.ts, follow): the headings and dates lines of that employer,
+//   and the bullets of every edited resume (a job that ended changes the tense its bullets need).
 //   follow() also runs on two reads, GET /questions and GET /queue (Home), so a role change made in another way can
 //   make its suggestions there; a read of the resume screen or the job page makes none.
 // Only on a resume the owner edited, not sent, and not being read or written. Before one is stored it must pass every
@@ -20,19 +24,22 @@
 import { db, type RoleRow } from './db.ts';
 import { checkEntries, lineFixes, normCompany, type LineFix } from './entries.ts';
 import { codeFlags, flagContext, projectNames } from './checks.ts';
-import { parseLinks, type Links } from './links.ts';
+import { linkFinder, parseLinks, places, type Links } from './links.ts';
+import { bulletsOf, opensAsDuty, wrongTense } from './ats.ts';
 import { parseResume } from './resume.ts';
 import { reviewed } from './skills.ts';
 import { setResume } from './versions.ts';
+import { dutyOpening, opensWithOpener, tenseOpening } from './wording.ts';
 import type { JobRow } from './jobs.ts';
 
-export type Kind = 'skills' | 'title' | 'employer' | 'heading' | 'dates';
-export type Candidate = { where_: 'skills' | 'heading' | 'dates'; entry: string; kind: Kind; old: string; new: string; why: string };
+// tense and verb: a bullet's new opening (lib/wording.ts).
+export type Kind = 'skills' | 'title' | 'employer' | 'heading' | 'dates' | 'verb' | 'tense';
+export type Candidate = { where_: 'skills' | 'heading' | 'dates' | 'bullet'; entry: string; kind: Kind; old: string; new: string; why: string };
 export type Suggestion = Candidate & { id: number; job_id: number; source: string; status: 'open' | 'kept' | 'rejected' | 'stale'; edit_at: number; made_at: number; decided_at: number };
 type Job = Pick<JobRow, 'id' | 'resume' | 'posting' | 'pages' | 'outcome'> & { edited?: number; links?: string; resume_status?: string; status?: string };
 
 // The words a version's reason and the screen use for what a suggestion changes.
-export const WORD: Record<Kind, string> = { skills: 'Skills line', title: 'title', employer: 'employer', heading: 'title and employer', dates: 'dates' };
+export const WORD: Record<Kind, string> = { skills: 'Skills line', title: 'title', employer: 'employer', heading: 'title and employer', dates: 'dates', verb: 'opening', tense: 'tense' };
 const roles = () => db.query('SELECT * FROM roles').all() as RoleRow[];
 const standsOnce = (text: string, line: string) => text.split('\n').filter((l) => l === line).length === 1;
 const swap = (text: string, from: string, to: string) => text.split('\n').map((l) => (l === from ? to : l)).join('\n');
@@ -51,21 +58,30 @@ const jobOf = (id: number) => db.query('SELECT * FROM jobs WHERE id = ?').get(id
 // not one ("Java" is not in "JavaScript"). Only after the first review; never a line that would be left empty; never a
 // heading line.
 const SKILLS_HEAD = /^#{1,6}\s+(?:(?:technical|core)\s+)?(?:skills|technologies)\s*$/i;
-const notConfident = () => new Set((db.query("SELECT key FROM skills WHERE mark = 'not-confident'").all() as { key: string }[]).map((x) => x.key));
+// The skills list as the Skills suggestion reads it: every skill's key and name, and the keys marked not confident.
+type List = { names: Map<string, string>; unsure: Set<string> };
+const listNow = (): List => {
+  const all = db.query('SELECT key, name, mark FROM skills').all() as { key: string; name: string; mark: string }[];
+  return { names: new Map(all.map((x) => [x.key, x.name])), unsure: new Set(all.filter((x) => x.mark === 'not-confident').map((x) => x.key)) };
+};
 const keyOf = (item: string) => item.replace(/\*\*|__|`/g, '').replace(/\.$/, '').trim().toLowerCase();
-const nameOf = (item: string) => item.replace(/\*\*|__|`/g, '').replace(/\.$/, '').trim();
 const andList = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
-// The line with the not-confident skills taken out, keeping its prefix, its separators and a closing full stop.
-function withoutUnsure(line: string, unsure: Set<string>): { text: string; gone: string[] } | undefined {
+// The line with the not-confident skills taken out, keeping its prefix, its separators and a closing full stop. Only a
+// plain list: an item that opens with "and" or "or", or one of several words the list does not have as one skill
+// ("Experienced in Go"), makes the line a sentence, and a sentence gets no suggestion. Each skill is named once, as the
+// list spells it.
+function withoutUnsure(line: string, list: List): { text: string; gone: string[] } | undefined {
+  const unsure = list.unsure;
   const m = /^(\s*(?:[-*•]\s+)?(?:[A-Za-z][A-Za-z &/]{1,28}:\s+)?)(.*)$/.exec(line)!;
   const parts = m[2].split(/(\s*[,;·|•]\s*)/), items = parts.filter((_, i) => i % 2 === 0).map((item, i) => ({ item, sep: parts[i * 2 + 1] ?? '' }));
   const gone = items.filter((x) => unsure.has(keyOf(x.item)));
   if (gone.length === 0) return undefined;
+  if (items.some((x) => /^(?:and|or)\b/i.test(keyOf(x.item)) || (/\s/.test(keyOf(x.item)) && !list.names.has(keyOf(x.item))))) return undefined;
   const kept = items.filter((x) => !gone.includes(x));
   if (kept.length === 0 || kept.every((x) => x.item.trim() === '')) return undefined;
   let body = kept.map((x, i) => `${x.item}${i < kept.length - 1 ? x.sep : ''}`).join('');
   if (/\.\s*$/.test(items[items.length - 1].item) && !/\.\s*$/.test(body)) body += '.';
-  return { text: `${m[1]}${body}`, gone: gone.map((x) => nameOf(x.item)) };
+  return { text: `${m[1]}${body}`, gone: [...new Set(gone.map((x) => keyOf(x.item)))].map((k) => list.names.get(k) ?? k) };
 }
 const skillLines = (text: string) => {
   const lines = text.split('\n'), out: string[] = [];
@@ -76,10 +92,10 @@ const skillLines = (text: string) => {
   }
   return out;
 };
-function skillsFixes(j: Job, unsure = notConfident()): Candidate[] {
-  if (!reviewed() || unsure.size === 0) return [];
+function skillsFixes(j: Job, list = listNow()): Candidate[] {
+  if (!reviewed() || list.unsure.size === 0) return [];
   return skillLines(j.resume).flatMap((l) => {
-    const w = withoutUnsure(l, unsure);
+    const w = withoutUnsure(l, list);
     return w ? [{ where_: 'skills' as const, entry: '', kind: 'skills' as const, old: l, new: w.text, why: `You marked ${andList(w.gone)} as not confident.` }] : [];
   });
 }
@@ -91,12 +107,29 @@ function why(f: LineFix): string {
 const entryFixes = (text: string, rs = roles()) => lineFixes(text, rs, projectNames());
 const asCandidate = (f: LineFix): Candidate => ({ where_: f.kind === 'dates' ? 'dates' : 'heading', entry: f.entry, kind: f.kind, old: f.old, new: f.new, why: why(f) });
 
-// The suggestions the record and the list give for this text now, before the guards. `entries`: true for every entry,
-// or the ids of the roles whose employers' entries to take.
-function raw(j: Job, from: { skills?: boolean; entries?: boolean | Set<number> }, rs = roles()): Candidate[] {
+// A bullet's line: its mark, then exactly the words the skim reads.
+const BULLET = /^(\s*[-*•]\s+)(.*)$/;
+// The bullets' new openings (lib/wording.ts), each on a line that stands once: a duty opener with the owner's own -ing
+// verb, else the first word of a bullet the skim flags for the wrong tense.
+function opening(text: string, current: boolean, slips: { text: string; current: boolean }[]) {
+  return dutyOpening(text, current) ?? (slips.some((x) => x.text === text && x.current === current) ? tenseOpening(text, current) : undefined);
+}
+function bulletFixes(j: Job): Candidate[] {
+  const lines = j.resume.split('\n'), slips = wrongTense(j.resume);
+  return bulletsOf(j.resume).flatMap((b) => {
+    const at = lines.filter((l) => BULLET.exec(l)?.[2] === b.text), o = opening(b.text, b.current, slips);
+    if (!o || at.length !== 1) return [];
+    return [{ where_: 'bullet' as const, entry: '', kind: o.kind, old: at[0], new: `${BULLET.exec(at[0])![1]}${o.to}${o.rest}`, why: o.why }];
+  });
+}
+
+// The suggestions the record, the list and the owner's words give for this text now, before the guards. `entries`: true
+// for every entry, or the ids of the roles whose employers' entries to take.
+function raw(j: Job, from: { skills?: boolean; entries?: boolean | Set<number>; bullets?: boolean }, rs = roles()): Candidate[] {
   const out: Candidate[] = [];
   if (from.skills) out.push(...skillsFixes(j));
   if (from.entries) for (const f of entryFixes(j.resume, rs)) if (from.entries === true || f.roles.some((id) => (from.entries as Set<number>).has(id))) out.push(asCandidate(f));
+  if (from.bullets) out.push(...bulletFixes(j));
   return out;
 }
 
@@ -106,6 +139,14 @@ function raw(j: Job, from: { skills?: boolean; entries?: boolean | Set<number> }
 function rekey(links: Links | null, from: string, to: string): Links | null {
   if (!links || from === to) return links;
   return { ...links, lines: links.lines.map((l) => (l.where === 'bullet' && l.entry === from ? { ...l, entry: to } : l)) };
+}
+// The link of a bullet whose words change (a new opening kept or undone): the same facts, under the new words.
+function moveLink(links: Links | null, text: string, line: number, from: string, to: string): Links | null {
+  if (!links) return links;
+  const r = parseResume(text, roles().map((x) => x.company)), e = [...r.experience, ...r.projects, ...r.elsewhere].find((x) => x.at.lines.includes(line));
+  const entry = e ? normCompany(e.company || e.title) : '', words = (l: string) => l.replace(/^\s*[-*•]\s+/, '');
+  let moved = false;
+  return { ...links, lines: links.lines.map((l) => (!moved && l.where === 'bullet' && l.entry === entry && l.text === words(from) ? ((moved = true), { ...l, text: words(to) }) : l)) };
 }
 // The entry key of the heading on a line, as the links name it.
 function keyAt(text: string, line: number): string {
@@ -118,22 +159,30 @@ function keyAt(text: string, line: number): string {
 // before (a result of an employer the heading now names right), which is no new fault of the text.
 const kinds = (fs: { kind: string; at?: unknown[]; items?: unknown[] }[]) => fs.reduce((m, f) => m.set(f.kind, (m.get(f.kind) ?? 0) + (f.kind === 'metrics-dropped' ? 1 : f.at?.length || f.items?.length || 1)), new Map<string, number>());
 
+// Whether the text after a swap raises a flag, or a flag item, that the text before did not.
+function newFlags(j: Pick<Job, 'resume' | 'pages'>, after: string, links: Links | null, moved: Links | null): boolean {
+  const ctx = flagContext(), now = Date.now();
+  const was = kinds(codeFlags(j.resume, j.pages, now, ctx, links, true)), then = kinds(codeFlags(after, j.pages, now, ctx, moved, true));
+  return [...then].some(([k, n]) => n > (was.get(k) ?? 0));
+}
+
 // Why a suggestion may not be stored ('' when it may): its old line is not exactly one line of the text, standing once
 // ("old"); the text with the line swapped raises a flag that was not there ("flags"); the rule that asked for it still
 // fires after the swap ("rule"); or a heading's or dates line's new words are not exactly the record's ("record").
-export function guard(j: Job, c: Candidate, rs = roles()): '' | 'old' | 'flags' | 'rule' | 'record' {
+// A bullet's new opening also fails when its new line is not exactly the opening code gives for the old one, with the
+// rest of the line byte-equal ("record"), or when the line's facts do not move to the new words unchanged ("links").
+export function guard(j: Job, c: Candidate, rs = roles()): string {
   if (!standsOnce(j.resume, c.old) || c.new.includes('\n') || c.new === c.old) return 'old';
+  if (c.where_ === 'bullet') return bulletGuard(j, c);
   if (c.where_ === 'skills' && (/^\s*#/.test(c.old) || /^\s*#/.test(c.new) || !skillLines(j.resume).includes(c.old))) return 'old';
   const line = j.resume.split('\n').indexOf(c.old), after = swap(j.resume, c.old, c.new);
   const links = parseLinks(j.links ?? ''), moved = c.where_ === 'heading' ? rekey(links, keyAt(j.resume, line), keyAt(after, line)) : links;
-  const ctx = flagContext(), now = Date.now();
-  const was = kinds(codeFlags(j.resume, j.pages, now, ctx, links, true)), then = kinds(codeFlags(after, j.pages, now, ctx, moved, true));
-  if ([...then].some(([k, n]) => n > (was.get(k) ?? 0))) return 'flags';
+  if (newFlags(j, after, links, moved)) return 'flags';
   if (c.where_ === 'skills') {
     // No skill marked not confident is left on the line, and the new words are the line with exactly those taken out.
-    const unsure = notConfident();
-    if (withoutUnsure(c.new, unsure)) return 'rule';
-    return skillsFixes(j, unsure).some((x) => x.old === c.old && x.new === c.new) ? '' : 'record';
+    const list = listNow();
+    if (c.new.split(/\s*[,;·|•]\s*/).some((x) => list.unsure.has(keyOf(x.replace(/^\s*(?:[-*•]\s+)?(?:[A-Za-z][A-Za-z &/]{1,28}:\s+)?/, ''))))) return 'rule';
+    return skillsFixes(j, list).some((x) => x.old === c.old && x.new === c.new) ? '' : 'record';
   }
   // The entry of that line, after the swap: no finding of the kind that asked, and its fixes now are none on that line.
   const r = parseResume(after, rs.map((x) => x.company));
@@ -146,8 +195,25 @@ export function guard(j: Job, c: Candidate, rs = roles()): '' | 'old' | 'flags' 
   return before && before.new === c.new ? '' : 'record';
 }
 
+function bulletGuard(j: Job, c: Candidate): string {
+  const was = BULLET.exec(c.old), is = BULLET.exec(c.new), b = was ? bulletsOf(j.resume).find((x) => x.text === was[2]) : undefined;
+  if (!was || !is || !b || was[1] !== is[1]) return 'old';
+  const o = opening(b.text, b.current, wrongTense(j.resume));
+  if (!o || o.kind !== c.kind || is[2] !== `${o.to}${o.rest}` || was[2].slice(o.from.length) !== is[2].slice(o.to.length)) return 'record';
+  const line = j.resume.split('\n').indexOf(c.old), after = swap(j.resume, c.old, c.new);
+  const links = parseLinks(j.links ?? ''), moved = moveLink(links, j.resume, line, c.old, c.new);
+  if (links) {
+    const companies = roles().map((r) => r.company);
+    const factsAt = (text: string, l: Links, words: string) => { const p = places(text, companies).places.find((x) => x.where === 'bullet' && x.text === words); return p ? linkFinder(l)(p)?.facts.join(',') ?? '' : '-'; };
+    if (!moved || factsAt(j.resume, links, was[2]) !== factsAt(after, moved, is[2])) return 'links';
+  }
+  if (newFlags(j, after, links, moved)) return 'flags';
+  if (c.kind === 'tense' ? wrongTense(after).some((x) => x.text === is[2]) : opensWithOpener(is[2]) || opensAsDuty(is[2])) return 'rule';
+  return '';
+}
+
 // The suggestions for this text now that pass every guard.
-export function candidates(j: Job, from: { skills?: boolean; entries?: boolean | Set<number> }): Candidate[] {
+export function candidates(j: Job, from: { skills?: boolean; entries?: boolean | Set<number>; bullets?: boolean }): Candidate[] {
   const rs = roles();
   return raw(j, from, rs).filter((c) => guard(j, c, rs) === '');
 }
@@ -157,7 +223,7 @@ export function candidates(j: Job, from: { skills?: boolean; entries?: boolean |
 // Stores the suggestions of `from` for one job: a new pair is added; a pair made before and gone stale is open again;
 // one open, kept or rejected is left as it is. Open suggestions of the same kind of line that the record or the list no
 // longer gives go stale. Writes nothing when nothing differs. True when a suggestion was added or opened again.
-function make(jobId: number, from: { skills?: boolean; entries?: boolean | Set<number> }, now: number): boolean {
+function make(jobId: number, from: { skills?: boolean; entries?: boolean | Set<number>; bullets?: boolean }, now: number): boolean {
   // Read and written in one immediate transaction: the text the suggestions are made from is the text they are stored for.
   return db.transaction(() => {
     const j = jobOf(jobId);
@@ -166,8 +232,8 @@ function make(jobId: number, from: { skills?: boolean; entries?: boolean | Set<n
     const editAt = (db.query("SELECT coalesce(max(made_at), 0) AS t FROM resume_versions WHERE job_id = ? AND why = 'edited'").get(jobId) as { t: number }).t;
     const add = found.filter((c) => { const s = stored.find((x) => x.old === c.old && x.new === c.new); return !s || s.status === 'stale'; });
     // What the record or the list gives now, without the guards: an open suggestion outside it is no longer true.
-    const now_ = raw(j, { skills: from.skills, entries: from.entries ? true : false });
-    const wheres = new Set([...(from.skills ? ['skills'] : []), ...(from.entries ? ['heading', 'dates'] : [])]);
+    const now_ = raw(j, { skills: from.skills, entries: from.entries ? true : false, bullets: from.bullets });
+    const wheres = new Set([...(from.skills ? ['skills'] : []), ...(from.entries ? ['heading', 'dates'] : []), ...(from.bullets ? ['bullet'] : [])]);
     const gone = stored.filter((s) => s.status === 'open' && wheres.has(s.where_) && !now_.some((c) => c.old === s.old && c.new === s.new));
     for (const s of gone) db.query("UPDATE resume_suggestions SET status = 'stale' WHERE id = ? AND status = 'open'").run(s.id);
     for (const c of add) {
@@ -181,8 +247,8 @@ function make(jobId: number, from: { skills?: boolean; entries?: boolean | Set<n
 
 const editedJobs = () => (db.query("SELECT id FROM jobs WHERE edited = 1 AND outcome = '' AND resume != ''").all() as { id: number }[]).map((x) => x.id);
 
-// After the owner's Save: the headings and dates lines of that resume.
-export const suggestAfterSave = (jobId: number, now = Date.now()) => make(jobId, { entries: true }, now);
+// After the owner's Save: the headings, dates lines and bullets of that resume.
+export const suggestAfterSave = (jobId: number, now = Date.now()) => make(jobId, { entries: true, bullets: true }, now);
 // After the skills list changed: the Skills line of each edited resume. Gives the jobs that gained a suggestion.
 export const suggestSkills = (now = Date.now()) => editedJobs().filter((id) => make(id, { skills: true }, now));
 
@@ -204,7 +270,7 @@ export function suggestAfterRoles(now = Date.now()): number[] {
   if (changed.size === 0 && companies.size === 0) { seen = is; return []; }
   // Every row of an employer that changed: its entry is the one to read again.
   for (const r of roles()) if (companies.has(normCompany(r.company))) changed.add(r.id);
-  const made = editedJobs().filter((id) => make(id, { entries: changed }, now));
+  const made = editedJobs().filter((id) => make(id, { entries: changed, bullets: true }, now));
   seen = is;
   return made;
 }
@@ -217,7 +283,7 @@ export function shownSuggestions(j: Job): Suggestion[] {
   if (!open(j)) return [];
   const all = db.query("SELECT * FROM resume_suggestions WHERE job_id = ? AND status IN ('open', 'kept', 'rejected') ORDER BY id").all(j.id) as Suggestion[];
   if (all.length === 0) return [];
-  const live = all.some((s) => s.status === 'open') ? raw(j, { skills: all.some((s) => s.where_ === 'skills'), entries: true }) : [];
+  const live = all.some((s) => s.status === 'open') ? raw(j, { skills: all.some((s) => s.where_ === 'skills'), entries: true, bullets: true }) : [];
   return all.filter((s) => (s.status === 'kept' ? standsOnce(j.resume, s.new) : standsOnce(j.resume, s.old)) && (s.status !== 'open' || live.some((c) => c.old === s.old && c.new === s.new)));
 }
 export const openCount = (j: Job) => shownSuggestions(j).filter((s) => s.status === 'open').length;
@@ -273,7 +339,8 @@ export function decide(id: number, act: 'keep' | 'reject' | 'undo', now = Date.n
     const set = (status: Suggestion['status'], at: number) => db.query('UPDATE resume_suggestions SET status = ?, decided_at = ? WHERE id = ?').run(status, at, id);
     const write = (from: string, to: string, why: 'suggestion' | 'undo', reason: string) => {
       const line = j.resume.split('\n').indexOf(from), text = swap(j.resume, from, to);
-      const links = s.where_ === 'heading' ? rekey(parseLinks(j.links ?? ''), keyAt(j.resume, line), keyAt(text, line)) : 'same';
+      const links = s.where_ === 'heading' ? rekey(parseLinks(j.links ?? ''), keyAt(j.resume, line), keyAt(text, line))
+        : s.where_ === 'bullet' ? moveLink(parseLinks(j.links ?? ''), j.resume, line, from, to) : 'same';
       return setResume(j.id, text, links === 'same' ? 'same' : links, why, reason, { guard: { resume: j.resume, edited: 1 }, set: { pdf: '', updated_at: now } });
     };
     if (act === 'undo') {

@@ -8,7 +8,11 @@ import { checkEntries } from './entries.ts';
 import { refreshDueSkills, refreshSkills, saveOwnerEdit, skillsChanged, SKILLS_QUIET_MS, type JobRow } from './jobs.ts';
 import { storeLinks, type Links } from './links.ts';
 import { markSkills, syncSkills, withSkills } from './skills.ts';
-import { publish, storePrinted } from './jobs.ts';
+import { publish, saveResume, storePrinted } from './jobs.ts';
+import { pdfPath } from './pdf.ts';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { inData } from './paths.ts';
 import { patchRole } from './record.ts';
 import { setResume } from './versions.ts';
 import { resumeView } from './resumeview.ts';
@@ -21,7 +25,7 @@ Duluth, MN
 ## Experience
 ### Director of Engineering, Harborlight Systems
 Mar 2021 – Present · Remote
-- Built the dispatch console.
+- Build the dispatch console.
 
 ### Senior Engineer, Quillfeather Labs
 Jan 2016 – Feb 2021 · Duluth, MN
@@ -30,7 +34,7 @@ Jan 2016 – Feb 2021 · Duluth, MN
 ## Skills
 Go, Python, Kafka`;
 const LINKS: Links = { v: 1, lines: [
-  { where: 'bullet', entry: 'harborlight systems', text: 'Built the dispatch console.', facts: [1], edited: 0 },
+  { where: 'bullet', entry: 'harborlight systems', text: 'Build the dispatch console.', facts: [1], edited: 0 },
   { where: 'bullet', entry: 'quillfeather labs', text: 'Rebuilt the quoting API.', facts: [4], edited: 0 }] };
 
 function job(resume = RESUME, o: { edited?: number; outcome?: string; links?: Links | null } = {}): number {
@@ -182,7 +186,7 @@ test('an unchanged state makes no new row and no write', () => {
   expect(changes() - before).toBe(0);
   // A Save of a text that agrees with the record makes no suggestion.
   const id2 = job();
-  expect(saveOwnerEdit(id2, RESUME.replace('Built the dispatch console.', 'Built the dispatch console for schedulers.'))).toBe('saved');
+  expect(saveOwnerEdit(id2, RESUME.replace('Build the dispatch console.', 'Build the dispatch console for schedulers.'))).toBe('saved');
   expect(sugs(id2)).toEqual([]);
   before = changes();
   suggestAfterSave(id2, 12);
@@ -286,7 +290,7 @@ test('an unknown suggestion is gone; one whose line changed is stale and refused
 
 test('an edit of that line makes the suggestion stale; an edit of another line does not; a rewrite makes all stale', () => {
   const { id, s, text } = titled();
-  saveOwnerEdit(id, text.replace('Built the dispatch console.', 'Built the dispatch console for schedulers.'));
+  saveOwnerEdit(id, text.replace('Build the dispatch console.', 'Build the dispatch console for schedulers.'));
   expect(sugs(id).find((x) => x.id === s.id)!.status).toBe('open');
   expect(shownSuggestions(row(id)).map((x) => x.id)).toEqual([s.id]);
   setResume(id, row(id).resume, null, 'written', 'Written again.', { set: { edited: 0 } });
@@ -297,7 +301,7 @@ test('an edit of that line makes the suggestion stale; an edit of another line d
 test('a rejected suggestion is never made again', () => {
   const { id, s, text } = titled();
   decide(s.id, 'reject', 30);
-  saveOwnerEdit(id, text.replace('Built the dispatch console.', 'Built the dispatch console again.'));
+  saveOwnerEdit(id, text.replace('Build the dispatch console.', 'Build the dispatch console again.'));
   suggestAfterSave(id, 31);
   expect(sugs(id).map((x) => [x.id, x.status])).toEqual([[s.id, 'rejected']]);
 });
@@ -431,7 +435,7 @@ test('Keep of a heading and then of its dates line; Undo of the first puts back 
 test('a PDF printed for a text that changed meanwhile is not stored; the next request prints again', () => {
   const id = job();
   const printed = row(id).resume;
-  saveOwnerEdit(id, printed.replace('Built the dispatch console.', 'Built the dispatch console again.'));
+  saveOwnerEdit(id, printed.replace('Build the dispatch console.', 'Build the dispatch console again.'));
   db.run("UPDATE jobs SET pdf = '/invented/newer.pdf' WHERE id = ?", [id]);
   expect(storePrinted(id, printed, { analysis: '{}', ats: '{"ok":true}', pdf: '/invented/older.pdf' })).toBe(false);
   expect(row(id).pdf).toBe('');
@@ -439,4 +443,93 @@ test('a PDF printed for a text that changed meanwhile is not stored; the next re
   expect(storePrinted(id, now, { analysis: '{}', ats: '{"ok":true}', pdf: '/invented/now.pdf' })).toBe(true);
   expect(row(id).pdf).toBe('/invented/now.pdf');
   void publish;
+});
+
+// ---------- Leftovers of 3a ----------
+test('a Skills line that is not a plain list gets no suggestion', () => {
+  db.run("INSERT INTO skills (key, name, kind, added_at, facts, in_bank) VALUES ('kotlin', 'Kotlin', 'language', 1, 1, 1), ('rust', 'Rust', 'language', 1, 1, 1), ('google cloud', 'Google Cloud', 'platform', 1, 1, 1)");
+  const sentence = job(RESUME.replace('Go, Python, Kafka', 'Experienced in Go, Kotlin, and Rust.'));
+  const or = job(RESUME.replace('Go, Python, Kafka', 'Go, Kotlin, or Rust'));
+  const multi = job(RESUME.replace('Go, Python, Kafka', 'Go, Kotlin, Google Cloud'));
+  notConfident('Kotlin');
+  suggestSkills(10);
+  expect([sugs(sentence), sugs(or)]).toEqual([[], []]);
+  // A skill of several words that the list has as one skill is a plain item.
+  expect(sugs(multi).map((s) => s.new)).toEqual(['Go, Google Cloud']);
+});
+
+test('a skill named twice on the line is named once in the reason, as the list spells it', () => {
+  db.run("INSERT INTO skills (key, name, kind, added_at, facts, in_bank) VALUES ('kotlin', 'Kotlin', 'language', 1, 1, 1)");
+  const id = job(RESUME.replace('Go, Python, Kafka', 'Go, kotlin, Python, KOTLIN'));
+  notConfident('Kotlin');
+  suggestSkills(10);
+  expect(sugs(id).map((s) => [s.new, s.why])).toEqual([['Go, Python', 'You marked Kotlin as not confident.']]);
+});
+
+test('a print of an older text neither replaces nor clears the PDF stored for the text as it is', async () => {
+  const id = job();
+  const older = row(id).resume, newer = older.replace('Build the dispatch console.', 'Build the dispatch console again.');
+  db.run('UPDATE jobs SET resume = ? WHERE id = ?', [newer, id]);
+  const j = { id, company: 'Nimbus Yard', title: 'Staff Engineer' };
+  // The newer text is printed and stored first.
+  const fresh = pdfPath(j, newer);
+  await Bun.write(fresh, 'newer');
+  expect(storePrinted(id, newer, { analysis: '{}', ats: '{}', pdf: fresh })).toBe(true);
+  // A late print of the older text arrives: it is not stored, its own file goes, and the newer PDF stays.
+  const late = pdfPath(j, older);
+  await Bun.write(late, 'older');
+  expect(late).not.toBe(fresh);
+  expect(storePrinted(id, older, { analysis: '{}', ats: '{}', pdf: late })).toBe(false);
+  expect(row(id).pdf).toBe(fresh);
+  expect([existsSync(fresh), existsSync(late), await Bun.file(fresh).text()]).toEqual([true, false, 'newer']);
+  // The next print of a newer text replaces the stored one, and the older file goes.
+  const third = older.replace('Build the dispatch console.', 'Build the dispatch console a third time.');
+  db.run('UPDATE jobs SET resume = ? WHERE id = ?', [third, id]);
+  const next = pdfPath(j, third);
+  await Bun.write(next, 'third');
+  expect(storePrinted(id, third, { analysis: '{}', ats: '{}', pdf: next })).toBe(true);
+  expect([row(id).pdf, existsSync(fresh), existsSync(next)]).toEqual([next, false, true]);
+});
+
+test('the printed PDF folders survive the resume being kept as a text file, and a late print of an older text keeps no file of its own', async () => {
+  const id = job(), j = { id, company: 'Nimbus Yard', title: 'Staff Engineer' }, text = row(id).resume;
+  const printed = pdfPath(j, text);
+  await Bun.write(printed, 'printed');
+  expect(storePrinted(id, text, { analysis: '{}', ats: '{}', pdf: printed })).toBe(true);
+  // Kept as a text file after a save: the earlier text file goes, the PDF folder of the text as it stands does not.
+  const md = saveResume(j, text);
+  expect([existsSync(md), existsSync(printed), row(id).pdf]).toEqual([true, true, printed]);
+  // A print of a text the job no longer has, with no newer PDF stored: not stored, its file gone, the stored PDF kept
+  // since it is the one of the text as it stands.
+  const late = pdfPath(j, `${text}\nAn older line.`);
+  await Bun.write(late, 'late');
+  expect(storePrinted(id, `${text}\nAn older line.`, { analysis: '{}', ats: '{}', pdf: late })).toBe(false);
+  expect([existsSync(late), row(id).pdf]).toEqual([false, printed]);
+});
+
+test('a print that failed keeps the PDF of the same text and removes no file', async () => {
+  const id = job(), j = { id, company: 'Nimbus Yard', title: 'Staff Engineer' }, text = row(id).resume;
+  const printed = pdfPath(j, text);
+  await Bun.write(printed, 'printed');
+  expect(storePrinted(id, text, { analysis: '{}', ats: '{}', pdf: printed })).toBe(true);
+  // The next print of the same text fails: its check is stored, the PDF and its file stay.
+  expect(storePrinted(id, text, { analysis: '{"failed":1}', ats: '{"ok":false}', pdf: '' })).toBe(true);
+  expect([row(id).pdf, existsSync(printed), row(id).ats]).toEqual([printed, true, '{"ok":false}']);
+});
+
+test('the prints of job 1 are never those of jobs 10 and 100, and an old single PDF goes at the first new print', async () => {
+  const dir = inData('resumes');
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  db.run("INSERT INTO jobs (id, posting, title, company, status, analysis, resume, created_at, edited) VALUES (1, 'A posting.', 'Staff Engineer', 'Nimbus Yard', 'done', '{}', ?, 1, 1)", [RESUME]);
+  // The layout before: one PDF file for each job; and the folders of jobs 10 and 100, and a folder of other things.
+  for (const f of ['1-Avery Lindqvist - Nimbus Yard.pdf', '10-Avery Lindqvist - Other.pdf', '100-Avery Lindqvist.pdf', '1-nimbus-yard-staff-engineer.md']) writeFileSync(join(dir, f), 'x');
+  for (const d of ['10-0123456789abcdef', '100-0123456789abcdef', '1-notes']) { mkdirSync(join(dir, d), { recursive: true }); writeFileSync(join(dir, d, 'a.pdf'), 'x'); }
+  const p = pdfPath({ id: 1, company: 'Nimbus Yard', title: 'Staff Engineer' }, RESUME);
+  await Bun.write(p, 'pdf');
+  expect(storePrinted(1, RESUME, { analysis: '{}', ats: '{}', pdf: p })).toBe(true);
+  const folder = p.slice(dir.length + 1).split('/')[0];
+  expect(readdirSync(dir).sort()).toEqual(['1-nimbus-yard-staff-engineer.md', '1-notes', folder, '10-0123456789abcdef', '10-Avery Lindqvist - Other.pdf', '100-0123456789abcdef', '100-Avery Lindqvist.pdf'].sort());
+  // The name the owner downloads is the person's, the employer's and the title's.
+  expect(p.split('/').pop()).toBe('Avery Lindqvist - Nimbus Yard - Staff Engineer.pdf');
 });

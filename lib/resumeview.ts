@@ -344,6 +344,8 @@ export function resumeView(jobId: number): ResumeView | null {
     const e = entries.find((q) => (x.where_ === 'dates' ? q.at.dates : q.at.heading) === at);
     if (e && x.where_ === 'dates') answered.add(`${e.heading}\u0001dates`);
     if (e && x.where_ === 'heading') { answered.add(`${e.heading}\u0001title`); answered.add(`${e.heading}\u0001employer`); }
+    // A bullet's new tense answers that bullet's tense flag.
+    if (x.where_ === 'bullet' && x.kind === 'tense') answered.add(`${at}\u0001tense`);
   }
 
   // The findings on a heading, from the record as it is now; one that cannot be placed stays whole.
@@ -367,6 +369,7 @@ export function resumeView(jobId: number): ResumeView | null {
       const fits = (x: Built) => x.place?.where === at.where && x.place.entry === (at.entry ?? '') && x.place.text === (at.text ?? '');
       const b = at.where === 'summary' ? summaryRow : at.where === 'bullet' ? rows.find((x) => !taken.has(x) && fits(x)) ?? rows.find(fits) : rows.find(fits);
       if (b && at.where === 'bullet') taken.add(b);
+      if (b && answered.has(`${b.id}\u0001${f.kind}`)) continue;
       add(b, note(kind, b ? flagWords(f, at) : f.text));
     }
   }
@@ -385,7 +388,7 @@ export function resumeView(jobId: number): ResumeView | null {
 
   // The suggestions on a resume the owner edited, on the line each is about: its words struck and added, and while it
   // is open its reason as a note. A decided one is sent too, so the screen can offer Undo right after the choice.
-  const words = (line: string) => plain(line.replace(/^#+\s+/, ''));
+  const words = (line: string) => plain(line.replace(/^#+\s+/, '').replace(/^\s*[-*•]\s+/, ''));
   for (const x of sugsNow) {
     const b = rowOfLine.get(lines.indexOf(x.status === 'kept' ? x.new : x.old));
     if (!b || x.status === 'stale') continue;

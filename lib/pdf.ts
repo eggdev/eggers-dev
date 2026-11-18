@@ -150,12 +150,25 @@ export async function atsCheck(pdf: Uint8Array, markdown: string, terms: { inRes
   return { ok: lines.every((l) => l.ok), pages: totalPages, lines, score: overall(parts), parts, required: REQUIRED };
 }
 
-// Where a job's PDF is kept, named for the person and the job; an earlier file for the same job is replaced.
+// Where a job's PDF is kept: a folder for the job and the text it was printed from (its signature), and in it a file
+// named for the person and the job (the name the owner downloads). Two prints of two texts never share a file, so a late
+// print of an older text cannot overwrite the newer one. Nothing is deleted here: storePrinted (lib/jobs.ts) keeps the
+// file of the text that stands and removes the others.
+export const textSig = (markdown: string) => new Bun.CryptoHasher('sha256').update(markdown).digest('hex').slice(0, 16);
 export function pdfPath(job: { id: number; company: string; title: string }, markdown: string): string {
-  const dir = inData('resumes');
+  const dir = join(inData('resumes'), `${job.id}-${textSig(markdown)}`);
   mkdirSync(dir, { recursive: true });
   const part = (s: string) => s.replace(/[^\w .&-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50);
   const name = part(markdown.match(/^#\s+(.*)$/m)?.[1] ?? 'Resume');
-  for (const old of readdirSync(dir).filter((f) => f.startsWith(`${job.id}-`) && f.endsWith('.pdf'))) rmSync(join(dir, old));
-  return join(dir, `${job.id}-${[name, part(job.company), part(job.title)].filter(Boolean).join(' - ')}.pdf`);
+  return join(dir, `${[name, part(job.company), part(job.title)].filter(Boolean).join(' - ')}.pdf`);
+}
+// Every printed file of a job, but `keep`: the folders of other texts, and the single files of the build before them.
+export function removePrints(jobId: number, keep: string): void {
+  const dir = inData('resumes');
+  if (!existsSync(dir)) return;
+  for (const f of readdirSync(dir).filter((x) => x.startsWith(`${jobId}-`))) {
+    const at = join(dir, f);
+    if (keep !== '' && (keep === at || keep.startsWith(`${at}/`))) continue;
+    if (f.endsWith('.pdf') || /^\d+-[0-9a-f]{16}$/.test(f)) rmSync(at, { recursive: true, force: true });
+  }
 }

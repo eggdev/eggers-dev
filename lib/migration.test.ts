@@ -229,13 +229,16 @@ await import('${root}/projects.ts'); await import('${root}/gaps.ts'); await impo
 await import('${root}/skills.ts'); await import('${root}/linkedin.ts'); await import('${root}/raised.ts'); await import('${root}/talk.ts'); await import('${root}/person.ts');
 const { dueIn } = await import('${root}/activity.ts');
 const jobs = await import('${root}/jobs.ts');
+// Stage 3b: a bullet's new opening (lib/wording.ts, through lib/suggest.ts). Only in the code that has it.
+if (await Bun.file('${root}/wording.ts').exists()) { await import('${root}/suggest.ts'); await import('${root}/wording.ts'); }
 const started = db.query('SELECT total_changes() AS n').get().n;
 if (process.env.R7_REFLAG === '1') jobs.reflagOpen();
 const cols = db.query('PRAGMA table_info(jobs)').all().map((c) => c.name);
 const rows = db.query('SELECT id, resume, edited, bank_sig, resume_status, pdf, ats, analysis' + (cols.includes('links') ? ', links' : '') + ' FROM jobs ORDER BY id').all();
 const versions = db.query("SELECT name FROM sqlite_master WHERE name = 'resume_versions'").get() ? db.query('SELECT count(*) AS n FROM resume_versions').get().n : -1;
 const suggestions = db.query("SELECT name FROM sqlite_master WHERE name = 'resume_suggestions'").get() ? db.query('SELECT count(*) AS n FROM resume_suggestions').get().n : -1;
-console.log(JSON.stringify({ started, sig: bankSignature(), due: dueIn(Date.now(), bankSignature), versions, suggestions,
+const wording = cols.filter((c) => c.startsWith('suggest'));
+console.log(JSON.stringify({ started, sig: bankSignature(), due: dueIn(Date.now(), bankSignature), versions, suggestions, wording,
   jobs: rows.map((j) => ({ id: j.id, resume: j.resume, edited: j.edited, bank_sig: j.bank_sig, resume_status: j.resume_status, pdf: j.pdf, ats: j.ats, links: j.links })),
   flags: rows.map((j) => (JSON.parse(j.analysis).flags ?? []).map((f) => [f.kind, f.severity, f.text])) }));
 `;
@@ -273,6 +276,8 @@ test.skipIf(!R7_HAS)('rule 7: an old database keeps every resume, its flags and 
     expect(got.versions).toBe(0);
     // Stage 3a: the edited resume (job 2) gets no suggestion at a start, and nothing else of it changes.
     expect(got.suggestions).toBe(0);
+    // Stage 3b adds no column: its suggestions are rows of resume_suggestions, and none is made at a start.
+    expect(got.wording).toEqual([]);
     expect(got.jobs).toEqual(was.jobs.map((j: Record<string, unknown>) => ({ ...j, links: '' })));
     expect(got.jobs.map((j: { resume_status: string; edited: number }) => [j.resume_status, j.edited])).toEqual([['done', 0], ['done', 1]]);
     expect(got.flags).toEqual(was.flags);

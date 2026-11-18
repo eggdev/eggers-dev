@@ -326,6 +326,25 @@ A job's resume is shown as the document it is, line by line, with what the studi
   It never says where the record's value came from or how sure it is. The job's page says in one quiet line that leads
   here when an edited resume has open suggestions: "The studio suggests 2 changes to this resume." Home does not list
   them.
+- **A bullet's new opening, made by code.** Every suggestion on an edited resume is made by code from the owner's own
+  list, record and words; no model writes words for an edited resume. Besides the Skills line, a heading and a dates
+  line, code suggests a new opening for a bullet in exactly two cases, after the owner's Save (and in the pass after a
+  role change). The tense: a bullet the skim flags for the wrong tense gets only its first word's ending changed ("Lead
+  the weekly incident review." to "Led the weekly incident review."; for a job held now, "Built" to "Build"), with the
+  reason "Past tense for a job that has ended." or "Present tense for the job you hold now." It is made only when the
+  first word is surely a verb: one the studio's verb table knows, and not a title ("Lead engineer…", "Head of…").
+  A duty opener: "Responsible for", "Was responsible for", "Tasked with", "In charge of", "Duties included", "Duties
+  include" or "Charged with", followed at once by the owner's own -ing verb, becomes that verb in the tense the job
+  needs ("Responsible for building the scheduler…" to "Built the scheduler…"), with the reason "Opens with what you
+  did: “Built”, in place of “Responsible for building”." Not "Worked on", "Helped", "Assisted", "Involved in",
+  "Served as" or any other opener, and not an opener followed by a noun ("Responsible for the nightly billing run."):
+  those keep their flag, and the owner rewords them. For both, the word right after the changed verb must open what
+  it acts on (a determiner such as "the", "a", "our", "every", but not "that"; or a whole count with a plural word soon after
+  it, such as "4 new hires", and not a label or a version such as "2.0" or "24/7"); otherwise the verb may be a noun or an
+  adjective ("Design system for…", "Responsible for building maintenance.") or one of a list of verbs, and there is no
+  suggestion. Either way the rest of the line stays byte for byte, and its
+  facts move to the new words unchanged. A bullet over the word limit keeps its flag; the owner trims it. These are
+  drawn, kept, rejected and undone as any suggestion.
 - **The whole resume's notes** (what cannot be placed on one line without a guess) are one short block under the head.
 - **A resume with no record of which facts each line uses** (written before links, or with links the studio cannot
   read) says so once: "The studio has no record of which facts each line of this resume uses. Write it again to record
@@ -348,5 +367,9 @@ What was rejected, and why:
 - The resume drawn as a printed sheet: the PDF is the printed sheet; the screen is for working on it.
 - A note that needs judgment the code cannot give honestly ("the posting does not ask about users", "three lines
   long", two facts that disagree): it would be a guess shown as a finding.
-- Suggested wording for a bullet, from a model (struck words, Keep, Reject), and answering a question in the margin: a
-  later stage. Suggestions with no model (the Skills line, a heading, a dates line) are built: see Suggestions above.
+- Answering a question in the margin: a later stage. Suggestions with no model are built: see Suggestions and A
+  bullet's new opening above.
+- Wording written by a model for the owner's own lines, even on request and behind a whitelist of the line's words: a
+  line's claim changes when words are left out ("Plan the move of billing to Go." becomes "Moved billing to Go."), and
+  code cannot tell which words carry the meaning.
+- A shorter line made by leaving words out, for the same reason. A bullet over the word limit keeps its flag.

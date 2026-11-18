@@ -12,6 +12,7 @@
 // (lib/entries.ts) and writes the Skills line from the person's own list (lib/skills.ts). What code finds and
 // cannot fix is kept as flags on the job (lib/checks.ts) or asked of the person (lib/raised.ts).
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import { db, factDetails, filedInProjects, filedProjects, type RoleRow } from './db.ts';
 import { INBOX } from './ingest.ts';
 import { ask } from './llm.ts';
@@ -22,7 +23,7 @@ import { BULLETS, CONTEXT, ENTRIES, KEPT_LINES, LINKS, METRICS, SIGNAL, SUMMARY,
 import { keptLines } from './record.ts';
 import { inData } from './paths.ts';
 import { draftScore } from './ats.ts';
-import { atsCheck, pdfPath, renderPdf } from './pdf.ts';
+import { atsCheck, pdfPath, removePrints, renderPdf, textSig } from './pdf.ts';
 import { direction, directionForMaterials, fitTest } from './direction.ts';
 import { TARGETS } from './profile.ts';
 import { fixable, flagContext, flags, projectNames, sigOf, syncQuestions, type Flag, type FlagContext, type Written } from './checks.ts';
@@ -551,14 +552,26 @@ export async function publish(jobId: number, print = true): Promise<void> {
   storePrinted(jobId, job.resume, { analysis: JSON.stringify(analysis), ats, pdf });
 }
 // What publish read and printed, stored only while the job's text is still the text it was made from: two writes in a
-// row (two Keeps, a Keep and a Save) can finish printing out of order. Otherwise nothing is stored and the PDF is left
-// empty, so the next request prints the text as it is then. True when it was stored.
+// row (two Keeps, a Keep and a Save) can finish printing out of order. Each text prints to its own file (lib/pdf.ts,
+// pdfPath). Stored: the printed file stands and the job's other printed files go. Not stored: its own file goes, and
+// the stored PDF is emptied only when it is not the one of the text as it stands, so the next request prints that; a
+// late print never clears a newer PDF. True when it was stored.
+// A print that failed (no file) stores its flags and its check, keeps a PDF already printed from this same text, and
+// removes no file.
 export function storePrinted(jobId: number, printed: string, got: { analysis: string; ats: string; pdf: string }): boolean {
-  return db.transaction(() => {
-    const stored = db.query('UPDATE jobs SET analysis = ?, ats = ?, pdf = ? WHERE id = ? AND resume = ?').run(got.analysis, got.ats, got.pdf, jobId, printed).changes > 0;
-    if (!stored) db.query("UPDATE jobs SET pdf = '' WHERE id = ?").run(jobId);
-    return stored;
+  const mine = `%/${jobId}-${textSig(printed)}/%`;
+  const stored = db.transaction(() => {
+    if (db.query("UPDATE jobs SET analysis = ?, ats = ?, pdf = CASE WHEN ? = '' AND pdf LIKE ? THEN pdf ELSE ? END WHERE id = ? AND resume = ?")
+      .run(got.analysis, got.ats, got.pdf, mine, got.pdf, jobId, printed).changes > 0) return true;
+    const now = db.query('SELECT resume, pdf FROM jobs WHERE id = ?').get(jobId) as { resume: string; pdf: string } | null;
+    if (now && now.pdf !== '' && !now.pdf.includes(`/${jobId}-${textSig(now.resume)}/`)) db.query("UPDATE jobs SET pdf = '' WHERE id = ?").run(jobId);
+    return false;
   }).immediate();
+  try {
+    if (stored && got.pdf !== '') removePrints(jobId, got.pdf);
+    else if (got.pdf !== '') { const kept = (db.query('SELECT pdf FROM jobs WHERE id = ?').get(jobId) as { pdf: string } | null)?.pdf ?? ''; if (kept !== got.pdf && new RegExp(`^${jobId}-[0-9a-f]{16}$`).test(basename(dirname(got.pdf)))) rmSync(dirname(got.pdf), { recursive: true, force: true }); }
+  } catch (e) { console.log(`  the printed files of job ${jobId} could not be tidied: ${(e as Error).message}`); }
+  return stored;
 }
 
 // Takes a job's flags again without printing anything: for when the data a flag reads has changed (a role's
@@ -733,7 +746,9 @@ export function saveResume(job: { id: number; company: string; title: string }, 
   const dir = inData('resumes');
   mkdirSync(dir, { recursive: true });
   const slug = `${job.company} ${job.title}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'job';
-  for (const old of readdirSync(dir).filter((f) => f.startsWith(`${job.id}-`))) rmSync(`${dir}/${old}`); // an earlier reading's file, perhaps under another name
+  // An earlier reading's file, perhaps under another name. Only the text files: the printed PDFs are kept in folders of
+  // their own (lib/pdf.ts, pdfPath), and storePrinted removes those.
+  for (const old of readdirSync(dir).filter((f) => f.startsWith(`${job.id}-`) && f.endsWith('.md'))) rmSync(`${dir}/${old}`);
   const file = `${dir}/${job.id}-${slug}.md`;
   writeFileSync(file, `${markdown}\n`);
   return file;

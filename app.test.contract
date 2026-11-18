@@ -1588,3 +1588,29 @@ test "under 640px a suggestion's reason and its Keep and Reject sit under its li
   expect tree has "sug-4-keep"
   expect tree has "sug-9-keep"
   expect text "notes-9" == "Suggestion You marked Cobolt as not confident."
+
+// Rule 7, stage 3b: a bullet's new opening, made by code after the owner's Save: a duty opener as the owner's own
+// verb, and the tense the job needs. Each drawn in place like any other suggestion, and kept or rejected.
+test "a bullet's new opening and its tense are suggested after a Save; one is kept and one rejected"
+  size 1280x900
+  at "/job/1/resume"
+  request POST "/test/edited" {"job": 1, "resume": "# Ada Example\nada@example.com\n\n## Experience\n### Staff Engineer, Lanternfly Rail\nApr 2022 – Jun 2024\n- Responsible for building the rail yard scheduler that runs 300 trains a day.\n- Lead the weekly incident review.\n\n## Skills\nGo"}
+  reload
+  clock data
+  clock settle
+  expect text "line-6-0" == "Responsible for building"
+  expect text "line-6-1" == "Built"
+  expect text "note-6-0" == "Suggestion Opens with what you did: “Built”, in place of “Responsible for building”."
+  expect text "line-7-0" == "Lead"
+  expect text "line-7-1" == "Led"
+  expect text "note-7-0" == "Suggestion Past tense for a job that has ended."
+  tap "sug-6-keep"
+  clock data
+  clock settle
+  expect text "line-6" == "Built the rail yard scheduler that runs 300 trains a day."
+  expect text "sug-6-text" == "Kept. The suggested words are in."
+  tap "sug-7-reject"
+  clock data
+  clock settle
+  expect text "line-7" == "Lead the weekly incident review."
+  expect text "sug-7-text" == "Rejected. Your words stay."

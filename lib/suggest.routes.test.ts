@@ -26,7 +26,8 @@ const HEAD = '### Director of Engineering, Harborlight Systems', EDITED = '### H
 
 test('a first start made the table empty; the owner’s Save makes one suggestion, counted on the job and drawn on the screen', async () => {
   expect(read('SELECT count(*) AS n FROM resume_suggestions')).toEqual([{ n: 0 }]);
-  expect((await call('PATCH', '/jobs/1', { resume: OLD_RESUME.replace(HEAD, EDITED) })).status).toBe(200);
+  // The bullet is put in the present tense too, so the heading's suggestion is the only one (lib/wording.ts).
+  expect((await call('PATCH', '/jobs/1', { resume: OLD_RESUME.replace(HEAD, EDITED).replace('- Built the dispatch console.', '- Build the dispatch console.') })).status).toBe(200);
   expect(read<{ id: number; old: string; new: string; status: string }>('SELECT id, old, new, status FROM resume_suggestions')).toEqual([{ id: 1, old: EDITED, new: HEAD, status: 'open' }]);
   expect((await call('GET', '/jobs/1')).body.suggests).toBe(1);
   const v = (await call('GET', '/jobs/1/resume')).body as { rows: { kind: string; text: string; sugs: { id: string; status: string; parts: { kind: string; text: string }[] }[]; notes: { kind: string; lead: string; text: string }[] }[] };

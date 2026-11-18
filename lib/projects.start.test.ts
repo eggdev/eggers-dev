@@ -19,8 +19,8 @@ async function start(file: string, code: string) {
 }
 // As the server and the worker start: the record's tables and triggers, the log of slow work (which now follows a
 // role's request for suggested projects), and the stage 2 modules.
-// Rule 7: the resume's versions and links (lib/versions.ts, through lib/jobs.ts).
-const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts'); await import('${lib}/activity.ts'); await import('${lib}/gaps.ts'); await import('${lib}/derived.ts'); await import('${lib}/propose.ts'); await import('${lib}/queue.ts'); await import('${lib}/jobs.ts');`;
+// Rule 7: the resume's versions and links (lib/versions.ts, through lib/jobs.ts); stage 3b: a bullet's new opening.
+const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts'); await import('${lib}/activity.ts'); await import('${lib}/gaps.ts'); await import('${lib}/derived.ts'); await import('${lib}/propose.ts'); await import('${lib}/queue.ts'); await import('${lib}/jobs.ts'); await import('${lib}/suggest.ts'); await import('${lib}/wording.ts');`;
 
 test('two processes that start together on an old database both start, every time, and each row gets one project', async () => {
   const file = join(dir, 'together.db');
@@ -42,6 +42,8 @@ test('two processes that start together on an old database both start, every tim
   expect(d.query("SELECT name FROM sqlite_master WHERE name IN ('resume_suggestions', 'resume_suggestions_gone') ORDER BY name").all()).toEqual([{ name: 'resume_suggestions' }, { name: 'resume_suggestions_gone' }]);
   expect((d.query('PRAGMA table_info(resume_suggestions)').all() as { name: string }[]).map((c) => c.name)).toEqual(['id', 'job_id', 'old', 'new', 'where_', 'entry', 'kind', 'why', 'source', 'status', 'edit_at', 'made_at', 'decided_at']);
   expect(d.query('SELECT count(*) AS n FROM resume_suggestions').get()).toEqual({ n: 0 });
+  // Stage 3b adds no column to jobs.
+  expect((d.query('PRAGMA table_info(jobs)').all() as { name: string }[]).filter((c) => c.name.startsWith('suggest'))).toEqual([]);
   expect(d.query('SELECT links, resume_status, edited FROM jobs').all()).toEqual([{ links: '', resume_status: 'done', edited: 0 }]);
   d.close();
 }, 120_000);

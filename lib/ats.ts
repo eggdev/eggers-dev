@@ -27,7 +27,7 @@ const words = (s: string) => s.split(/\s+/).filter(Boolean);
 // "As sole engineer, shipped Ledgerly…" leads with "shipped".
 const lead = (b: string) => (/^(?:As|While|With|After|In|On)\b[^,]{0,40},\s*([\w-]+)/.exec(b)?.[1] ?? words(b)[0] ?? '').toLowerCase().replace(/[.,:;]+$/, '');
 // Present-tense openers, for the current role. A word outside this list still counts when it reads as one (see present).
-const PRESENT = new Set(['build', 'lead', 'win', 'write', 'run', 'drive', 'grow', 'make', 'take', 'rebuild', 'teach', 'sell', 'bring', 'keep', 'find', 'give', 'begin', 'choose', 'hold', 'send', 'get', 'do', 'rewrite', 'oversee', 'speak', 'stand',
+export const PRESENT = new Set(['build', 'lead', 'win', 'write', 'run', 'drive', 'grow', 'make', 'take', 'rebuild', 'teach', 'sell', 'bring', 'keep', 'find', 'give', 'begin', 'choose', 'hold', 'send', 'get', 'do', 'rewrite', 'oversee', 'speak', 'stand',
   'manage', 'design', 'develop', 'maintain', 'own', 'ship', 'create', 'support', 'train', 'coach', 'mentor', 'deliver', 'implement', 'architect', 'operate', 'partner', 'define', 'automate', 'deploy', 'migrate', 'test', 'review', 'plan', 'coordinate', 'direct', 'guide', 'analyze', 'improve', 'reduce', 'launch', 'integrate', 'scale', 'advise', 'serve', 'handle', 'prototype', 'help', 'work', 'turn', 'move', 'replace', 'add', 'set up']);
 // Verbs that read the same in both tenses.
 const EITHER = new Set(['cut', 'set', 'put', 'read', 'hit', 'let', 'shut', 'spread', 'split', 'quit', 'cast']);
@@ -44,7 +44,7 @@ const slip = (verb: string, current: boolean) => !EITHER.has(last(verb)) && (cur
 
 // The bullets of Experience (and of Projects, in a resume written before that section was dropped), in order,
 // each with the role it sits under and whether that role is current.
-function bulletsOf(markdown: string): { role: string; text: string; current: boolean }[] {
+export function bulletsOf(markdown: string): { role: string; text: string; current: boolean }[] {
   const r = parseResume(markdown);
   return [...r.experience, ...r.projects].flatMap((e) => e.bullets.map((text) => ({ role: e.heading, text, current: e.current })));
 }
@@ -53,8 +53,10 @@ function bulletsOf(markdown: string): { role: string; text: string; current: boo
 // tool) less 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb.
 // Each bullet that opens in the wrong tense for its role (as `bullets` flags it), with the heading of its entry, so the
 // flag is placed on that bullet only (lib/checks.ts) and never on the same words under a role where the tense is right.
-export const wrongTense = (markdown: string): { role: string; text: string }[] =>
-  bulletsOf(markdown).filter((b) => !DUTY.test(b.text) && slip(lead(b.text), b.current)).map((b) => ({ role: b.role, text: b.text }));
+export const wrongTense = (markdown: string): { role: string; text: string; current: boolean }[] =>
+  bulletsOf(markdown).filter((b) => !DUTY.test(b.text) && slip(lead(b.text), b.current)).map((b) => ({ role: b.role, text: b.text, current: b.current }));
+// Whether a bullet opens as a duty ("Responsible for", "Worked on"…), as the skim reads it.
+export const opensAsDuty = (text: string) => DUTY.test(text);
 
 export function bullets(markdown: string, terms: string[] = []): Bullets {
   const all = bulletsOf(markdown), flags: Flag[] = [];
