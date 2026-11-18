@@ -14,8 +14,9 @@
 #     "library/Cargo.lock does not exist".
 #   - Binaryen (wasm-opt): without it the build still passes, but ships markdown.wasm unoptimized and larger
 #     than the laptop's build. This is the version Exact pins, checked against its published SHA-256 sum.
-#   - A cache of what Exact compiled (~/.cache/exact). Exact keeps the compiler and the wasm modules there by
-#     the hash of their sources, so a later run with the same EXACT_REF takes them instead of compiling again.
+#   - A cache of what Exact compiled (~/.cache/exact) and of the crates Cargo downloaded for it. Exact keeps the
+#     compiler and the wasm modules there by the hash of their sources, so a later run with the same EXACT_REF
+#     takes them instead of compiling again; the crates must come back with them (see the cache step).
 name: Set up Exact and the apps
 description: Check out Exact beside the app, install Bun, Rust, Binaryen and every dependency.
 inputs:
@@ -78,13 +79,23 @@ runs:
         echo "$dir/bin" >> "$GITHUB_PATH"
         "$dir/bin/wasm-opt" --version
 
-    - name: Restore what Exact compiled
+    - name: Restore what Exact compiled, and the crates it compiled from
       # The key names everything the kept products depend on: Exact's commit and the machine. Exact checks each
       # product against the hash of its sources before it takes one, so a stale entry is never used.
+      #
+      # Cargo's downloaded crates are kept with them. When Exact takes its compiler from this cache it downloads
+      # nothing, but its build still asks Cargo, offline, for the compiler's dependency list (cargo metadata
+      # --offline), and that needs the crates on disk. With only ~/.cache/exact kept, the first run passed and the
+      # second failed with "no matching package named `windows-sys` found". "v2" in the key leaves behind the
+      # entry that was saved without the crates.
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/.cache/exact
-        key: exact-kept-${{ runner.os }}-${{ runner.arch }}-${{ inputs.exact-ref }}
+        path: |
+          ~/.cache/exact
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: exact-kept-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.exact-ref }}
 
     - name: Install dependencies
       shell: bash
