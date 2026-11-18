@@ -714,7 +714,7 @@ component EditResumeScreen
         if busy
           QuietLine(text="Saving and printing the PDF.", testId="resume-saving")
         Actions(testId="resume-editor-actions")
-          MainAction(label="Save", press=save(draft), disabled=(busy or draft.trim() == ""), keys="", testId="resume-save")
+          MainAction(label="Save", press=save(draft, body), disabled=(busy or draft.trim() == ""), keys="", testId="resume-save")
           Action(label="Cancel", press=leave, disabled=false, keys="", testId="resume-cancel")
 
 // Add a job: a link to the posting, or its text pasted. Leaving with something typed asks first (the root's action).

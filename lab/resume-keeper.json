@@ -1,0 +1,14 @@
+{
+  "notes": "margin",
+  "cite": "gutter",
+  "suggest": "inline",
+  "quiet": "nothing",
+  "balance": "top",
+  "open": "beside",
+  "paper": "page",
+  "measure": 38,
+  "margin": 16,
+  "rowGap": 12,
+  "maxNotes": 2,
+  "seed": 1
+}

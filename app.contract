@@ -679,9 +679,9 @@ component App
       send lengthSet = setLength(selectedJob, pages)
   action openEditResume
     nav = push(nav, path("editResume", selectedJob))
-  action saveResume(body: string)
+  action saveResume(body: string, base: string)
     if body.trim() != "" and not pending(resumeSaved)
-      send resumeSaved = saveResume(selectedJob, body)
+      send resumeSaved = saveResume(selectedJob, body, base)
   action afterResume
     if resumeError == "" and top(nav).name == "editResume"
       nav = back(nav)

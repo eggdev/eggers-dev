@@ -52,7 +52,8 @@ export type SkimContext = {
   top: { text: string; evidence: string }[]; // the posting's top three requirements, each with its strongest evidence
   posting: string; bank: string; rules: string; cwd: string;
   asked?: string; // questions the person already answered, so they are not raised again
-  tidy?: (resume: string) => string; // what code puts right after every rewrite (header, entries, skills)
+  tidy?: (resume: string) => string; // what code puts right after every rewrite (header, entries, skills, and the fact keys taken out)
+  show?: (resume: string) => string; // the text as the fix is given it: with each line's fact keys put back (lib/links.ts, annotate)
   found?: (resume: string) => string[]; // what the code checks found that a rewrite can fix, in plain words
   log?: (line: string) => void;
 };
@@ -83,7 +84,7 @@ ${c.posting.slice(0, 30_000)}
 
 The resume as it stands:
 <resume>
-${resume}
+${c.show ? c.show(resume) : resume}
 </resume>
 
 The bank, as JSON:

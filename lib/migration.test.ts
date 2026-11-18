@@ -216,3 +216,66 @@ test.skipIf(!MARKS_HAS)('a database with marks stored by the last version opens 
   expect(edited.roles[0].location).toBe('Duluth, MN');
   expect(edited.official).toBe(marks);
 }, 120_000);
+
+// Rule 7, stage 1: versions, links and where each flag belongs. An old database (an unsent resume a model wrote and one
+// the person edited, each with a PDF and its parse test) is opened by today's code twice, then by two processes at once.
+// Each keeps its text, its edited mark, its signature, its state, its PDF and its parse test; its flags are the ones the
+// code before rule 7 (commit 387b909, the last before it) takes, kind for kind and text for text; it has no links and no version; and no
+// resume is queued. A second start writes no more than a second start of the code before rule 7 does.
+const R7_BEFORE = '387b909';
+const R7_CHILD = (root: string) => `
+const { db, bankSignature } = await import('${root}/db.ts');
+await import('${root}/projects.ts'); await import('${root}/gaps.ts'); await import('${root}/derived.ts'); await import('${root}/propose.ts'); await import('${root}/queue.ts');
+await import('${root}/skills.ts'); await import('${root}/linkedin.ts'); await import('${root}/raised.ts'); await import('${root}/talk.ts'); await import('${root}/person.ts');
+const { dueIn } = await import('${root}/activity.ts');
+const jobs = await import('${root}/jobs.ts');
+const started = db.query('SELECT total_changes() AS n').get().n;
+if (process.env.R7_REFLAG === '1') jobs.reflagOpen();
+const cols = db.query('PRAGMA table_info(jobs)').all().map((c) => c.name);
+const rows = db.query('SELECT id, resume, edited, bank_sig, resume_status, pdf, ats, analysis' + (cols.includes('links') ? ', links' : '') + ' FROM jobs ORDER BY id').all();
+const versions = db.query("SELECT name FROM sqlite_master WHERE name = 'resume_versions'").get() ? db.query('SELECT count(*) AS n FROM resume_versions').get().n : -1;
+console.log(JSON.stringify({ started, sig: bankSignature(), due: dueIn(Date.now(), bankSignature), versions,
+  jobs: rows.map((j) => ({ id: j.id, resume: j.resume, edited: j.edited, bank_sig: j.bank_sig, resume_status: j.resume_status, pdf: j.pdf, ats: j.ats, links: j.links })),
+  flags: rows.map((j) => (JSON.parse(j.analysis).flags ?? []).map((f) => [f.kind, f.severity, f.text])) }));
+`;
+const R7_HAS = Bun.spawnSync(['git', 'cat-file', '-e', `${R7_BEFORE}^{commit}`], { cwd: join(lib, '..') }).exitCode === 0;
+if (!R7_HAS) console.log(`migration: the rule 7 comparison is skipped, because commit ${R7_BEFORE} is not in this clone (a shallow checkout).`);
+function r7Database(at: string) {
+  const before = oldTreeDatabase(at);
+  const d = new Database(at);
+  d.run("UPDATE jobs SET pdf = '/invented/1-nimbus.pdf', ats = '{\"ok\":true,\"pages\":2,\"lines\":[]}' WHERE id = 1");
+  d.query("INSERT INTO jobs (id, posting, title, company, status, fit, analysis, resume, created_at, bank_sig, edited, outcome, resume_status, pdf, ats) VALUES (2, 'A posting.', 'Engineer', 'Globex', 'done', 50, ?, ?, 1, ?, 1, '', 'done', '/invented/2.pdf', '{}')")
+    .run(JSON.stringify(OLD_ANALYSIS), OLD_RESUME.replace('Engineer.', 'Engineer, in my words.'), before.sig);
+  d.close();
+  return before;
+}
+const r7Open = async (root: string, at: string, reflag = true) => {
+  const p = Bun.spawn(['bun', '-e', R7_CHILD(root)], { env: { ...process.env, DB: at, NODE_ENV: 'test', R7_REFLAG: reflag ? '1' : '0' }, stdout: 'pipe', stderr: 'pipe' });
+  const [exit, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  if (exit !== 0) throw new Error(err.slice(-1500));
+  return JSON.parse(out.trim().split('\n').pop()!);
+};
+
+test.skipIf(!R7_HAS)('rule 7: an old database keeps every resume, its flags and its signature; no link, no version, nothing queued', async () => {
+  const oldLib = join(dir, 'r7-old');
+  expect(Bun.spawnSync(['sh', '-c', `mkdir -p "${oldLib}" && git archive ${R7_BEFORE} lib | tar -x -C "${oldLib}"`], { cwd: join(lib, '..') }).exitCode).toBe(0);
+  symlinkSync(join(lib, '..', 'node_modules'), join(oldLib, 'node_modules'));
+  const oldFile = join(dir, 'r7-before.db'), newFile = join(dir, 'r7-now.db');
+  const before = r7Database(oldFile);
+  r7Database(newFile);
+  const was = await r7Open(join(oldLib, 'lib'), oldFile);
+  const first = await r7Open(lib, newFile), second = await r7Open(lib, newFile);
+  const together = await Promise.all([r7Open(lib, newFile), r7Open(lib, newFile)]);
+  for (const got of [first, second, ...together]) {
+    expect(got.sig).toBe(before.sig);
+    expect(got.due).toBe(0);
+    expect(got.versions).toBe(0);
+    expect(got.jobs).toEqual(was.jobs.map((j: Record<string, unknown>) => ({ ...j, links: '' })));
+    expect(got.jobs.map((j: { resume_status: string; edited: number }) => [j.resume_status, j.edited])).toEqual([['done', 0], ['done', 1]]);
+    expect(got.flags).toEqual(was.flags);
+  }
+  expect(was.flags.flat().length).toBeGreaterThan(2);
+  // An idle start (no flags taken) writes what a start of the code before rule 7 writes.
+  const idleOld = await r7Open(join(oldLib, 'lib'), oldFile, false), idleNew = await r7Open(lib, newFile, false);
+  expect(idleNew.started).toBe(idleOld.started);
+}, 120_000);

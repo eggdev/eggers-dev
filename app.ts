@@ -284,7 +284,8 @@ const sources: Sources = {
   setOutcome: ([job, outcome]) => write('PATCH', `/jobs/${id(job)}`, { outcome, picked: true }),
   saveContact: ([job, who]) => write('PATCH', `/jobs/${id(job)}`, { contact: who }),
   // Printing the PDF again can take a few seconds.
-  saveResume: async ([job, body]) => { try { const res = await fetch(`${API}/jobs/${id(job)}`, { method: 'PATCH', exactTimeout: 60000, headers, body: JSON.stringify({ resume: body }) }); if (res.ok) return { ok: true, error: '' }; const said = (await res.json().catch(() => ({}))) as { error?: unknown }; return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.' }; } catch (e) { if ((e as { code?: string }).code === 'bake') throw e; return { ok: false, error: UNREACHABLE }; } },
+  // base: the text the editor opened, so a save made over a text that changed meanwhile is refused, not written over it.
+  saveResume: async ([job, body, base]) => { try { const res = await fetch(`${API}/jobs/${id(job)}`, { method: 'PATCH', exactTimeout: 60000, headers, body: JSON.stringify({ resume: body, base }) }); if (res.ok) return { ok: true, error: '' }; const said = (await res.json().catch(() => ({}))) as { error?: unknown }; return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.' }; } catch (e) { if ((e as { code?: string }).code === 'bake') throw e; return { ok: false, error: UNREACHABLE }; } },
   saveOutcome: ([job, outcome, note, picked]) => write('PATCH', `/jobs/${id(job)}`, { outcome, note, picked: picked === 'picked' }),
   addJob: ([url, posting]) => write('POST', '/jobs', { url, posting }),
   readJob: ([job]) => write('POST', `/jobs/${id(job)}/read`),

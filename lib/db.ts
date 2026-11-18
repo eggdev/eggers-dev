@@ -177,6 +177,22 @@ for (const column of ['posted_at INTEGER NOT NULL DEFAULT 0', "salary TEXT NOT N
   try { db.run(`ALTER TABLE jobs ADD COLUMN ${column}`); } catch { /* already there */ }
 }
 try { db.run('ALTER TABLE jobs ADD COLUMN applied_at INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+// links: which facts each line of the resume draws on, as the writer gave them (lib/links.ts); '' for a resume written
+// before links existed, which stays so until it is written again.
+try { db.run("ALTER TABLE jobs ADD COLUMN links TEXT NOT NULL DEFAULT ''"); } catch { /* already there */ }
+// Every version of a job's resume text (lib/versions.ts): n is its letter (1 is A), why is written | edited | skills |
+// details | suggestion | undo, reason is one line in words, pages the length it was written for. A resume with no row is
+// version A by rule: the first row is written when its text first changes, never at a start. made_at is 0 for that A.
+// sent is 1 for a version that was current when the job was marked sent: it is kept with A and the 20 newest.
+db.run(`CREATE TABLE IF NOT EXISTS resume_versions (
+  job_id INTEGER NOT NULL, n INTEGER NOT NULL, sig TEXT NOT NULL, resume TEXT NOT NULL, links TEXT NOT NULL DEFAULT '', why TEXT NOT NULL,
+  reason TEXT NOT NULL, pages INTEGER NOT NULL DEFAULT 2, made_at INTEGER NOT NULL, sent INTEGER NOT NULL DEFAULT 0, UNIQUE (job_id, n))`);
+// Each column the table gained after its first shape is added where it is missing, as every other added column here is,
+// so a table made by an earlier build still takes a version. Safe twice, and when two processes start together.
+for (const column of ["links TEXT NOT NULL DEFAULT ''", 'pages INTEGER NOT NULL DEFAULT 2', 'sent INTEGER NOT NULL DEFAULT 0']) {
+  try { db.run(`ALTER TABLE resume_versions ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+db.run('CREATE TRIGGER IF NOT EXISTS resume_versions_gone AFTER DELETE ON jobs BEGIN DELETE FROM resume_versions WHERE job_id = OLD.id; END');
 
 // A value the person gave that is not one to print: an answer of "There was none" or "I don't know", typed or chosen,
 // in any case and with a straight or curly apostrophe. Such a value is never sent to a writer (lib/jobs.ts, bank) and

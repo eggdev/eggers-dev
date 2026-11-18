@@ -16,6 +16,7 @@
 // Times are milliseconds since 1970. The usual duration of a kind is the median of its last 10 finished runs, and is
 // unknown (-1) until 3 have finished: the screens then say "a few minutes", never an invented number.
 import { db } from './db.ts';
+import { setResume } from './versions.ts';
 import { ANSWER_HOLD_MS, holdSince } from './raised.ts';
 // The talk table is made there; the triggers below follow it.
 import './talk.ts';
@@ -279,7 +280,7 @@ export function stubStep(kind: Kind, subject: number, to: string, note: string, 
   if (!f) return 'No such kind of work.';
   if (!['queued', 'running', 'done', 'failed'].includes(to)) return 'Say queued, running, done or failed.';
   const value = to === 'done' ? f.done : to;
-  if (kind === 'write-resume' && to === 'done' && resume) db.query('UPDATE jobs SET resume = ? WHERE id = ?').run(resume, subject);
+  if (kind === 'write-resume' && to === 'done' && resume) setResume(subject, resume, null, 'written', 'Written for this posting.');
   if (db.query(`UPDATE ${f.table} SET ${f.column} = ?, ${f.note} = ? WHERE id = ?`).run(value, note, subject).changes === 0) return 'Nothing to move.';
   if (to === 'running' && stage) setStage(kind, subject, stage);
   return '';

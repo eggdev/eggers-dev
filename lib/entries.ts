@@ -83,7 +83,7 @@ const sameRange = (x: Range, r: RoleRow) => r.start !== '' && sameDate(x.start, 
 const rowRange = (r: RoleRow) => rangeText(r.start, r.end);
 
 // Which employer an entry is: by its company, else by its title and dates when exactly one employer has both.
-function groupOf(title: string, company: string, ranges: Range[], groups: Group[]): { group?: Group; by: 'company' | 'title' | '' } {
+export function groupOf(title: string, company: string, ranges: Range[], groups: Group[]): { group?: Group; by: 'company' | 'title' | '' } {
   const c = normCompany(company || title);
   const named = groups.filter((g) => g.rows.some((r) => normCompany(r.company) === c));
   if (named.length === 1) return { group: named[0], by: 'company' };

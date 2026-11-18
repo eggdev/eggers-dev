@@ -18,7 +18,7 @@ import { ask } from './llm.ts';
 import { council, type Review } from './council.ts';
 import { ASKED } from './db.ts';
 import { person, withHeader } from './person.ts';
-import { BULLETS, CONTEXT, ENTRIES, KEPT_LINES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
+import { BULLETS, CONTEXT, ENTRIES, KEPT_LINES, LINKS, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
 import { keptLines } from './record.ts';
 import { inData } from './paths.ts';
 import { draftScore } from './ats.ts';
@@ -33,8 +33,10 @@ import { answeredRaised } from './raised.ts';
 import { lf } from './resume.ts';
 import { skimLoop, type Skim } from './skim.ts';
 import { reviewed, withSkills } from './skills.ts';
+import { annotate, carry, changedLines, keyOf, linkLines, linksOn, parseLinks, stripLinks, takeLinks, type LinkLine, type Links } from './links.ts';
+import { setResume, writtenReason } from './versions.ts';
 
-export type JobRow = { edited?: number; id: number; url: string; posting: string; title: string; company: string; place: string; status: string; note: string; fit: number; analysis: string; resume: string; created_at: number; updated_at: number; outcome: string; outcome_note: string; contact: string; ats: string; pdf: string; pages: number; posted_at: number; salary: string; applied_at: number };
+export type JobRow = { edited?: number; id: number; url: string; posting: string; title: string; company: string; place: string; status: string; note: string; fit: number; analysis: string; resume: string; created_at: number; updated_at: number; outcome: string; outcome_note: string; contact: string; ats: string; pdf: string; pages: number; posted_at: number; salary: string; applied_at: number; links?: string };
 // `need` is must (the posting requires it), nice (it prefers it) or implied (it does not list it, but what it
 // describes plainly needs it). A reading stored before "implied" existed has only the first two.
 // `roles` are the bank's role keys ("role:12") whose work supports the requirement; `weight` and `basis`
@@ -287,7 +289,7 @@ ${SIGNAL}
 
 ${contextRules() ? `${contextRules()}\n\n` : ''}${WRITING}
 
-${withResume ? `${BULLETS}\n\n${SUMMARY}\n\n${ENTRIES}\n\n${METRICS}\n\n` : ''}The person is looking for these kinds of role: ${TARGETS.list.join('; ')}.
+${withResume ? `${BULLETS}\n\n${SUMMARY}\n\n${ENTRIES}\n\n${METRICS}\n\n${linksOn() ? `${LINKS}\n\n` : ''}` : ''}The person is looking for these kinds of role: ${TARGETS.list.join('; ')}.
 ${directionForMaterials() ? `\nTheir own notes on their direction follow. In the resume they set emphasis only: what to lead with among the work that answers this posting, a line of scope under a title, which earlier work they value. They never override a rule above. Titles, employers and dates stay as the bank has them. The Summary keeps its three parts and its length. Only the allowed sections are written. An old or unrelated role keeps its limit of one bullet. Tense follows the role, and the rules on numbers hold. Where a note asks for something a rule forbids, follow the rule. The notes do not add facts: every line still needs the bank.\n<direction>\n${directionForMaterials()}\n</direction>\n` : ''}${direction() && direction() !== directionForMaterials() ? '\nPart of their notes is a personal lens they use to think about fit. It is not shown to you and must never appear in the resume.\n' : ''}
 
 The posting:
@@ -335,13 +337,38 @@ export class FactsError extends Error {
   }
 }
 
-// What code puts right in any resume a model wrote, in this order: the person's own name and contact line, each
-// entry's heading and dates from the bank, an entry with no bullets moved to the Earlier experience line, and
-// the Skills line from the person's own list. Never used on a resume the person edited.
-function tidy(text: string, posting: string, pages: number, roles: RoleRow[]) {
-  const fixed = repairEntries(withHeader(lf(text).trim()), roles, projectNames());
-  return { ...fixed, resume: withSkills(collapseEmpty(fixed.resume, roles), posting, pages) };
+// What code puts right in any resume a model wrote, in this order: the fact keys taken out of the text (lib/links.ts,
+// the one place they are taken out), the person's own name and contact line, each entry's heading and dates from the
+// bank, an entry with no bullets moved to the Earlier experience line, and the Skills line from the person's own list.
+// Never used on a resume the person edited. `links` are the keys matched to the lines as they now stand (null with
+// EGG_LINKS=off); a line given no key keeps the link of the same words in the same entry from `pool`, the links seen
+// earlier in this writing, which takes the new ones in turn.
+function tidy(text: string, posting: string, pages: number, roles: RoleRow[], pool?: Map<string, LinkLine>) {
+  // With EGG_LINKS=off nothing is taken out: the text is what the last commit before links left it.
+  const companies = roles.map((r) => r.company), taken = linksOn() ? takeLinks(lf(text).trim(), companies) : { clean: lf(text).trim(), cites: [] };
+  const fixed = repairEntries(withHeader(taken.clean), roles, projectNames());
+  const resume = withSkills(collapseEmpty(fixed.resume, roles), posting, pages);
+  const links = linksOn() ? linkLines(resume, taken.cites, companies, pool) : null;
+  if (links && pool) for (const l of links.lines) pool.set(keyOf(l), l);
+  return { ...fixed, resume, links };
 }
+// One writing's links: tidy with the pool of links seen so far, the text as a rewriter is shown it (each line with its
+// keys), and the links of a version by its text. `rule` is LINKS, or '' with EGG_LINKS=off (then nothing is annotated).
+function writing(roles: RoleRow[], start: Links | null = null) {
+  const pool = new Map<string, LinkLine>(), seen = new Map<string, Links | null>(), companies = roles.map((r) => r.company), rule = linksOn() ? LINKS : '';
+  for (const l of start?.lines ?? []) pool.set(keyOf(l), l);
+  return {
+    rule,
+    tidy: (text: string, posting: string, pages: number) => { const v = tidy(text, posting, pages, roles, pool); seen.set(v.resume, v.links); return v; },
+    linksOf: (text: string) => (rule ? seen.get(text) ?? null : null),
+    // Each rewrite the council heard, read into the pool only: the same words keep the keys any version gave them.
+    hear: (posting: string, pages: number) => (rule ? (text: string) => { tidy(text, posting, pages, roles, pool); } : undefined),
+    show: (text: string) => (rule ? annotate(text, seen.get(text) ?? start, companies) : text),
+  };
+}
+// What a model said in words beside a resume (its changes, its questions): a fact's key in them is said as the fact's
+// reference ("F-0057"), so no key reaches a screen. Left as it is with EGG_LINKS=off.
+const plainKeys = (lines: string[]) => (linksOn() ? lines.map((l) => stripLinks(l).replace(/\bfact:\s?(\d+)\b/gi, (_m, n: string) => `F-${n.padStart(4, '0')}`)) : lines);
 
 // What the writer is told beyond the reading: the posting map with each requirement's strongest evidence, the
 // top three to answer at the top of page one, and what the person decided about their timeline.
@@ -367,7 +394,8 @@ ${decided.length ? `\nWhat the person decided about their timeline. Follow it. R
 }
 
 // What compose returns. repairs are facts code put back, in plain words. skim is absent when EGG_SKIM is off.
-export type Composed = { resume: string; changes: string[]; review?: Review; terms: Terms; map: PostingMap; skim?: Skim; questions: string[]; repairs: string[] };
+// links are the resume's links to its facts (lib/links.ts), null when EGG_LINKS is off.
+export type Composed = { resume: string; links: Links | null; changes: string[]; review?: Review; terms: Terms; map: PostingMap; skim?: Skim; questions: string[]; repairs: string[] };
 
 // The second step, in the background: the resume for the posting from its map (`requirements`, as assess
 // stored them), then the council's review of it, then the six-second skim. After each, code puts right what
@@ -391,23 +419,28 @@ export async function compose(posting: string, pages: number, terms: string[], r
   // Every fact code puts back on the way to the version that is kept is remembered, to tell the person.
   // What the context checks read from the record, read once for this resume (lib/checks.ts, flagContext).
   const putBack = new Set<string>(), words = bankText(), skills = bankSkills(), whole = JSON.stringify(bank()), context = flagContext(), rules = contextRules();
-  const fix = (text: string) => { const v = tidy(text, posting, pages, roles); for (const f of v.repaired) putBack.add(f.text); return v; };
+  // Each version's links, by its text as code left it, for what is shown to a rewriter and what the checks read.
+  const w = writing(roles);
+  const fix = (text: string) => { const v = w.tidy(text, posting, pages); for (const f of v.repaired) putBack.add(f.text); return v; };
   const draft = fix(r.resume);
   if (process.env.EGG_COUNCIL !== 'off') stage('Being reviewed, round 1');
   // Scored as it will be sent: with its header, its true headings and its Skills line. No posting term is pasted in.
-  const reviewed = process.env.EGG_COUNCIL === 'off' ? { resume: draft.resume, review: undefined } : await council(draft.resume, posting, whole, limits(pages), INBOX, log, directionForMaterials(),
-    (text) => { const sent = tidy(text, posting, pages, roles).resume, t = termsOf(terms, sent, words, skills); return draftScore(sent, [...t.inResume, ...t.inBankOnly], pages, [...skills]); }, undefined, rules);
+  const reviewed = process.env.EGG_COUNCIL === 'off' ? { resume: draft.resume, review: undefined } : await council(w.show(draft.resume), posting, whole, limits(pages), INBOX, log, directionForMaterials(),
+    (text) => { const sent = tidy(text, posting, pages, roles).resume, t = termsOf(terms, sent, words, skills); return draftScore(sent, [...t.inResume, ...t.inBankOnly], pages, [...skills]); }, undefined, rules, w.rule, w.hear(posting, pages));
   const afterCouncil = fix(reviewed.resume);
   if (process.env.EGG_SKIM !== 'off') stage('Checking what a reader sees in six seconds');
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages, context) });
+    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages, context, w.linksOf(text)),
+    ...(w.rule ? { show: w.show } : {}) });
   // The newest version first. One with an entry the bank does not have is passed over for the one before it.
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil, draft], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) throw new FactsError(versions[0].unresolved);
   const passedOver = versions.indexOf(kept) > 0 ? ['A later version of this resume named a job your record does not have, so the version before it was kept.'] : [];
-  return { resume: kept.resume, changes: [...r.changes, ...(skimmed && versions.indexOf(kept) === 0 ? skimmed.changes : [])], review: reviewed.review, terms: termsOf(terms, kept.resume, words, skills),
-    map: { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) }, skim: skimmed?.skim,
-    questions: (r.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3),
+  const scored = reviewed.review && linksOn() ? { ...reviewed.review, changes: plainKeys(reviewed.review.changes), ...(reviewed.review.questions ? { questions: plainKeys(reviewed.review.questions) } : {}) } : reviewed.review;
+  const skim = skimmed?.skim && linksOn() ? { ...skimmed.skim, open: plainKeys(skimmed.skim.open), questions: plainKeys(skimmed.skim.questions) } : skimmed?.skim;
+  return { resume: kept.resume, links: kept.links, changes: plainKeys([...r.changes, ...(skimmed && versions.indexOf(kept) === 0 ? skimmed.changes : [])]), review: scored, terms: termsOf(terms, kept.resume, words, skills),
+    map: { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) }, skim,
+    questions: plainKeys((r.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, 3)),
     repairs: [...passedOver, ...[...putBack].map((text) => `The writer changed a fact, and it was put back from your record. ${text}`)] };
 }
 
@@ -420,7 +453,7 @@ export function storeComposed(jobId: number, c: Composed, bankSig: string, now: 
   const cur = db.query('SELECT analysis, resume_status, company, title FROM jobs WHERE id = ?').get(jobId) as { analysis: string; resume_status: string; company: string; title: string } | null;
   if (!cur || cur.resume_status !== 'running') return false;
   const analysis: Analysis = { ...(JSON.parse(cur.analysis) as Analysis), changes: c.changes, review: c.review, terms: c.terms, map: c.map, skim: c.skim, questions: c.questions, written: { sig: sigOf(c.resume), repairs: c.repairs } };
-  db.query('UPDATE jobs SET resume = ?, analysis = ?, edited = 0, bank_sig = ?, updated_at = ? WHERE id = ?').run(c.resume, JSON.stringify(analysis), bankSig, now, jobId);
+  setResume(jobId, c.resume, c.links, 'written', writtenReason(jobId, bankSig), { set: { analysis: JSON.stringify(analysis), edited: 0, bank_sig: bankSig, updated_at: now } });
   saveResume({ id: jobId, company: cur.company, title: cur.title }, c.resume);
   return true;
 }
@@ -430,9 +463,9 @@ export function finishWritten(jobId: number): void {
 }
 
 // Both steps, one after the other: for the tools that read every job again.
-export async function analyze(posting: string, pages = 2): Promise<{ title: string; company: string; place: string; resume: string; analysis: Analysis; fit: number }> {
+export async function analyze(posting: string, pages = 2): Promise<{ title: string; company: string; place: string; resume: string; links: Links | null; analysis: Analysis; fit: number }> {
   const a = await assess(posting), c = await compose(posting, pages, a.terms, a.analysis.requirements);
-  return { title: a.title, company: a.company, place: a.place, resume: c.resume, fit: a.fit,
+  return { title: a.title, company: a.company, place: a.place, resume: c.resume, links: c.links, fit: a.fit,
     analysis: { ...a.analysis, changes: c.changes, review: c.review, terms: c.terms, map: c.map, skim: c.skim, questions: c.questions, written: { sig: sigOf(c.resume), repairs: c.repairs } } };
 }
 
@@ -456,18 +489,24 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
     reflag(job.id);
     return read.review;
   }
-  const fix = (text: string) => tidy(text, job.posting, job.pages, roles), top = topRequirements(analysis.requirements), context = flagContext(), rules = contextRules();
-  const got = await council(withHeader(job.resume), job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, undefined, rules);
+  // The stored links are where this writing starts: a line the reviser leaves unchanged keeps them.
+  const w = writing(roles, linksOn() ? parseLinks(job.links) : null);
+  const fix = (text: string) => w.tidy(text, job.posting, job.pages), top = topRequirements(analysis.requirements), context = flagContext(), rules = contextRules();
+  const got = await council(w.show(withHeader(job.resume)), job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, undefined, rules, w.rule, w.hear(job.posting, job.pages));
   const afterCouncil = fix(got.resume);
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting: job.posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages, context) });
+    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages, context, w.linksOf(text)),
+    ...(w.rule ? { show: w.show } : {}) });
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) { keepEarlier(job.id, new FactsError(versions[0].unresolved).message); return undefined; }
-  analysis.review = got.review;
-  analysis.skim = versions.indexOf(kept) === 0 ? skimmed?.skim : undefined;
+  analysis.review = got.review && linksOn() ? { ...got.review, changes: plainKeys(got.review.changes), ...(got.review.questions ? { questions: plainKeys(got.review.questions) } : {}) } : got.review;
+  const skim = versions.indexOf(kept) === 0 ? skimmed?.skim : undefined;
+  analysis.skim = skim && linksOn() ? { ...skim, open: plainKeys(skim.open), questions: plainKeys(skim.questions) } : skim;
   analysis.map = { top: top.map((q) => ({ text: q.text, need: q.need, best: q.best ?? '', evidence: q.bestText || q.evidence })) };
   analysis.written = { sig: sigOf(kept.resume), repairs: kept.repaired.map((f) => `The writer changed a fact, and it was put back from your record. ${f.text}`) };
-  db.query('UPDATE jobs SET resume = ?, analysis = ?, updated_at = ? WHERE id = ?').run(kept.resume, JSON.stringify(analysis), Date.now(), job.id);
+  // The same text with no fact cited keeps the links it had (none, for a resume written before links): nothing was written.
+  const same = kept.resume === job.resume && !(kept.links?.lines ?? []).some((l) => l.facts.length > 0);
+  setResume(job.id, kept.resume, same ? 'same' : kept.links, 'written', 'Reviewed again by the council and rewritten.', { set: { analysis: JSON.stringify(analysis), updated_at: Date.now() } });
   saveResume(job, kept.resume);
   await publish(job.id, print);
   return got.review;
@@ -495,7 +534,7 @@ export async function publish(jobId: number, print = true): Promise<void> {
     } catch (e) { ats = JSON.stringify({ ok: false, pages: 0, lines: [{ label: 'PDF', ok: false, note: (e as Error).message }] }); }
   }
   // A flag must never stop a resume being saved or printed.
-  try { analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check }); } catch (e) { console.log(`  flags for job ${jobId} failed: ${(e as Error).message}`); }
+  try { analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check, links: parseLinks(job.links), owner: job.edited === 1 }); } catch (e) { console.log(`  flags for job ${jobId} failed: ${(e as Error).message}`); }
   db.query('UPDATE jobs SET analysis = ?, ats = ?, pdf = ? WHERE id = ?').run(JSON.stringify(analysis), ats, pdf, jobId);
 }
 
@@ -507,7 +546,7 @@ export function reflag(jobId: number, context?: FlagContext): void {
   const analysis = JSON.parse(job.analysis) as Analysis;
   let check: { lines: { label: string; ok: boolean; note: string }[] } | undefined;
   try { check = job.ats ? JSON.parse(job.ats) : undefined; } catch { /* an unreadable check is left out */ }
-  analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check }, Date.now(), context);
+  analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check, links: parseLinks(job.links), owner: job.edited === 1 }, Date.now(), context);
   db.query('UPDATE jobs SET analysis = ? WHERE id = ?').run(JSON.stringify(analysis), jobId);
 }
 const openJobs = () => db.query("SELECT * FROM jobs WHERE resume != '' AND outcome = ''").all() as (JobRow & { edited: number; resume_status: string })[];
@@ -530,7 +569,7 @@ export function rewriteSkillsLine(j: JobRow & { edited?: number }): boolean {
   if (resume === j.resume) return false;
   const analysis: Analysis = j.analysis ? JSON.parse(j.analysis) : { ...EMPTY };
   if (analysis.written?.sig === sigOf(j.resume)) analysis.written.sig = sigOf(resume);
-  const done = db.query("UPDATE jobs SET resume = ?, analysis = ?, pdf = '' WHERE id = ? AND resume = ? AND edited = 0").run(resume, JSON.stringify(analysis), j.id, j.resume).changes > 0;
+  const done = setResume(j.id, resume, 'same', 'skills', 'The Skills line was written again from your reviewed list.', { guard: { resume: j.resume, edited: 0 }, set: { analysis: JSON.stringify(analysis), pdf: '' } });
   if (done) saveResume(j, resume);
   return done;
 }
@@ -637,6 +676,29 @@ export function keepEarlier(jobId: number, why: string): void {
   analysis.written = { sig, repairs: [...(analysis.written?.sig === sig ? analysis.written.repairs.filter((r) => r !== why) : []), why] };
   db.query('UPDATE jobs SET analysis = ? WHERE id = ?').run(JSON.stringify(analysis), jobId);
   reflag(jobId);
+}
+
+// The owner's own edit of a resume (PATCH /jobs/:id {resume, base}), already with plain line endings: stored as written
+// and marked edited, its links carried (lib/links.ts, carry), with one version letter, and its file copy follows.
+// - same: the Save holds exactly the stored text. Nothing is written, no letter is made, nothing is printed again, and
+//   the resume is not marked as edited by hand.
+// - changed: the stored text is no longer the one the editor opened (`base`, when the screen sends it), or it changed
+//   between reading and writing (the Skills line written meanwhile). Nothing is written; the owner's text stays on screen.
+// - gone: the job was deleted. saved: written.
+// Text in one plain form, to compare (never to store): plain line endings, no spaces at line ends, no blank lines at
+// either end. An older row, or one the stub stored raw, may hold any of those; the editor's text is compared the same way.
+const plainForm = (t: string) => lf(t).split('\n').map((l) => l.replace(/[ \t]+$/, '')).join('\n').trim();
+export const CHANGED_WHILE_EDITING = 'This resume changed while you were editing. Your text is still here: look at the new version, then save again.';
+export function saveOwnerEdit(jobId: number, text: string, base?: string, now = Date.now()): 'saved' | 'same' | 'changed' | 'gone' {
+  const was = db.query('SELECT id, company, title, resume, links FROM jobs WHERE id = ?').get(jobId) as { id: number; company: string; title: string; resume: string; links: string } | null;
+  if (!was) return 'gone';
+  if (plainForm(was.resume) === plainForm(text)) return 'same';
+  if (base !== undefined && plainForm(base) !== plainForm(was.resume)) return 'changed';
+  const roles = allRoles(), n = changedLines(was.resume, text);
+  const links = carry(was.resume, text, parseLinks(was.links), roles.map((r) => r.company), now, roles);
+  if (!setResume(jobId, text, links, 'edited', `You edited ${n} line${n === 1 ? '' : 's'}.`, { guard: { resume: was.resume }, set: { edited: 1 } })) return 'changed';
+  saveResume(was, text);
+  return 'saved';
 }
 
 // The tailored resume is also kept as a file, named for the job.

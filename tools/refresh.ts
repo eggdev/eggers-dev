@@ -7,6 +7,7 @@ import { applyExtraction, associate, bankSignature, db, type SourceRow } from '.
 import { dedupe } from '../lib/dedupe.ts';
 import { read } from '../lib/ingest.ts';
 import { analyze, publish, saveResume, type JobRow } from '../lib/jobs.ts';
+import { setResume } from '../lib/versions.ts';
 import { DB_FILE, inData } from '../lib/paths.ts';
 import { write } from '../lib/profile.ts';
 
@@ -44,7 +45,8 @@ if (steps.includes('jobs')) {
     if (!job) return;
     try {
       const a = await analyze(job.posting, job.pages);
-      db.query("UPDATE jobs SET status = 'done', note = '', title = ?, company = ?, place = ?, fit = ?, analysis = ?, resume = ?, edited = 0, updated_at = ? WHERE id = ?").run(a.title || job.title, a.company, a.place, a.fit, JSON.stringify(a.analysis), a.resume, Date.now(), job.id);
+      setResume(job.id, a.resume, a.links, 'written', 'Written again when every job was read again.',
+        { set: { status: 'done', note: '', title: a.title || job.title, company: a.company, place: a.place, fit: a.fit, analysis: JSON.stringify(a.analysis), edited: 0, updated_at: Date.now() } });
       saveResume({ id: job.id, company: a.company, title: a.title }, a.resume);
       await publish(job.id);
       console.log(`job ${job.id} (${a.company}): fit ${job.fit} -> ${a.fit}; own fit test: ${(a.analysis.checks ?? []).map((c) => c.answer).join(', ') || 'none'}`);

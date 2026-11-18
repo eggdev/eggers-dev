@@ -19,7 +19,8 @@ async function start(file: string, code: string) {
 }
 // As the server and the worker start: the record's tables and triggers, the log of slow work (which now follows a
 // role's request for suggested projects), and the stage 2 modules.
-const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts'); await import('${lib}/activity.ts'); await import('${lib}/gaps.ts'); await import('${lib}/derived.ts'); await import('${lib}/propose.ts'); await import('${lib}/queue.ts');`;
+// Rule 7: the resume's versions and links (lib/versions.ts, through lib/jobs.ts).
+const OPEN = `await import('${lib}/db.ts'); await import('${lib}/projects.ts'); await import('${lib}/activity.ts'); await import('${lib}/gaps.ts'); await import('${lib}/derived.ts'); await import('${lib}/propose.ts'); await import('${lib}/queue.ts'); await import('${lib}/jobs.ts');`;
 
 test('two processes that start together on an old database both start, every time, and each row gets one project', async () => {
   const file = join(dir, 'together.db');
@@ -34,6 +35,10 @@ test('two processes that start together on an old database both start, every tim
   // of where a value came from is kept any more (the owner, 2026-11-18).
   expect(d.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name IN ('roles_mark_cleared', 'roles_id_floor', 'facts_id_floor', 'roles_id_above_floor') ORDER BY name").all())
     .toEqual([{ name: 'facts_id_floor' }, { name: 'roles_id_above_floor' }, { name: 'roles_id_floor' }]);
+  // Rule 7: the versions table and its trigger are there once, with no row; the resume has no links and is as it was.
+  expect(d.query("SELECT name FROM sqlite_master WHERE name IN ('resume_versions', 'resume_versions_gone') ORDER BY name").all()).toEqual([{ name: 'resume_versions' }, { name: 'resume_versions_gone' }]);
+  expect(d.query('SELECT count(*) AS n FROM resume_versions').get()).toEqual({ n: 0 });
+  expect(d.query('SELECT links, resume_status, edited FROM jobs').all()).toEqual([{ links: '', resume_status: 'done', edited: 0 }]);
   d.close();
 }, 120_000);
 
@@ -76,12 +81,13 @@ test('two processes that list a new skill together both list it, once', async ()
   d.close();
 }, 120_000);
 
-test('with nothing to do, giving rows their projects writes nothing', async () => {
+test('a second start writes nothing: no project, no version, no link', async () => {
   const file = join(dir, 'idle.db');
   oldTreeDatabase(file);
   expect((await start(file, OPEN)).exit).toBe(0);
   const seen = await start(file, `${OPEN} const { db } = await import('${lib}/db.ts'); const { syncProjects } = await import('${lib}/projects.ts');
-    const before = db.query('SELECT total_changes() AS n').get().n; const made = syncProjects(); console.log(JSON.stringify({ made, changes: db.query('SELECT total_changes() AS n').get().n - before }));`);
+    const started = db.query('SELECT total_changes() AS n').get().n, before = started; const made = syncProjects();
+    console.log(JSON.stringify({ started, made, changes: db.query('SELECT total_changes() AS n').get().n - before, versions: db.query('SELECT count(*) AS n FROM resume_versions').get().n, links: db.query("SELECT count(*) AS n FROM jobs WHERE links != ''").get().n }));`);
   expect(seen.exit).toBe(0);
-  expect(JSON.parse(seen.out.trim().split('\n').pop()!)).toEqual({ made: 0, changes: 0 });
+  expect(JSON.parse(seen.out.trim().split('\n').pop()!)).toEqual({ started: 0, made: 0, changes: 0, versions: 0, links: 0 });
 });

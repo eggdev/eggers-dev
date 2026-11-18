@@ -1391,3 +1391,21 @@ test "a job's page says when its Skills line waits for the skills list"
   at "/job/3"
   clock data
   expect text "job-resume-skills" == "Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF."
+
+test "a save made over a resume that changed meanwhile is refused in words, and the owner's text stays in the editor"
+  at "/job/1/resume/edit"
+  // Job 1 is the posting added by the first job test; its resume, asked for again there, is written now (stub).
+  request POST "/test/work" {"kind": "write-resume", "id": 1, "to": "done", "resume": "# Ada Example\n\n## Summary\n\nEngineer."}
+  reload
+  clock data
+  clock settle
+  expect text "resume-text" == "# Ada Example\n\n## Summary\n\nEngineer."
+  type "resume-text" "# Ada Example\n\n## Summary\n\nEngineer who leads billing teams."
+  // Saved elsewhere meanwhile (another tab).
+  request PATCH "/jobs/1" {"resume": "# Ada Example\n\n## Summary\n\nEngineer, saved elsewhere."}
+  tap "resume-save"
+  clock data
+  clock settle
+  expect text "resume-error" == "This resume changed while you were editing. Your text is still here: look at the new version, then save again."
+  expect text "resume-text" == "# Ada Example\n\n## Summary\n\nEngineer who leads billing teams."
+  expect tree has "resume-save"

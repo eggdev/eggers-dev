@@ -74,7 +74,11 @@ const analysisOf = (id: number) => JSON.parse((db.query('SELECT analysis FROM jo
 const resumeOf = (id: number) => (db.query('SELECT resume FROM jobs WHERE id = ?').get(id) as { resume: string }).resume;
 
 beforeEach(() => { seed(); process.env.EGG_COUNCIL = 'off'; delete process.env.EGG_SKIM; });
-afterEach(() => { fakeAsk(); delete process.env.EGG_COUNCIL; delete process.env.EGG_SKIM; });
+afterEach(() => { fakeAsk(); delete process.env.EGG_COUNCIL; delete process.env.EGG_SKIM; delete process.env.EGG_LINKS; });
+// The tests that count the calls of the writing loop have stand-ins that write no fact keys: with links on, every line
+// would also be sent back as citing no fact (lib/links.ts). They run with links off; the keys are tested in
+// lib/compose.links.test.ts.
+const noLinks = () => { process.env.EGG_LINKS = 'off'; };
 
 test('the top three requirements are required, then implied, then preferred, by weight, and never one the bank cannot answer', () => {
   expect(topRequirements(REQS).map((r) => r.text)).toEqual(['Go services in production', 'Owns delivery end to end', 'Works alone at scale']);
@@ -136,6 +140,7 @@ test('the writer is given the posting map, the top three, the metrics inventory 
 });
 
 test('a changed title and date are put back, an empty entry is collapsed, and no posting term is pasted into Skills', async () => {
+  noLinks();
   model();
   const c = await compose(POSTING, 2, TERMS, REQS);
   const r = parseResume(c.resume);
@@ -235,6 +240,7 @@ test('a version that names a job the bank does not have is never returned', asyn
 });
 
 test('with the council on, the readers and the reviser hold the same rules and the skim follows', async () => {
+  noLinks();
   delete process.env.EGG_COUNCIL;
   model();
   const c = await compose(POSTING, 2, TERMS, REQS);
@@ -434,6 +440,7 @@ test('a number whose value stands in a project\'s background and in no fact of t
 });
 
 test('a number from a project\'s background is sent back to the writer and taken out', async () => {
+  noLinks();
   withProjects();
   const bad = WRITTEN.replace('- Build the dispatch console that 640 users across 12 depots open every day.', '- Build the dispatch console that replaced paper planning in 35 depots.');
   const good = WRITTEN;
@@ -593,6 +600,7 @@ test('true numbers written another way are quiet; a number from another employer
 });
 
 test('a resume that prints [number] is sent back to the writer and put right', async () => {
+  noLinks();
   withProjects();
   const marked = WRITTEN.replace('- Build the dispatch console that 640 users across 12 depots open every day.', '- Build the dispatch console that replaced paper planning in [number] depots.');
   calls = [];

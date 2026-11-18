@@ -83,6 +83,18 @@ export const CONTEXT = `Projects and the details of a fact:
 - A number is printed only when it stands in a fact: in its text, detail or metric, or in its "baseline" (the person's own answer about the number before), its "team" (how many worked on it) or its "own_part" (what the person did themselves). "own_part" also says how much of the work to claim: never claim more of it than that.
 - ${NUMBER_MARK}`;
 
+// Rule 7: where each line of a resume comes from (lib/links.ts). Given to the three that write a resume's lines (the
+// writer, the council's reviser and the skim's fix), never to a reader, and left out with EGG_LINKS=off. Code takes the
+// keys out before anything is stored, printed or read, and checks each one.
+export const LINKS = `Where each line comes from:
+- End every bullet, and the Summary's paragraph, with the keys of the bank facts it draws on, in braces: "… {fact:2}" or "… {fact:2, fact:7}". Only "fact:" keys, copied from the bank: a project's or a role's key is never cited.
+- A bullet cites only facts of its own entry. The Summary may cite any fact.
+- Every number in a line stands in a fact that line cites.
+- A line you cannot cite a fact for is not written.
+- When you change a line, change its keys to match. A line you do not change keeps its keys.
+- Keys go nowhere else: not in a heading, a dates line, Skills or Education. They are taken out before the resume is printed or read, and do not count as words.
+- Where a finding names a fact as "F-0057", it is the fact with the key "fact:57". A line cites it as {fact:57}, never as {F-0057}.`;
+
 // The kept lines of "How you work" (lib/derived.ts), when they are given to a writer: they help choose, and are never printed.
 export const KEPT_LINES = 'Counted from the record and confirmed by the person. Not facts: never print one, never quote its numbers; use them only to choose which facts lead.';
 

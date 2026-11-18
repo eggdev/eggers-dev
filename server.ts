@@ -11,12 +11,13 @@ import { type Door } from './lib/outreach.ts';
 import { hub } from './lib/github.ts';
 import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from './lib/discover.ts';
 import { INBOX } from './lib/ingest.ts';
-import { fitOf, publish, refreshDueSkills, refreshOneSkillsLine, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { CHANGED_WHILE_EDITING, fitOf, publish, refreshDueSkills, saveOwnerEdit, refreshOneSkillsLine, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { answer, inputsOf, openRaised, raisedByKey } from './lib/raised.ts';
 import { QUIET_DAYS, queue, snooze } from './lib/queue.ts';
 import { lf } from './lib/resume.ts';
+import { keepSent, keepStanding, setResume } from './lib/versions.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { markFromList, skillsView } from './lib/skillsview.ts';
 import { type AtsCheck } from './lib/pdf.ts';
@@ -307,7 +308,7 @@ const served = Bun.serve({ hostname, port, routes: {
       for (const j of open) {
         const resume = withHeader(j.resume);
         if (resume === j.resume) continue;
-        db.query('UPDATE jobs SET resume = ? WHERE id = ?').run(resume, j.id);
+        setResume(j.id, resume, 'same', 'details', 'Your name and contact line changed.');
         saveResume(j, resume);
       }
       // Printing is slow, so it happens after the answer.
@@ -394,7 +395,8 @@ const served = Bun.serve({ hostname, port, routes: {
         checks: (a.checks ?? []).map((c, i) => ({ id: String(i), question: c.question, answer: c.answer, note: c.note })),
         knockouts: (a.knockouts ?? []).map((k, i) => ({ id: String(i), question: k.question, answer: k.answer, note: k.note })),
         // What to look at on this resume, in plain words (lib/checks.ts), taken again whenever it is written or edited.
-        flags: (a.flags ?? []).map((f, i) => ({ id: String(i), kind: f.kind, severity: f.severity, text: f.text, items: f.items ?? [] })),
+        // A line the owner wrote has no fact linked to it (`unlinked`, info): that is said beside the line itself, not here.
+        flags: (a.flags ?? []).filter((f) => !(f.kind === 'unlinked' && f.severity === 'info')).map((f, i) => ({ id: String(i), kind: f.kind, severity: f.severity, text: f.text, items: f.items ?? [] })),
         // The six-second skim (lib/skim.ts): null for a resume written before it existed.
         skim: a.skim ? { conclusion: a.skim.conclusion, revisions: a.skim.revisions, questions: a.skim.questions, open: a.skim.open, top: a.skim.top.map((t, i) => ({ id: String(i), requirement: t.requirement, answered: t.answered, note: t.note })) } : null,
         // The posting's top three requirements as the resume was written to answer them, each with its strongest evidence.
@@ -416,17 +418,19 @@ const served = Bun.serve({ hostname, port, routes: {
         if (!b.resume.trim()) return send({ error: 'The resume can’t be empty.' }, 400);
         // Line endings are stored as plain ones: text pasted from Windows would otherwise read as having no bullets.
         const edited = lf(b.resume).trim();
-        db.query('UPDATE jobs SET resume = ?, edited = 1 WHERE id = ?').run(edited, id);
-        // The copy kept as a file beside the database follows the edit, so the file is never an older resume than the app's.
-        const mine = db.query('SELECT id, company, title FROM jobs WHERE id = ?').get(id) as { id: number; company: string; title: string } | null;
-        if (mine) saveResume(mine, edited);
-        await publish(id, !STUB);
+        // A Save that holds the stored text writes nothing and prints nothing; one made over a text that changed meanwhile
+        // is refused, and writes nothing (lib/jobs.ts, saveOwnerEdit). `base` is the text the editor opened.
+        const saved = saveOwnerEdit(id, edited, typeof b.base === 'string' ? b.base : undefined);
+        if (saved === 'changed') return send({ error: CHANGED_WHILE_EDITING }, 409);
+        if (saved === 'saved') await publish(id, !STUB);
         return send({ ok: true });
       }
       if (b.rewrite === true) return writeResumeAgain(id);
       // One page or two: the resume is written again to that length.
       if (b.pages === 1 || b.pages === 2) {
-        // Only the resume is written again: the reading of the posting does not depend on its length.
+        // Only the resume is written again: the reading of the posting does not depend on its length. The text as it
+        // stands is kept as a version first, so the next one can say it was written at another length (lib/versions.ts).
+        keepStanding(id);
         db.query("UPDATE jobs SET pages = ?, resume_status = 'queued', resume_note = '' WHERE id = ?").run(b.pages, id);
         return send({ ok: true });
       }
@@ -440,6 +444,8 @@ const served = Bun.serve({ hostname, port, routes: {
       // A job whose stored data cannot be read is recorded as before, and said once in the log.
       if (b.outcome !== '') { try { await refreshOneSkillsLine(id, (x) => publish(x, !STUB)); } catch (e) { console.log(`skills: the Skills line of job ${id} could not be written before it was sent: ${(e as Error).message}`); } }
       db.query("UPDATE jobs SET outcome = ?, applied_at = CASE WHEN ? = 'applied' AND (outcome != 'applied' OR ?) THEN ? WHEN ? = '' THEN 0 ELSE applied_at END WHERE id = ?").run(b.outcome, b.outcome, b.picked === true ? 1 : 0, Date.now(), b.outcome, id);
+      // The version that went out is kept for good (lib/versions.ts).
+      if (b.outcome !== '') keepSent(id);
       return send({ ok: true });
     },
     DELETE: (req) => { db.query('DELETE FROM jobs WHERE id = ?').run(Number(req.params.id)); return send({ ok: true }); },
@@ -547,9 +553,9 @@ const served = Bun.serve({ hostname, port, routes: {
     POST: async (req: Request & { params: { id: string } }) => {
       const b = await req.json().catch(() => ({}));
       const reqs = weigh(Array.isArray(b.requirements) ? b.requirements : [], db.query('SELECT * FROM roles').all() as RoleRow[], Date.now());
-      db.query("UPDATE jobs SET status = 'done', note = '', title = ?, company = ?, place = ?, fit = ?, analysis = ?, resume = ?, bank_sig = ?, updated_at = ? WHERE id = ?")
-        .run(str(b.title), str(b.company), str(b.place), fitOf(reqs), JSON.stringify({ verdict: str(b.verdict), requirements: reqs, strengths: b.strengths ?? [], risks: b.risks ?? [], changes: b.changes ?? [], gaps: b.gaps ?? [], knockouts: b.knockouts ?? [],
-          terms: termsOf(Array.isArray(b.terms) ? b.terms : [], str(b.resume), ''), checks: b.checks ?? [] }), str(b.resume), bankSignature(), Date.now(), Number(req.params.id));
+      setResume(Number(req.params.id), str(b.resume), null, 'written', 'Written for this posting.', { set: { status: 'done', note: '', title: str(b.title), company: str(b.company), place: str(b.place), fit: fitOf(reqs),
+        analysis: JSON.stringify({ verdict: str(b.verdict), requirements: reqs, strengths: b.strengths ?? [], risks: b.risks ?? [], changes: b.changes ?? [], gaps: b.gaps ?? [], knockouts: b.knockouts ?? [],
+          terms: termsOf(Array.isArray(b.terms) ? b.terms : [], str(b.resume), ''), checks: b.checks ?? [] }), bank_sig: bankSignature(), updated_at: Date.now() } });
       return send({ ok: true });
     },
   } } : {}),

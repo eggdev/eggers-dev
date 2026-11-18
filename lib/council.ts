@@ -8,6 +8,7 @@
 // what a rule forbids and the reviser cannot trade a rule for a higher score.
 import { bullets, REQUIRED } from './ats.ts';
 import { ASKED } from './db.ts';
+import { stripLinks } from './links.ts';
 import { ask } from './llm.ts';
 import { BULLETS, ENTRIES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
 
@@ -73,13 +74,13 @@ ${posting.slice(0, 30_000)}
 
 The resume:
 <resume>
-${seat.model().startsWith('gpt') ? masked(resume) : resume}
+${seat.model().startsWith('gpt') ? masked(stripLinks(resume)) : stripLinks(resume)}
 </resume>` });
 
 // A reader outside this machine's own model gets the resume without the name and contact line.
 const masked = (resume: string) => { const lines = resume.split('\n'), at = lines.findIndex((l) => /^##\s/.test(l)); return at < 0 ? resume : ['# [Name]', '[location and contact details]', '', ...lines.slice(at)].join('\n'); };
 
-const revise = (resume: string, readings: { seat: string; r: Reading }[], posting: string, bank: string, limits: string, cwd: string, wishes: string, context: string, short = '') => ask<{ resume: string; changes: string[]; questions: string[] }>({ cwd, schema: REVISED, timeoutMs: 15 * 60_000, model: REVISER(),
+const revise = (resume: string, readings: { seat: string; r: Reading }[], posting: string, bank: string, limits: string, cwd: string, wishes: string, context: string, short = '', links = '') => ask<{ resume: string; changes: string[]; questions: string[] }>({ cwd, schema: REVISED, timeoutMs: 15 * 60_000, model: REVISER(),
   prompt: `You are revising a resume written for one job posting, after three readers reviewed it. Fix what they flagged and return the whole resume.
 
 Rules that outrank the readers:
@@ -103,7 +104,7 @@ ${BULLETS}
 
 ${SUMMARY}
 
-${ENTRIES}
+${ENTRIES}${links ? `\n\n${links}` : ''}
 
 "changes" lists what you changed, each in one plain sentence addressed to the person as "you" ("Cut the count of tests from the Stripe bullet: it read as small."), at most ten.
 
@@ -127,7 +128,7 @@ ${bank}` });
 
 // What a rule-based check of the bullets found (lib/ats.ts): duties, the wrong tense for the role, bullets past a skim's length, one verb three times running.
 // It never asks for a number: only the readers and the bank decide what is worth showing.
-const mechanical = (resume: string) => { const f = bullets(resume).flags.slice(0, 8); return f.length ? `\n\nA rule-based check of the bullets, with no score:\n${f.map((x) => `- "${x.quote}": ${x.why} Fix: ${x.fix}`).join('\n')}` : ''; };
+const mechanical = (resume: string) => { const f = bullets(stripLinks(resume)).flags.slice(0, 8); return f.length ? `\n\nA rule-based check of the bullets, with no score:\n${f.map((x) => `- "${x.quote}": ${x.why} Fix: ${x.fix}`).join('\n')}` : ''; };
 
 const mean = (xs: number[]) => Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10;
 const clamp = (n: number) => Math.max(1, Math.min(10, Math.round(n * 2) / 2));
@@ -135,7 +136,10 @@ const clamp = (n: number) => Math.max(1, Math.min(10, Math.round(n * 2) / 2));
 // `most` is how many rewrites it may make. With 0 the readers only score the text, and it comes back as it went in
 // (for a resume the person edited, which is never rewritten).
 // `context`: what a project of a role is, and "[number]" (CONTEXT in lib/writing.ts), when the bank sends either; '' when not.
-export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES, context = ''): Promise<{ resume: string; review: Review }> {
+// `links`: the rule on fact keys (LINKS in lib/writing.ts), given to the reviser only; '' when links are off. The draft may
+// carry its lines' keys (lib/links.ts, annotate): the reviser sees them, and the readers and the rule-based check never do.
+// `seen` hears each rewrite as the reviser returned it, so the keys it gave a line are known even when an earlier version is kept.
+export async function council(draft: string, posting: string, bank: string, limits: string, cwd: string, log: (line: string) => void = () => {}, wishes = '', parser?: Parser, most = MAX_REWRITES, context = '', links = '', seen?: (resume: string) => void): Promise<{ resume: string; review: Review }> {
   let resume = draft.trim(), best = { resume, score: 0, seats: [] as Seat[], changes: [] as string[], parser: -1 };
   const changes: string[] = [], history = SEATS.map(() => [] as number[]);
   let questions: string[] = [];
@@ -161,9 +165,10 @@ export async function council(draft: string, posting: string, bank: string, limi
     if ((passes(score, seats) && ready) || rewrites >= most) return done(rewrites);
     const heard = readings.filter((x): x is typeof x & { r: Reading } => x.r !== undefined).map((x) => ({ seat: x.seat, r: x.r }));
     const short = p && !ready ? `\n\nA rule-based score of the page stands at ${p.score} of 100 and must reach ${REQUIRED}. What holds it down:\n${p.notes.map((n) => `- ${n}`).join('\n')}` : '';
-    const next = await revise(resume, heard, posting, bank, limits, cwd, wishes, context, short);
+    const next = await revise(resume, heard, posting, bank, limits, cwd, wishes, context, short, links);
     if (next.resume.trim() === '') return done(rewrites);
     resume = next.resume.trim();
+    seen?.(resume);
     changes.push(...next.changes.map((c) => c.trim()).filter(Boolean));
     questions = next.questions.map((q) => q.trim()).filter(Boolean).slice(0, 4);
   }
