@@ -3,7 +3,7 @@
 // context and in no fact, by value alone. Each case is taken from a review of the earlier, noun-matching rule: a false
 // alarm that is quiet now, or a copy that is still caught. Everything is invented.
 import { expect, test } from 'bun:test';
-import { counts, held, quantities, redact, unsupported } from './numbers.ts';
+import { counts, quantities, redact, unheld, unsupported } from './numbers.ts';
 
 test('redaction: a number no fact of the project holds strictly becomes [number]; one it holds stays; names stay', () => {
   const held = quantities('Built the dispatch console that schedulers use every day. 640 users across 12 depots');
@@ -156,12 +156,27 @@ test('a dotted number after a capitalised word is no version by itself: it is re
 });
 
 // A count of tests or files is noise in a fact, so a line that reads the same value was called unsupported: the screen
-// said "212 is in none of the facts this line uses. F-0003 says “… (212 tests)”." The noise rule may make the check
-// quieter, never louder: a value is held when the stated text holds it with or without that rule.
-test('a value the stated text holds only inside a count of tests is held, by both checks', () => {
+// said "212 is in none of the facts this line uses. F-0003 says “… (212 tests)”." A value a stated text holds only inside
+// a count of tests or files supports a bare number in a line ("all 212 of them"), never a count of something else; a
+// value held only as a year or a date supports nothing.
+test('a value held only inside a count of tests supports a bare number, never another count; a year supports none', () => {
+  const stated = 'Wrote the test suite for the console. 212 tests';
   expect(counts('212 tests', {}).map((x) => x.value)).toEqual([]);
-  expect([...held('Wrote the test suite for the console. 212 tests')]).toContain(212);
-  expect(flag('Ran the console tests, all 212 of them.', 'All 212 of them ran each night.', 'Wrote the test suite for the console. 212 tests')).toEqual([]);
+  expect(unheld('Ran the console tests, all 212 of them.', stated).map((x) => x.text)).toEqual([]);
+  expect(flag('Ran the console tests, all 212 of them.', 'All 212 of them ran each night.', stated)).toEqual([]);
   // A value no stated text holds in any form is still caught.
-  expect(flag('Ran the console tests, all 212 of them, in 9 minutes.', 'All 212 of them ran each night in 9 minutes.', 'Wrote the test suite for the console. 212 tests')).toEqual(['9']);
+  expect(flag('Ran the console tests, all 212 of them, in 9 minutes.', 'All 212 of them ran each night in 9 minutes.', stated)).toEqual(['9']);
+  // A year, a quarter's year and a count of files support no count of something else.
+  expect(unheld('Reached 2019 users.', 'Shipped in 2019.').map((x) => x.text)).toEqual(['2019']);
+  expect(unheld('Signed 2022 customers.', 'Launched in Q3 2022.').map((x) => x.text)).toEqual(['2022']);
+  expect(unheld('Won 40 customers.', 'Cut 40 files from the build.').map((x) => x.text)).toEqual(['40']);
+  expect(flag('Won 40 customers.', 'There were 40 customers.', 'Cut 40 files from the build.')).toEqual(['40']);
+});
+
+test('a count of tests or files written with a hyphen is the same count: “a 212-test suite”, “a 40-file change”', () => {
+  expect(unheld('Built a 212-test suite.', 'Wrote the test suite for the console. 212 tests').map((x) => x.text)).toEqual([]);
+  expect(unheld('Shipped a 40-file change.', 'Cut 40 files from the build.').map((x) => x.text)).toEqual([]);
+  // The other catches stay.
+  expect(unheld('Won 40 customers.', 'Cut 40 files from the build.').map((x) => x.text)).toEqual(['40']);
+  expect(unheld('Reached 2019 users.', 'Shipped in 2019.').map((x) => x.text)).toEqual(['2019']);
 });

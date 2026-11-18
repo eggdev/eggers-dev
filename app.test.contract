@@ -1512,3 +1512,79 @@ test "a resume with no record of which facts each line uses says so once, and sh
   expect text "resume-legacy" == "The studio has no record of which facts each line of this resume uses. Write it again to record them."
   expect tree missing "ref-9-f0"
   expect tree has "ref-7-r0"
+
+// Rule 7, stage 3a: on a resume the owner edited, what the studio would write is a suggestion, never a change. A title
+// that differs from the record, and a Skills line the reviewed list words otherwise, each drawn in place: the old words
+// struck, the new words after them, Keep and Reject under the line, and Undo after either.
+test "an edited resume's suggestions: the job's page counts them, and the title and the Skills line are drawn struck and added"
+  size 1280x900
+  at "/job/1"
+  request POST "/jobs/1/result" {"title": "Staff Engineer", "company": "Nimbus Yard", "place": "Remote", "verdict": "A fair fit.", "requirements": [], "resume": "# Ada Example\nada@example.com\n\n## Experience\n### Staff Engineer, Lanternfly Rail\nApr 2022 – Jun 2024\n- Built the rail yard scheduler that runs 300 trains a day.\n\n## Skills\nGo"}
+  request POST "/facts" {"text": "Ported the invented ledger to Cobolt.", "skills": "Cobolt"}
+  request POST "/skills" {"marks": [{"name": "Cobolt", "mark": "not-confident"}]}
+  request POST "/test/edited" {"job": 1, "resume": "# Ada Example\nada@example.com\n\n## Experience\n### Lead Engineer, Lanternfly Rail\nApr 2022 – Jun 2024\n- Built the rail yard scheduler that runs 300 trains a day.\n\n## Skills\nGo, Cobolt", "skills": true}
+  reload
+  clock data
+  clock settle
+  expect text "job-resume-suggests" == "The studio suggests 2 changes to this resume."
+  tap "job-resume"
+  clock data
+  clock settle
+  // The heading: "Lead" struck, "Staff" added, the rest as it is; the reason beside it as a Suggestion note.
+  expect text "line-4-0" == "Lead"
+  expect text "line-4-1" == "Staff"
+  expect text "line-4-2" == " Engineer, Lanternfly Rail"
+  expect text "line-4" == "removed: Lead added: Staff Engineer, Lanternfly Rail"
+  expect tree has "sug-4-keep"
+  expect tree has "sug-4-reject"
+  // Its reason comes first among the line's notes, and the title check it answers is not said again.
+  expect text "note-4-0" == "Suggestion Your record gives the title as “Staff Engineer”."
+  // The Skills line: the skill the owner marked not confident is struck, and nothing is added.
+  expect text "line-9-1" == ", Cobolt"
+  expect tree has "sug-9-keep"
+  expect text "notes-9" == "Suggestion You marked Cobolt as not confident."
+
+test "Keep puts the suggested title in, and Undo takes it out again"
+  size 1280x900
+  at "/job/1/resume"
+  clock data
+  clock settle
+  tap "sug-4-keep"
+  clock data
+  clock settle
+  expect text "line-4" == "Staff Engineer, Lanternfly Rail"
+  expect text "sug-4-text" == "Kept. The suggested words are in."
+  expect tree missing "sug-4-keep"
+  tap "sug-4-undo"
+  clock data
+  clock settle
+  expect text "line-4-0" == "Lead"
+  expect tree has "sug-4-keep"
+  expect tree missing "sug-4-text"
+
+test "Reject leaves the owner's Skills line, and Undo opens the suggestion again"
+  size 1280x900
+  at "/job/1/resume"
+  clock data
+  clock settle
+  tap "sug-9-reject"
+  clock data
+  clock settle
+  expect text "line-9" == "Go, Cobolt"
+  expect text "sug-9-text" == "Rejected. Your words stay."
+  expect tree missing "notes-9"
+  tap "sug-9-undo"
+  clock data
+  clock settle
+  expect tree has "sug-9-keep"
+  expect text "notes-9" == "Suggestion You marked Cobolt as not confident."
+
+test "under 640px a suggestion's reason and its Keep and Reject sit under its line"
+  size 390x844
+  at "/job/1/resume"
+  clock data
+  clock settle
+  expect tree has "line-4-0"
+  expect tree has "sug-4-keep"
+  expect tree has "sug-9-keep"
+  expect text "notes-9" == "Suggestion You marked Cobolt as not confident."

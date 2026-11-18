@@ -144,26 +144,28 @@ export function redact(text: string, held: Quantity[] = []): string {
 const RUN = /[\d.,-]{41,}/g;
 // The values a text uses as counts: noise, names and counts of years gone. `versions`: the names of the person's tools,
 // languages and platforms (their endings such as ".js" left off), after which a version-shaped number is no count.
-// `noise: false` reads what the noise rule leaves out too (for what a stated text holds: see `held`).
-export function counts(text: string, opts: { versions?: string[]; noise?: boolean } = {}): { text: string; value: number }[] {
+function read(text: string, opts: { versions?: string[] }, noise: ('dates' | 'counts')[]): Found[] {
   const blank = new Uint8Array(text.length);
   for (const m of text.matchAll(RUN)) blank.fill(1, m.index!, m.index! + m[0].length);
-  if (opts.noise !== false) for (const [a, b] of noiseSpans(text.replace(RUN, (r) => ' '.repeat(r.length)))) blank.fill(1, a, b);
+  for (const [a, b] of noiseSpans(text.replace(RUN, (r) => ' '.repeat(r.length)), noise)) blank.fill(1, a, b);
   const ending = /\.(js|ts|py|net)$/;
   const versions = new Set((opts.versions ?? []).map((v) => v.toLowerCase().replace(ending, '')));
   return found(text, blank).filter((f) => !f.name && !f.year
-    && !(versions.has(f.before.replace(ending, '')) && (/^\d+\.\d+/.test(f.text) || (f.unit === '' && f.noun === ''))))
-    .map((f) => ({ text: f.text, value: f.value }));
+    && !(versions.has(f.before.replace(ending, '')) && (/^\d+\.\d+/.test(f.text) || (f.unit === '' && f.noun === ''))));
 }
+export const counts = (text: string, opts: { versions?: string[] } = {}): { text: string; value: number }[] => read(text, opts, ['dates', 'counts']).map((f) => ({ text: f.text, value: f.value }));
 
-// The values a stated text (a fact, the facts a line cites) holds, read with and without the noise rule: "212 tests" in a
-// fact holds 212 for a line that says "all 212 of them". The noise rule may make a check quieter, never louder.
-export function held(stated: string, opts: { versions?: string[] } = {}): Set<number> {
-  return new Set([...counts(stated, opts), ...counts(stated, { ...opts, noise: false })].map((x) => x.value));
+// The counts of `text` that `stated` (a fact, the facts a line cites) does not hold. A value the stated text holds only
+// inside a count of tests or files ("212 tests") holds a bare number with no unit and no noun ("all 212 of them"), never a
+// count of something else ("212 customers"). A value it holds only as a year or a date holds nothing. So the noise rule
+// may make a check quieter, never louder.
+export function unheld(text: string, stated: string, opts: { versions?: string[] } = {}): { text: string; value: number }[] {
+  const strict = new Set(counts(stated, opts).map((x) => x.value)), inCounts = new Set(read(stated, opts, ['dates']).map((x) => x.value));
+  return read(text, opts, ['dates', 'counts']).filter((x) => !strict.has(x.value) && !(inCounts.has(x.value) && x.unit === '' && x.noun === '')).map((f) => ({ text: f.text, value: f.value }));
 }
 
 // The numbers of `text` whose value stands in `context` and in no stated source: the value alone decides.
 export function unsupported(text: string, context: string, stated: string, opts: { versions?: string[] } = {}): string[] {
-  const inContext = new Set(counts(context, opts).map((x) => x.value)), has = held(stated, opts);
-  return [...new Set(counts(text, opts).filter((x) => inContext.has(x.value) && !has.has(x.value)).map((x) => x.text))];
+  const inContext = new Set(counts(context, opts).map((x) => x.value));
+  return [...new Set(unheld(text, stated, opts).filter((x) => inContext.has(x.value)).map((x) => x.text))];
 }

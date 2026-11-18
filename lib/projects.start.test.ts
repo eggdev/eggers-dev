@@ -38,6 +38,10 @@ test('two processes that start together on an old database both start, every tim
   // Rule 7: the versions table and its trigger are there once, with no row; the resume has no links and is as it was.
   expect(d.query("SELECT name FROM sqlite_master WHERE name IN ('resume_versions', 'resume_versions_gone') ORDER BY name").all()).toEqual([{ name: 'resume_versions' }, { name: 'resume_versions_gone' }]);
   expect(d.query('SELECT count(*) AS n FROM resume_versions').get()).toEqual({ n: 0 });
+  // Stage 3a: the suggestions table, each of its columns and its trigger are there once, with no row.
+  expect(d.query("SELECT name FROM sqlite_master WHERE name IN ('resume_suggestions', 'resume_suggestions_gone') ORDER BY name").all()).toEqual([{ name: 'resume_suggestions' }, { name: 'resume_suggestions_gone' }]);
+  expect((d.query('PRAGMA table_info(resume_suggestions)').all() as { name: string }[]).map((c) => c.name)).toEqual(['id', 'job_id', 'old', 'new', 'where_', 'entry', 'kind', 'why', 'source', 'status', 'edit_at', 'made_at', 'decided_at']);
+  expect(d.query('SELECT count(*) AS n FROM resume_suggestions').get()).toEqual({ n: 0 });
   expect(d.query('SELECT links, resume_status, edited FROM jobs').all()).toEqual([{ links: '', resume_status: 'done', edited: 0 }]);
   d.close();
 }, 120_000);
@@ -87,7 +91,7 @@ test('a second start writes nothing: no project, no version, no link', async () 
   expect((await start(file, OPEN)).exit).toBe(0);
   const seen = await start(file, `${OPEN} const { db } = await import('${lib}/db.ts'); const { syncProjects } = await import('${lib}/projects.ts');
     const started = db.query('SELECT total_changes() AS n').get().n, before = started; const made = syncProjects();
-    console.log(JSON.stringify({ started, made, changes: db.query('SELECT total_changes() AS n').get().n - before, versions: db.query('SELECT count(*) AS n FROM resume_versions').get().n, links: db.query("SELECT count(*) AS n FROM jobs WHERE links != ''").get().n }));`);
+    console.log(JSON.stringify({ started, made, changes: db.query('SELECT total_changes() AS n').get().n - before, versions: db.query('SELECT count(*) AS n FROM resume_versions').get().n, links: db.query("SELECT count(*) AS n FROM jobs WHERE links != ''").get().n, suggestions: db.query('SELECT count(*) AS n FROM resume_suggestions').get().n }));`);
   expect(seen.exit).toBe(0);
-  expect(JSON.parse(seen.out.trim().split('\n').pop()!)).toEqual({ started: 0, made: 0, changes: 0, versions: 0, links: 0 });
+  expect(JSON.parse(seen.out.trim().split('\n').pop()!)).toEqual({ started: 0, made: 0, changes: 0, versions: 0, links: 0, suggestions: 0 });
 });

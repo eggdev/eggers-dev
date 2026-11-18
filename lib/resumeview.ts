@@ -14,7 +14,7 @@
 // builds (F-, R-, P-, J-, V-) never breaks at its hyphen: it carries a non-breaking hyphen (U+2011). The owner's words and
 // a model's words keep their own hyphens ("F-16", "V-8").
 import { db, type RoleRow } from './db.ts';
-import { checkEntries, employers, groupOf, normCompany, sameRange, type Group } from './entries.ts';
+import { checkEntries, employers, groupOf, normCompany, type Group } from './entries.ts';
 import type { Analysis, JobRow, Requirement } from './jobs.ts';
 import { checkLinks, linkFinder, linksOn, parseLinks, places, type CitedFact, type LinkFinding, type LinkLine, type Links } from './links.ts';
 import { homeKeys } from './queue.ts';
@@ -23,13 +23,18 @@ import { lf, parseResume, rangeText, type Entry, type Resume } from './resume.ts
 import { factRef, levelOf, placeOf, projectRef, roleRef, type ProjectRow } from './tree.ts';
 import { versionsOf } from './versions.ts';
 import { projectNames, sigOf, versionNames, type Flag } from './checks.ts';
+import { shownSuggestions, WORD, wordDiff, type Part } from './suggest.ts';
 
-// kind: fail (a failed check), flag, question, or note (said about the line, not a fault: the owner edited or wrote it).
-export type Note = { id: string; kind: 'fail' | 'flag' | 'question' | 'note'; lead: string; text: string; route: string; action: string };
+// kind: fail (a failed check), flag, suggestion (the reason for a suggestion on the line), question, or note (said
+// about the line, not a fault: the owner edited or wrote it).
+export type Note = { id: string; kind: 'fail' | 'flag' | 'suggestion' | 'question' | 'note'; lead: string; text: string; route: string; action: string };
+// A suggestion on a line of a resume the owner edited (lib/suggest.ts): open, or decided (kept, rejected) so the screen
+// can offer Undo. parts: the line's words as the difference of its old and new words, in the order they are read.
+export type RowSug = { id: string; status: 'open' | 'kept' | 'rejected'; word: string; parts: { id: string; kind: Part['kind']; text: string; gap: boolean }[] };
 // A reference beside a line: a fact it uses ("fact"), or the role or project a heading is about ("role").
 // gone: the fact is no longer in the record.
 export type RowRef = { id: string; code: string; kind: 'fact' | 'role'; fact: string; gone: boolean };
-export type Row = { id: string; kind: 'name' | 'contact' | 'section' | 'role' | 'dates' | 'para' | 'bullet' | 'item' | 'plain'; text: string; refs: RowRef[]; notes: Note[] };
+export type Row = { id: string; kind: 'name' | 'contact' | 'section' | 'role' | 'dates' | 'para' | 'bullet' | 'item' | 'plain'; text: string; refs: RowRef[]; notes: Note[]; sugs: RowSug[] };
 export type FactCard = { id: string; code: string; text: string; number: string; place: string; when: string };
 export type ReqLine = { id: string; text: string; note: string };
 // answered and asked: what the reading of the record found (coverage), as the job page counts it. open: what nothing in
@@ -41,7 +46,8 @@ export type ResumeView = { ref: string; version: string; letter: string; date: s
 
 export const LEGACY_LINE = 'The studio has no record of which facts each line of this resume uses. Write it again to record them.';
 export const MORE_LINE = 'Your record has more for these requirements than this resume uses:';
-const RANK: Record<Note['kind'], number> = { fail: 0, flag: 1, question: 2, note: 3 };
+// A suggestion's reason comes first on its row, so the cap of notes never hides it (one suggestion stands on a line).
+const RANK: Record<Note['kind'], number> = { suggestion: 0, fail: 1, flag: 2, question: 3, note: 4 };
 const pad = (id: number, n: number) => String(id).padStart(n, '0');
 export const jobRef = (id: number) => `J-${pad(id, 3)}`;
 // A reference this screen builds, made so that it never breaks at a hyphen. Never applied to the owner's or a model's words.
@@ -95,16 +101,27 @@ function factWords(f: { role_id: number | null; project_id: number | null }, rec
 
 // The rows of the record an entry of the resume is about: the rows of its employer (as entries.ts resolves it, by company,
 // or by title and dates) whose title is the entry's title or one of its "Previously" titles. A title the record lacks (the
-// owner edited it) is the employer's row of the same dates; the entry's own title, failing that, the employer's newest row.
+// owner edited it) is the employer's row its dates overlap most, when that covers a third of the heading's own months at
+// least; with no dates, the entry's own title is the employer's newest row; other dates name none.
+const month = (ym: string, end: boolean) => { const [y, m] = ym.split('-').map(Number); return y * 12 + (m ? m - 1 : end ? 11 : 0); };
+const NOW = () => { const d = new Date(); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+const span = (start: string, end: string): [number, number] | undefined => (/^\d{4}/.test(start) ? [month(start, false), end === '' ? NOW() : month(end, true)] : undefined);
+function overlapping(rows: RoleRow[], ranges: Entry['ranges']): RoleRow[] {
+  const over = (r: RoleRow) => { const a = span(r.start, r.end); return a ? ranges.reduce((n, x) => { const b = span(x.start, x.end); return n + (b ? Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]) + 1) : 0); }, 0) : 0; };
+  // The heading's own months: a role it only touches (a month at one end) is not the role it is about.
+  const own = ranges.reduce((n, x) => { const b = span(x.start, x.end); return n + (b ? Math.max(0, b[1] - b[0] + 1) : 0); }, 0);
+  const best = Math.max(0, ...rows.map(over));
+  return best > 0 && best * 3 >= own ? rows.filter((r) => over(r) === best).slice(0, 1) : [];
+}
 function rowsOfEntry(e: { title: string; company: string; ranges: Entry['ranges']; previously?: Entry['previously'] }, rec: Rec): RoleRow[] {
   const all = [...e.ranges, ...(e.previously ?? []).flatMap((p) => p.ranges)];
   const g = groupOf(e.title, e.company, all, rec.groups).group;
   if (!g) return [];
   const rows = [...g.rows, ...g.children], about = new Set<RoleRow>();
-  const titled = (t: string) => rows.filter((r) => same(t, r.title)), dated = (ranges: Entry['ranges']) => g.rows.filter((r) => ranges.some((x) => sameRange(x, r)));
+  const titled = (t: string) => rows.filter((r) => same(t, r.title));
   const own = titled(e.title);
-  for (const r of own.length ? own : dated(e.ranges).length ? dated(e.ranges) : g.rows.slice(0, 1)) about.add(r);
-  for (const p of e.previously ?? []) { const t = titled(p.title); for (const r of t.length ? t : dated(p.ranges)) about.add(r); }
+  for (const r of own.length ? own : e.ranges.length ? overlapping(g.rows, e.ranges) : g.rows.slice(0, 1)) about.add(r);
+  for (const p of e.previously ?? []) { const t = titled(p.title); for (const r of t.length ? t : overlapping(g.rows, p.ranges)) about.add(r); }
   return rows.filter((r) => about.has(r));
 }
 // Every row of the record the resume shows (`all`): an entry in any section, or an item of the Earlier experience line.
@@ -122,7 +139,7 @@ function shownRows(r: Resume, rec: Rec): { all: Set<number>; experience: Set<num
 // ---------- The rows ----------
 
 type Place = { where: 'summary' | 'bullet' | 'role'; entry: string; text: string };
-type Built = Row & { place?: Place; roleIds?: number[] };
+type Built = Omit<Row, 'sugs'> & { sugs?: RowSug[]; place?: Place; roleIds?: number[] };
 
 function rowsOf(markdown: string, r: Resume, rec: Rec): Built[] {
   const lines = lf(markdown).split('\n'), kind = new Map<number, Built>();
@@ -213,7 +230,7 @@ export function balanceOf(job: Pick<JobRow, 'resume' | 'analysis'> & { links?: s
 
 // ---------- Notes, worded for the owner ----------
 
-const note = (kind: Note['kind'], text: string, route = '', action = ''): Omit<Note, 'id'> => ({ kind, lead: kind === 'fail' ? 'Failed check' : kind === 'flag' ? 'Flag' : kind === 'question' ? 'Question' : '', text, route, action });
+const note = (kind: Note['kind'], text: string, route = '', action = ''): Omit<Note, 'id'> => ({ kind, lead: kind === 'fail' ? 'Failed check' : kind === 'flag' ? 'Flag' : kind === 'suggestion' ? 'Suggestion' : kind === 'question' ? 'Question' : '', text, route, action });
 
 // A stored flag's words beside its own line.
 function flagWords(f: Flag, at: { item?: string; facts?: number[] }): string {
@@ -318,8 +335,20 @@ export function resumeView(jobId: number): ResumeView | null {
     }
   }
 
+  // The suggestions shown on this resume (lib/suggest.ts). While one is open, the finding it answers is not said again:
+  // the title or employer finding of its heading, or the dates finding of its entry (placed on the heading).
+  const sugsNow = rows.length ? shownSuggestions(job) : [];
+  const answered = new Set<string>(), lines = resume.split('\n'), entries = [...r.experience, ...r.projects, ...r.elsewhere];
+  for (const x of sugsNow.filter((q) => q.status === 'open')) {
+    const at = lines.indexOf(x.old);
+    const e = entries.find((q) => (x.where_ === 'dates' ? q.at.dates : q.at.heading) === at);
+    if (e && x.where_ === 'dates') answered.add(`${e.heading}\u0001dates`);
+    if (e && x.where_ === 'heading') { answered.add(`${e.heading}\u0001title`); answered.add(`${e.heading}\u0001employer`); }
+  }
+
   // The findings on a heading, from the record as it is now; one that cannot be placed stays whole.
   if (rows.length) for (const f of checkEntries(resume, rec.roles, projectNames())) {
+    if (answered.has(`${f.entry}\u0001${f.kind}`)) continue;
     const b = f.loose ? undefined : rows.find((x) => x.kind === 'role' && x.text === f.entry);
     add(b, b ? note(f.loose ? 'flag' : 'fail', entryWords(f.kind, f.was, f.is, !!f.project)) : note(f.loose ? 'flag' : 'fail', f.text));
   }
@@ -352,6 +381,16 @@ export function resumeView(jobId: number): ResumeView | null {
       const hits = quote.length < 4 ? [] : rows.filter((x) => x.kind !== 'section' && x.kind !== 'name' && x.text.includes(quote));
       add(hits.length === 1 ? hits[0] : undefined, note('flag', hits.length === 1 ? `${seat}: ${why}` : `${seat}, on “${short(quote)}”: ${why}`));
     }
+  }
+
+  // The suggestions on a resume the owner edited, on the line each is about: its words struck and added, and while it
+  // is open its reason as a note. A decided one is sent too, so the screen can offer Undo right after the choice.
+  const words = (line: string) => plain(line.replace(/^#+\s+/, ''));
+  for (const x of sugsNow) {
+    const b = rowOfLine.get(lines.indexOf(x.status === 'kept' ? x.new : x.old));
+    if (!b || x.status === 'stale') continue;
+    (b.sugs ??= []).push({ id: String(x.id), status: x.status, word: WORD[x.kind], parts: wordDiff(words(x.old), words(x.new)).map((q, i, all) => ({ id: String(i), ...q, gap: q.kind === 'new' && all[i - 1]?.kind === 'gone' })) });
+    if (x.status === 'open') add(b, note('suggestion', x.why));
   }
 
   // The questions still open about the record: one about a fact on each line that uses it; one about a role on the
@@ -392,5 +431,5 @@ export function resumeView(jobId: number): ResumeView | null {
   const balance = balanceOf(job, rec);
   return { ref: nb(jobRef(job.id)), version: nb(`V-${pad(job.id, 3)}-${letter}`), letter, date: cur ? day(cur.made_at) : '', changes,
     title: job.title, company: job.company, pdf: resume ? `/jobs/${job.id}/resume.pdf` : '', edited: job.edited === 1, linked: links !== null, legacy: links === null && resume.trim() !== '' ? LEGACY_LINE : '',
-    balance, whole: wholeNotes, rows: rows.map(({ place: _p, roleIds: _r, ...x }) => x), facts: cards };
+    balance, whole: wholeNotes, rows: rows.map(({ place: _p, roleIds: _r, ...x }) => ({ ...x, sugs: x.sugs ?? [] })), facts: cards };
 }

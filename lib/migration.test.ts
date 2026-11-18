@@ -234,7 +234,8 @@ if (process.env.R7_REFLAG === '1') jobs.reflagOpen();
 const cols = db.query('PRAGMA table_info(jobs)').all().map((c) => c.name);
 const rows = db.query('SELECT id, resume, edited, bank_sig, resume_status, pdf, ats, analysis' + (cols.includes('links') ? ', links' : '') + ' FROM jobs ORDER BY id').all();
 const versions = db.query("SELECT name FROM sqlite_master WHERE name = 'resume_versions'").get() ? db.query('SELECT count(*) AS n FROM resume_versions').get().n : -1;
-console.log(JSON.stringify({ started, sig: bankSignature(), due: dueIn(Date.now(), bankSignature), versions,
+const suggestions = db.query("SELECT name FROM sqlite_master WHERE name = 'resume_suggestions'").get() ? db.query('SELECT count(*) AS n FROM resume_suggestions').get().n : -1;
+console.log(JSON.stringify({ started, sig: bankSignature(), due: dueIn(Date.now(), bankSignature), versions, suggestions,
   jobs: rows.map((j) => ({ id: j.id, resume: j.resume, edited: j.edited, bank_sig: j.bank_sig, resume_status: j.resume_status, pdf: j.pdf, ats: j.ats, links: j.links })),
   flags: rows.map((j) => (JSON.parse(j.analysis).flags ?? []).map((f) => [f.kind, f.severity, f.text])) }));
 `;
@@ -270,6 +271,8 @@ test.skipIf(!R7_HAS)('rule 7: an old database keeps every resume, its flags and 
     expect(got.sig).toBe(before.sig);
     expect(got.due).toBe(0);
     expect(got.versions).toBe(0);
+    // Stage 3a: the edited resume (job 2) gets no suggestion at a start, and nothing else of it changes.
+    expect(got.suggestions).toBe(0);
     expect(got.jobs).toEqual(was.jobs.map((j: Record<string, unknown>) => ({ ...j, links: '' })));
     expect(got.jobs.map((j: { resume_status: string; edited: number }) => [j.resume_status, j.edited])).toEqual([['done', 0], ['done', 1]]);
     expect(got.flags).toEqual(was.flags);

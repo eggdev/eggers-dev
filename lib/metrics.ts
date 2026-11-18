@@ -24,13 +24,14 @@ export type FactLite = { id: number; role_id: number | null; metric: string };
 export const MIN_MONEY = 10_000;
 
 // Numbers that are not results. Each is taken out of the text before anything is counted: versions, ports and
-// standards; calendar dates; and counts of tests, files, endpoints, commits, pull requests, tickets and lines of code.
+// standards; calendar dates; and counts of tests, files, endpoints, commits, pull requests, tickets and lines of code
+// (also joined by a hyphen: "a 212-test suite").
 const NOISE = [/\b(?:python|java|angular|node(?:\.js)?|react|vue|go|ruby|php|swift|es|v)\s*\d+(?:\.\d+)*/g, /\b(?:port\s*\d{2,5}|http\s*[1-5]\d{2}|ipv[46]|http\/[123])\b/g, /\b(?:iso\s*\d{4,5}|soc\s*[123]|rfc\s*\d{3,5}|wcag\s*\d(?:\.\d)?|oauth\s*\d)\b/g,
   /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?\b/g, /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}\b/g, /\bq[1-4]\s*\d{4}\b/g, /\b\d{4}-\d{2}(?:-\d{2})?\b/g, /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
   /(?<![$\d.,-])\b(?:19|20)\d{2}\b(?!\s*(?:%|\+|(?:[a-z-]+\s+)?(?:users|customers|clients|accounts|members|students|people|engineers|employees|hours|ms)\b))/g,
   // A ratio ("24/7") is a label, not a result. So is a percentile's name ("p95"): plain() turns it into the word "percentile" first.
   /\b\d+\/\d+\b/g,
-  /\d[\d.,]*[kmb]?\+?\s*(?:[a-z-]+\s+){0,2}(?:tests?|test cases?|specs?|files?|endpoints?|commits?|pull requests?|prs|tickets?|lines? of code|loc)\b/g, /\d[\d.]*\s*%\s*(?:[a-z-]+\s+)?coverage\b/g, /\d+\s*days? ago\b/g];
+  /\d[\d.,]*[kmb]?\+?(?:\s*|-)(?:[a-z-]+\s+){0,2}(?:tests?|test cases?|specs?|files?|endpoints?|commits?|pull requests?|prs|tickets?|lines? of code|loc)\b/g, /\d[\d.]*\s*%\s*(?:[a-z-]+\s+)?coverage\b/g, /\d+\s*days? ago\b/g];
 
 // The same noise for lib/numbers.ts, by kind and as spans of the text (the text keeps its length and case). `dates`:
 // calendar dates, quarters and years, and "3 days ago". `counts`: counts of tests, files, endpoints, commits and the like,

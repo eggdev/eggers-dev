@@ -33,6 +33,7 @@ import { answeredRaised } from './raised.ts';
 import { lf } from './resume.ts';
 import { skimLoop, type Skim } from './skim.ts';
 import { reviewed, withSkills } from './skills.ts';
+import { suggestAfterSave, suggestSkills } from './suggest.ts';
 import { annotate, carry, changedLines, keyOf, linkLines, linksOn, parseLinks, stripLinks, takeLinks, type LinkLine, type Links } from './links.ts';
 import { setResume, writtenReason } from './versions.ts';
 
@@ -547,7 +548,17 @@ export async function publish(jobId: number, print = true): Promise<void> {
   }
   // A flag must never stop a resume being saved or printed.
   try { analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check, links: parseLinks(job.links), owner: job.edited === 1 }); } catch (e) { console.log(`  flags for job ${jobId} failed: ${(e as Error).message}`); }
-  db.query('UPDATE jobs SET analysis = ?, ats = ?, pdf = ? WHERE id = ?').run(JSON.stringify(analysis), ats, pdf, jobId);
+  storePrinted(jobId, job.resume, { analysis: JSON.stringify(analysis), ats, pdf });
+}
+// What publish read and printed, stored only while the job's text is still the text it was made from: two writes in a
+// row (two Keeps, a Keep and a Save) can finish printing out of order. Otherwise nothing is stored and the PDF is left
+// empty, so the next request prints the text as it is then. True when it was stored.
+export function storePrinted(jobId: number, printed: string, got: { analysis: string; ats: string; pdf: string }): boolean {
+  return db.transaction(() => {
+    const stored = db.query('UPDATE jobs SET analysis = ?, ats = ?, pdf = ? WHERE id = ? AND resume = ?').run(got.analysis, got.ats, got.pdf, jobId, printed).changes > 0;
+    if (!stored) db.query("UPDATE jobs SET pdf = '' WHERE id = ?").run(jobId);
+    return stored;
+  }).immediate();
 }
 
 // Takes a job's flags again without printing anything: for when the data a flag reads has changed (a role's
@@ -666,6 +677,8 @@ export async function refreshDueSkills(now: number, print: (jobId: number) => Pr
       if (n < SKILLS_TRIES && !emptyPdf) pending = true;
     }
   }
+  // A resume the owner edited is never written here: a skill on its Skills line marked not confident becomes a suggestion.
+  try { suggestSkills(now); } catch (e) { console.log(`skills: suggestions could not be made: ${(e as Error).message}`); }
   if (!pending && !beingWritten()) db.transaction(() => { db.query('UPDATE skills_due SET done_at = max(done_at, ?) WHERE id = 1').run(d.marked_at); }).immediate();
   return written;
 }
@@ -710,6 +723,8 @@ export function saveOwnerEdit(jobId: number, text: string, base?: string, now = 
   const links = carry(was.resume, text, parseLinks(was.links), roles.map((r) => r.company), now, roles);
   if (!setResume(jobId, text, links, 'edited', `You edited ${n} line${n === 1 ? '' : 's'}.`, { guard: { resume: was.resume }, set: { edited: 1 } })) return 'changed';
   saveResume(was, text);
+  // What the record gives for a heading or dates line that now differs from it: a suggestion, never a change.
+  try { suggestAfterSave(jobId, now); } catch (e) { console.log(`  suggestions for job ${jobId} could not be made: ${(e as Error).message}`); }
   return 'saved';
 }
 

@@ -18,7 +18,7 @@
 // This file opens no database and asks no model.
 import type { RoleRow } from './db.ts';
 import { employers, groupOf, normCompany } from './entries.ts';
-import { counts, held } from './numbers.ts';
+import { unheld } from './numbers.ts';
 import { lf, parseResume } from './resume.ts';
 import { factRef } from './tree.ts';
 
@@ -385,8 +385,7 @@ export function checkLinks(markdown: string, links: Links | null, data: { facts:
     if (valid.length === 0) { say('unlinked', 'warn', `${label} has no fact left that stands behind it.`); continue; }
     linked.add(keyOf(p));
     const stated = valid.map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part, f.skills].join(' ')).join(' ');
-    const has = held(stated, { versions: data.versions });
-    const off = [...new Set(counts(p.text, { versions: data.versions }).filter((x) => !has.has(x.value)).map((x) => x.text))];
+    const off = [...new Set(unheld(p.text, stated, { versions: data.versions }).map((x) => x.text))];
     if (off.length) {
       const says = valid.slice(0, 2).map((f) => `${factRef(f.id)} says “${short(f.text)}${f.metric ? ` (${f.metric})` : ''}”.`).join(' ');
       say('link-number', 'high', `${label} uses ${andList(off)}, which ${off.length === 1 ? 'is' : 'are'} in none of the facts it cites. ${says}${l.edited > 0 ? ' Those facts were linked before you edited the line.' : ''} Take ${off.length === 1 ? 'it' : 'them'} out, or cite the fact that states ${off.length === 1 ? 'it' : 'them'}.`, { numbers: off, facts: valid.slice(0, 2).map((f) => f.id) });

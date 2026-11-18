@@ -355,6 +355,8 @@ component App
   mutation lengthSet as shape Reply refreshes job, jobs, activity
   mutation resumeAsked as shape Reply refreshes job, jobs, activity
   mutation resumeSaved as shape Reply refreshes job, resumeView then afterResume
+  // Keep, Reject or Undo on a suggestion (lib/suggest.ts): the resume and the job's page are read again.
+  mutation suggestionDecided as shape Reply refreshes job, resumeView
   mutation leadTaken as shape Reply refreshes leads, jobs, activity then afterTakeLead
   mutation leadDismissed as shape Reply refreshes leads then afterDismissLead
   mutation companyAdded as shape Reply refreshes companies then afterCompany
@@ -382,6 +384,7 @@ component App
   derive leadError = actedLead != selectedLead ? "" : lastLeadAct == "dismiss" ? dismissError : takeError
   derive talkLoadError = match failure(talk) { case some(f) => plainLoadError(f.code), case none => plainLoadError("offline") }
   derive resumeError = pending(resumeSaved) ? "" : match resumeSaved { case some(r) => r.error, case none => "" }
+  derive suggestError = pending(suggestionDecided) ? "" : match suggestionDecided { case some(r) => r.error, case none => "" }
   derive jobHint = pending(jobAdded) ? "Adding it." : jobUrl.trim() == "" and jobText.trim() == "" ? "Paste the posting or its link to add it." : ""
   derive savedJobs = jobs.items.filter(j => j.stage == "saved").length
   derive activeJobs = jobs.items.filter(j => j.stage == "active").length
@@ -683,6 +686,9 @@ component App
       send lengthSet = setLength(selectedJob, pages)
   action openEditResume
     nav = push(nav, path("editResume", selectedJob))
+  action decideSuggestion(id: string, act: string)
+    if not pending(suggestionDecided)
+      send suggestionDecided = decideSuggestion(id, act)
   action saveResume(body: string, base: string)
     if body.trim() != "" and not pending(resumeSaved)
       send resumeSaved = saveResume(selectedJob, body, base)
@@ -1294,7 +1300,7 @@ component App
                     if not job.loaded or job.id != e.params.id or not resumeView.loaded
                       RecordWait(title="Resume", waiting=(not failed(job) and not failed(resumeView)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
                     else
-                      ResumeScreen(job=job, view=resumeView, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume)
+                      ResumeScreen(job=job, view=resumeView, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume, decide=decideSuggestion, deciding=pending(suggestionDecided), suggestError=suggestError)
               if e.name == "editResume"
                 column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-editor-scroll" flex=1 min-height=0

@@ -1082,6 +1082,58 @@ component RefTap
     button press=press aria-expanded=open aria-label=`Fact ${code}` text-align="start" testId=testId
       text code font-size=lookText() font-weight=(open ? look().strong : 400) line-height=lookLeading() font-variant-numeric="tabular-nums" white-space="nowrap" color=(open ? "look.ink" : "look.grey")
 
+// One run of a suggested line's words: same, gone (struck) or new (added). gap: a new run right after a gone one, set
+// a space apart from it.
+shape StruckPart
+  id: string
+  kind: string
+  text: string
+  gap: bool
+
+// A line with a suggestion drawn in place (DESIGN.md, Suggestion): the words that go struck through in grey, the words
+// that come after them underlined, the rest as it is. A screen reader hears "removed:" and "added:" before each.
+// `heading`: set heavy and read as a heading, as a role's heading is.
+component Struck
+  props
+    parts: StruckPart[]
+    heading: bool
+    testId: string
+  view
+    text role=(heading ? "heading" : "paragraph") aria-level=(heading ? 3 : 0) font-size=lookText() font-weight=(heading ? look().strong : 400) line-height=lookLeading() color="look.ink" overflow-wrap="break-word" testId=testId
+      for p in parts key=p.id
+        if p.gap
+          text " "
+        if p.kind != "same"
+          text (p.kind == "gone" ? "removed: " : "added: ") position="absolute" width="1px" height="1px" overflow="hidden" opacity=0 white-space="nowrap"
+        text p.text color=(p.kind == "gone" ? "look.grey" : "look.ink") text-decoration=(p.kind == "gone" ? "line-through" : p.kind == "new" ? "underline" : "none") testId=`${testId}-${p.id}`
+
+// The owner's choice on a suggestion: Keep (heavy) and Reject; then, once chosen, one grey line with Undo.
+component Choose
+  props
+    word: string
+    keep: action
+    reject: action
+    busy: bool
+    testId: string
+  view
+    row flex-wrap="wrap" column-gap=lookGutter() row-gap=lookTight() align-items="baseline" testId=testId
+      button press=keep disabled=busy aria-label=`Keep the suggested ${word}` text-align="start" testId=`${testId}-keep`
+        text "Keep" font-size=lookText() font-weight=look().strong line-height=lookLeading()
+      button press=reject disabled=busy aria-label=`Reject the suggested ${word}` text-align="start" testId=`${testId}-reject`
+        text "Reject" font-size=lookText() font-weight=400 line-height=lookLeading()
+component Chosen
+  props
+    kept: bool
+    word: string
+    undo: action
+    busy: bool
+    testId: string
+  view
+    row flex-wrap="wrap" column-gap=lookGutter() row-gap=lookTight() align-items="baseline" testId=testId
+      text (kept ? "Kept. The suggested words are in." : "Rejected. Your words stay.") font-size=lookText() font-weight=400 line-height=lookLeading() color="look.grey" testId=`${testId}-text`
+      button press=undo disabled=busy aria-label=(kept ? `Undo keeping the suggested ${word}` : `Undo rejecting the suggested ${word}`) text-align="start" testId=`${testId}-undo`
+        text "Undo" font-size=lookText() font-weight=400 line-height=lookLeading()
+
 // A note beside a resume's line: its lead word heavy ("Failed check" in red, "Flag", "Question"), then its words, as one
 // paragraph. A note with no lead word (what the owner did to the line) is grey.
 component NoteLine

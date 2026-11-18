@@ -367,8 +367,26 @@ test('a heading with a title the record lacks keeps its role by its dates, else 
   expect(notesOf(now)).toContainEqual(['fail', 'Failed check', 'This resume gives the title “Head of Engineering” here. Your record has “Director of Engineering” at this employer.']);
   // Dates of the older row: that row.
   expect(refsOf(head('### Head of Engineering, Harborlight Systems\nJan 2015 – Jun 2016\n- Built the console.'))).toEqual(['R-08']);
-  // Dates of no row: the employer's newest.
+  // Dates that overlap the newest row most: that row.
   expect(refsOf(head('### Head of Engineering, Harborlight Systems\nJan 2019 – Present\n- Built the console.'))).toEqual(['R-01']);
+});
+
+test('a heading whose title and dates match no row: the row its dates overlap most; no dates, the newest; dates of none, no reference', () => {
+  role({ id: 11, company: 'Lindenhall Rail', title: 'Engineer', start: '2008-01', end: '2010-12' });
+  role({ id: 12, company: 'Lindenhall Rail', title: 'Senior Engineer', start: '2011-01', end: '2012-12' });
+  role({ id: 13, company: 'Lindenhall Rail', title: 'Staff Engineer', start: '2013-01', end: '2014-12' });
+  const head = (md: string) => resumeView(job({ v: 1, lines: [] }, doc(md)))!.rows.find((r) => r.text.startsWith('Principal'))!;
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\nMar 2011 – Nov 2012\n- Built the yard.'))).toEqual(['R-12']);
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\nJun 2010 – Feb 2013\n- Built the yard.'))).toEqual(['R-12']);
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\n- Built the yard.'))).toEqual(['R-13']);
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\nJan 2016 – Dec 2017\n- Built the yard.'))).toEqual([]);
+});
+
+test('a heading whose dates only touch a role takes no reference: the overlap must cover a third of its own months', () => {
+  role({ id: 11, company: 'Lindenhall Rail', title: 'Engineer', start: '2016-01', end: '2018-12' });
+  const head = (md: string) => resumeView(job({ v: 1, lines: [] }, doc(md)))!.rows.find((r) => r.text.startsWith('Principal'))!;
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\n2014 – Jan 2016\n- Built the yard.'))).toEqual([]);
+  expect(refsOf(head('### Principal Engineer, Lindenhall Rail\nJan 2015 – Jun 2016\n- Built the yard.'))).toEqual(['R-11']);
 });
 
 test('a "Previously" title the employer never had: the note names the resume’s title and the record’s', () => {

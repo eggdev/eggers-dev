@@ -58,8 +58,18 @@ export function setResume(jobId: number, text: string, links: Links | null | 'sa
       // Kept: A, the newest KEEP_VERSIONS and every version that went out. Letters are never reused: n keeps counting.
       db.query('DELETE FROM resume_versions WHERE job_id = ? AND n > 1 AND sent = 0 AND n <= ?').run(jobId, n - KEEP_VERSIONS);
     }
+    if (text !== cur.resume || why === 'written') staleAfter(jobId, text, why);
     return true;
   }).immediate();
+}
+
+// A suggestion still open on a text that changed (lib/suggest.ts) goes stale when its line no longer stands once, or when
+// the resume was written again: it is then never shown, and cannot be kept. Inside setResume's transaction.
+function staleAfter(jobId: number, text: string, why: Why): void {
+  const lines = text.split('\n');
+  for (const s of db.query("SELECT id, old FROM resume_suggestions WHERE job_id = ? AND status = 'open'").all(jobId) as { id: number; old: string }[]) {
+    if (why === 'written' || lines.filter((l) => l === s.old).length !== 1) db.query("UPDATE resume_suggestions SET status = 'stale' WHERE id = ?").run(s.id);
+  }
 }
 
 // Keeps the text as it stands as A before something changes what the next writing is measured against (a new length):

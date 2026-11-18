@@ -79,7 +79,7 @@ export function canonical(g: Group): Canon {
   };
 }
 
-export const sameRange = (x: Range, r: RoleRow) => r.start !== '' && sameDate(x.start, r.start) && sameDate(x.end, r.end);
+const sameRange = (x: Range, r: RoleRow) => r.start !== '' && sameDate(x.start, r.start) && sameDate(x.end, r.end);
 const rowRange = (r: RoleRow) => rangeText(r.start, r.end);
 
 // Which employer an entry is: by its company, else by its title and dates when exactly one employer has both.
@@ -184,6 +184,35 @@ export function repairEntries(markdown: string, roles: RoleRow[], projects: Proj
   const fixed = lines.join('\n'), first = findingsOf(seen), left = checkEntries(fixed, roles, projects);
   const unresolved = [...first.filter((f) => !f.fixable), ...left.filter((f) => !first.some((x) => !x.fixable && x.text === f.text))];
   return { resume: fixed, repaired: first.filter((f) => f.fixable), unresolved };
+}
+
+// The one-line repairs repairEntries would make to an entry, each as the whole line before and after: the heading
+// (title, employer or both) and the date range of the dates line (the rest of that line kept as the owner wrote it), when every finding on the entry can be put back from the record. For a
+// resume the owner edited, where each becomes a suggestion (lib/suggest.ts) and nothing is changed by itself. An entry
+// with "Previously" lines, or with no dates line, is left out: its repair is more than one line. `roles` are the ids of
+// the rows of the entry's employer. `is` is what the record gives: the title, the employer, or the dates.
+export type LineFix = { line: number; old: string; new: string; kind: 'title' | 'employer' | 'heading' | 'dates'; entry: string; roles: number[]; is: { title: string; employer: string; dates: string } };
+export function lineFixes(markdown: string, roles: RoleRow[], projects: ProjectName[] = []): LineFix[] {
+  const text = lf(markdown), lines = text.split('\n'), resume = parseResume(text, roles.map((r) => r.company)), out: LineFix[] = [];
+  for (const s of examine(resume, employers(roles), projects).entries) {
+    if (!s.group || s.findings.length === 0 || s.findings.some((f) => !f.fixable) || s.entry.at.previously.length > 0) continue;
+    const canon = canonical(s.group), at = s.entry.at, head = s.group.rows[0];
+    const base = { entry: normCompany(s.entry.company || s.entry.title), roles: [...s.group.rows, ...s.group.children].map((r) => r.id),
+      is: { title: head.title.trim(), employer: head.company.trim(), dates: s.group.rows.filter((r) => norm(r.title) === norm(head.title) && r.start !== '').map(rowRange).join('; ') } };
+    const title = s.findings.some((f) => f.kind === 'title' && norm(f.was) === norm(s.entry.title)), employer = s.findings.some((f) => f.kind === 'employer');
+    const heading = `### ${canon.heading}`;
+    if ((title || employer) && lines[at.heading] !== heading) out.push({ ...base, line: at.heading, old: lines[at.heading], new: heading, kind: title && employer ? 'heading' : title ? 'title' : 'employer' });
+    // Only the date range changes: whatever else the owner wrote on the line (a place, a label) stays as written.
+    const ranges = s.entry.ranges, line = lines[at.dates] ?? '';
+    if (s.findings.some((f) => f.kind === 'dates') && at.dates >= 0 && ranges.length > 0 && base.is.dates !== '') {
+      const from = line.indexOf(ranges[0].text), last = ranges[ranges.length - 1], to = line.indexOf(last.text, Math.max(from, 0));
+      if (from >= 0 && to >= 0) {
+        const dates = `${line.slice(0, from)}${base.is.dates}${line.slice(to + last.text.length)}`;
+        if (dates !== line) out.push({ ...base, line: at.dates, old: line, new: dates, kind: 'dates' });
+      }
+    }
+  }
+  return out;
 }
 
 // Entries with no bullets under them, as the resume names them (rule 4: such an entry is never shown).

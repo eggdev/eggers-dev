@@ -305,6 +305,27 @@ A job's resume is shown as the document it is, line by line, with what the studi
   the gutter of its row: "This line names no fact of your record." stands only on a line whose gutter shows no fact; a
   line whose facts are of another job, or gone, has the note of each fact and no other. A heading whose title the record
   lacks still shows its role (the employer's row of the same dates, else the newest), and its note names both titles.
+- **Suggestions** (rule 7: the studio never changes the owner's text without a mark the owner can reject). On a
+  resume the owner edited and has not sent, a change code can word exactly from the owner's own list and record is a
+  suggestion, drawn in place on its line: the words that go struck through in grey, the words that come after them
+  underlined, the rest as it is (a word-level difference, so "Go, Python, Kafka" to "Go, Python" strikes only
+  ", Kafka"). A screen reader hears "removed:" and "added:". Under the line, "Keep" (heavy) and "Reject"; the reason is
+  the first note on the row, led by "Suggestion", so the cap of 2 never hides it. While it is open, the check it
+  answers (the title or employer check on its heading, the dates check of its entry) is not said again; it is said
+  again after Reject, or when the suggestion goes stale. After either choice, one grey line with Undo: "Kept. The
+  suggested words are in." or "Rejected. Your words stay." Under 640px the reason and the actions sit under the line.
+  No model is asked in this stage. A suggestion comes from:
+  - the skills list: the skills the owner marked "not confident" are taken out of a line under the Skills heading, as
+    it stands ("You marked Python and Kotlin as not confident."). Nothing is added, moved or reworded; a skill the
+    list does not have stays (the skills flag speaks of it); the heading itself is never touched. Only after the first
+    review, never when the line would be left empty, and again only when another skill on the line is marked not
+    confident;
+  - the record: a heading's title or employer ("Your record gives the title as “Staff Engineer”."), and the date range
+    of a dates line ("Your record gives the dates as Mar 2021 – Present."). The rest of a dates line, such as a place
+    or a label, stays as the owner wrote it.
+  It never says where the record's value came from or how sure it is. The job's page says in one quiet line that leads
+  here when an edited resume has open suggestions: "The studio suggests 2 changes to this resume." Home does not list
+  them.
 - **The whole resume's notes** (what cannot be placed on one line without a guess) are one short block under the head.
 - **A resume with no record of which facts each line uses** (written before links, or with links the studio cannot
   read) says so once: "The studio has no record of which facts each line of this resume uses. Write it again to record
@@ -327,4 +348,5 @@ What was rejected, and why:
 - The resume drawn as a printed sheet: the PDF is the printed sheet; the screen is for working on it.
 - A note that needs judgment the code cannot give honestly ("the posting does not ask about users", "three lines
   long", two facts that disagree): it would be a guess shown as a finding.
-- Suggested wording in place (struck words, Keep, Reject) and answering a question in the margin: a later stage.
+- Suggested wording for a bullet, from a model (struck words, Keep, Reject), and answering a question in the margin: a
+  later stage. Suggestions with no model (the Skills line, a heading, a dates line) are built: see Suggestions above.

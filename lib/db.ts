@@ -193,6 +193,21 @@ for (const column of ["links TEXT NOT NULL DEFAULT ''", 'pages INTEGER NOT NULL 
   try { db.run(`ALTER TABLE resume_versions ADD COLUMN ${column}`); } catch { /* already there */ }
 }
 db.run('CREATE TRIGGER IF NOT EXISTS resume_versions_gone AFTER DELETE ON jobs BEGIN DELETE FROM resume_versions WHERE job_id = OLD.id; END');
+// What the studio would change in a resume the owner edited, for the owner to keep or reject (lib/suggest.ts). It never
+// changes that text by itself. where_ is skills | heading | dates (the line it is about); entry the employer's key for a
+// heading or dates line; old and new the whole line before and after (the struck and added words are made when it is
+// read); kind skills | title | employer | heading | dates; why the reason in words; source "rule" (no model); status
+// open | kept | rejected | stale; edit_at when the owner's edit it is on was made; made_at; decided_at. A suggestion is
+// made once: (job_id, old, new) is unique, so one that was rejected is never made again. Made empty at a start, and
+// filled only after the owner's Save, a change of the skills list, or a change of a role.
+db.run(`CREATE TABLE IF NOT EXISTS resume_suggestions (
+  id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, old TEXT NOT NULL, new TEXT NOT NULL, UNIQUE (job_id, old, new))`);
+// Every other column is added where it is missing, each on its own: safe twice, and when two processes start together.
+for (const column of ["where_ TEXT NOT NULL DEFAULT ''", "entry TEXT NOT NULL DEFAULT ''", "kind TEXT NOT NULL DEFAULT ''", "why TEXT NOT NULL DEFAULT ''", "source TEXT NOT NULL DEFAULT 'rule'",
+  "status TEXT NOT NULL DEFAULT 'open'", 'edit_at INTEGER NOT NULL DEFAULT 0', 'made_at INTEGER NOT NULL DEFAULT 0', 'decided_at INTEGER NOT NULL DEFAULT 0']) {
+  try { db.run(`ALTER TABLE resume_suggestions ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+db.run('CREATE TRIGGER IF NOT EXISTS resume_suggestions_gone AFTER DELETE ON jobs BEGIN DELETE FROM resume_suggestions WHERE job_id = OLD.id; END');
 
 // A value the person gave that is not one to print: an answer of "There was none" or "I don't know", typed or chosen,
 // in any case and with a straight or curly apostrophe. Such a value is never sent to a writer (lib/jobs.ts, bank) and

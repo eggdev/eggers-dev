@@ -242,12 +242,13 @@ const sources: Sources = {
       rows: raw.map((r, i) => {
         const kind = text(r.kind), before = i > 0 ? text(raw[i - 1].kind) : '';
         const space = i === 0 ? 0 : kind === 'section' ? 2 : kind === 'role' ? 1.75 : kind === 'dates' || kind === 'contact' ? 0 : before === 'section' || before === 'dates' ? 0.5 : 1;
-        return { id: text(r.id), kind, text: text(r.text), space, refs: rows(r.refs ?? []).map((x) => ({ id: text(x.id), code: text(x.code), kind: text(x.kind), fact: text(x.fact), gone: x.gone === true })), notes: rows(r.notes ?? []).map(note) };
+        return { id: text(r.id), kind, text: text(r.text), space, refs: rows(r.refs ?? []).map((x) => ({ id: text(x.id), code: text(x.code), kind: text(x.kind), fact: text(x.fact), gone: x.gone === true })), notes: rows(r.notes ?? []).map(note),
+          sugs: rows(r.sugs ?? []).map((x) => ({ id: text(x.id), status: text(x.status), word: text(x.word), parts: rows(x.parts ?? []).map((q) => ({ id: text(q.id), kind: text(q.kind), text: text(q.text), gap: q.gap === true })) })) };
       }),
       facts: rows(v.facts ?? []).map((f) => ({ id: text(f.id), code: text(f.code), text: text(f.text), number: text(f.number), place: text(f.place), when: text(f.when) })) };
   },
   loadJob: async ([job]): Promise<Result<'loadJob'>> => {
-    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, skillsLine: '', doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
+    const none = { loaded: false, id: '', url: '', title: '', company: '', place: '', status: '', note: '', fit: -1, outcome: '', outcomeNote: '', contact: '', posted: '', added: '', sent: '', quiet: false, from: '', posting: '', pdf: '', pages: 2, atsOk: false, atsScore: -1, atsRequired: 85, atsParts: '', ats: [], covered: 0, asked: 0, verdict: '', strengths: [], risks: [], changes: [], gaps: [], resume: '', requirements: [], weighed: false, termsIn: [], termsBank: [], termsMissing: [], knockouts: [], checks: [], resumeStatus: '', resumeNote: '', resumeStale: false, skillsLine: '', suggests: 0, doors: [], doorsStatus: '', doorsNote: '', edited: false, reviewScore: '', reviewPassed: false, reviewRounds: 0, seats: [], reviewChanges: [], flags: [], skimConclusion: '' };
     if (job === '') return none;
     const j = (await get(`/jobs/${id(job)}`)) as Record<string, unknown>;
     const list = (v: unknown) => rows(v ?? []).map((x) => text(x));
@@ -260,7 +261,7 @@ const sources: Sources = {
       weighed: j.weighed === true, termsIn: list(j.termsIn), termsBank: list(j.termsBank), termsMissing: list(j.termsMissing),
       checks: rows(j.checks ?? []).map((c) => ({ id: text(c.id), question: text(c.question), answer: text(c.answer), note: text(c.note) })),
       knockouts: rows(j.knockouts ?? []).map((k) => ({ id: text(k.id), question: text(k.question), answer: text(k.answer), note: text(k.note) })),
-      doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, skillsLine: text(j.skillsLine), resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
+      doors: rows(j.doors ?? []).map((d) => ({ id: text(d.id), to: text(d.to), find: text(d.find), why: text(d.why), message: text(d.message) })), resumeStatus: text(j.resumeStatus), resumeStale: j.resumeStale === true, skillsLine: text(j.skillsLine), suggests: typeof j.suggests === 'number' ? j.suggests : 0, resumeNote: text(j.resumeNote), doorsStatus: text(j.doorsStatus), doorsNote: text(j.doorsNote), edited: j.edited === true, reviewScore: text(j.reviewScore), reviewPassed: j.reviewPassed === true, reviewRounds: n(j.reviewRounds), seats: rows(j.seats ?? []).map((x) => ({ id: text(x.id), seat: text(x.seat), model: text(x.model), score: text(x.score), note: text(x.note) })), reviewChanges: list(j.reviewChanges),
       requirements: rows(j.requirements ?? []).map((r) => ({ id: text(r.id), text: text(r.text), must: r.must === true, need: text(r.need) || (r.must === true ? 'must' : 'nice'), coverage: text(r.coverage), evidence: text(r.evidence), bestText: text(r.bestText), basis: text(r.basis), counted: typeof r.counted === 'number' ? r.counted : -1 })),
       // The serious flags first; the server keeps each severity's own order.
       // A flag's items are keyed by their words on screen, so a line said twice is kept once.
@@ -292,6 +293,8 @@ const sources: Sources = {
   saveContact: ([job, who]) => write('PATCH', `/jobs/${id(job)}`, { contact: who }),
   // Printing the PDF again can take a few seconds.
   // base: the text the editor opened, so a save made over a text that changed meanwhile is refused, not written over it.
+  // Keep, Reject or Undo on a suggestion: {keep: true}, {reject: true} or {undo: true}.
+  decideSuggestion: ([sid, act]) => write('POST', `/suggestions/${id(sid)}`, { [act]: true }),
   saveResume: async ([job, body, base]) => { try { const res = await fetch(`${API}/jobs/${id(job)}`, { method: 'PATCH', exactTimeout: 60000, headers, body: JSON.stringify({ resume: body, base }) }); if (res.ok) return { ok: true, error: '' }; const said = (await res.json().catch(() => ({}))) as { error?: unknown }; return { ok: false, error: typeof said.error === 'string' ? said.error : 'The server had a problem. Try again.' }; } catch (e) { if ((e as { code?: string }).code === 'bake') throw e; return { ok: false, error: UNREACHABLE }; } },
   saveOutcome: ([job, outcome, note, picked]) => write('PATCH', `/jobs/${id(job)}`, { outcome, note, picked: picked === 'picked' }),
   addJob: ([url, posting]) => write('POST', '/jobs', { url, posting }),

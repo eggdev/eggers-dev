@@ -6,7 +6,7 @@
 // A job has one score, its fit ("Fit 72"), and one status word (`jobPhase` picks its state, look.contract's
 // `statusWord` names it). Every other number the reading or the checks produce is said in a sentence, under "How the
 // resume was checked", never as a second headline number.
-use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Ref, RefTap, NoteLine, RoleHead, DatedLine, FactCard, statusWord, joinDot, look, lookGutter, lookTight, lookMeasure, lookMargin, lookText, lookLeading, resumeLook, resumeGutter, resumeWidth from "./look.contract"
+use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Ref, RefTap, NoteLine, RoleHead, DatedLine, FactCard, Struck, StruckPart, Choose, Chosen, statusWord, joinDot, look, lookGutter, lookTight, lookMeasure, lookMargin, lookText, lookLeading, resumeLook, resumeGutter, resumeWidth from "./look.contract"
 use WorkItem, workPlace, workUsual, workStage, workStatus, inHand, usualWords, durationWords from "./activity.contract"
 
 // A job in the list: its fit is 0 to 100 once read, -1 before.
@@ -184,6 +184,16 @@ shape ResumeRow
   space: number
   refs: ResumeRef[]
   notes: ResumeNote[]
+  sugs: ResumeSug[]
+
+// A suggestion on a line of a resume the owner edited (lib/suggest.ts): status open | kept | rejected (a decided one is
+// sent so Undo can follow the choice); word: what it changes ("title", "Skills line"); parts: the line's words, struck
+// and added.
+shape ResumeSug
+  id: string
+  status: string
+  word: string
+  parts: StruckPart[]
 
 // A fact a line uses, whole: its reference, its words, its number, where it sits in the record and its dates. Never
 // where it was read from or how sure it is (DESIGN.md rule 4).
@@ -275,6 +285,8 @@ shape Job
   // What the resume's Skills line waits for, in one line ("" for nothing): the list changed and it is not written yet,
   // or it could not be written (lib/jobs.ts, skillsLineOf).
   skillsLine: string
+  // How many suggestions wait on a resume the owner edited (lib/suggest.ts); 0 for none.
+  suggests: number
   doors: Door[]
   doorsStatus: string
   doorsNote: string
@@ -558,6 +570,8 @@ component JobScreen
             QuietLine(text="No resume yet.", testId="job-resume-none")
           if job.skillsLine != ""
             QuietLine(text=job.skillsLine, testId="job-resume-skills")
+          if job.suggests > 0
+            GoTo(label=(job.suggests == 1 ? "The studio suggests 1 change to this resume." : `The studio suggests ${job.suggests} changes to this resume.`), href=`/job/${job.id}/resume`, testId="job-resume-suggests")
           Actions(testId="job-resume-actions")
             if job.resume != ""
               GoTo(label="Read the resume", href=`/job/${job.id}/resume`, testId="job-resume")
@@ -704,8 +718,13 @@ component ResumeScreen
     wide: bool
     back: action
     edit: action
+    decide: action
+    deciding: bool
+    suggestError: string
   state opened = ""
   state more: string[] = []
+  // The suggestions decided on this visit: each shows its Undo line until the screen is left.
+  state decided: string[] = []
   derive resumeBusy = readingNow(job) or writingNow(job)
   derive writingIt = workStatus(work, "write-resume", job.id, job.resumeStatus)
   derive cites = (view.cite != "" ? view.cite : resumeLook().cite) == "gutter"
@@ -715,6 +734,9 @@ component ResumeScreen
     opened = ""
   action toggleMore(id: string)
     more = more.includes(id) ? more.filter(x => x != id) : more.concat([id])
+  action choose(id: string, act: string)
+    decided = act == "undo" ? decided.filter(x => x != id) : decided.concat([id])
+    decide(id, act)
   view
     column max-width=resumeWidth() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId="resume"
       Section(testId="resume-head")
@@ -741,6 +763,8 @@ component ResumeScreen
             Action(label="Edit", press=edit, disabled=resumeBusy, keys="", testId="resume-edit")
             if view.pdf != ""
               GoTo(label="Get the PDF", href=view.pdf, testId="resume-pdf")
+          if suggestError != ""
+            FailLine(text=suggestError, testId="resume-suggest-error")
           NoteLine(lead=`Version ${view.letter}`, text=(view.date != "" ? `· ${view.date}` : ""), fail=false, testId="resume-version")
           for c in view.changes key=c.id
             DatedLine(mark=c.letter, date=c.date, text=c.text, testId=`resume-change-${c.id}`)
@@ -761,8 +785,13 @@ component ResumeScreen
                   else if cites
                     RefTap(code=x.code, open=(opened == openKey(r.id, x.fact)), press=toggleFact(r.id, x.fact), testId=`ref-${r.id}-${x.id}`)
               row flex-grow=1 flex-basis="12rem" min-width=0 flex-direction=(wide ? "row" : "column") align-items=(wide ? "start" : "stretch") gap=(wide ? 2 * lookGutter() : lookTight())
-                column flex-shrink=1 flex-grow=(r.kind == "section" ? 1 : 0) width=(wide and r.kind != "section" ? lookMeasure() : "auto") min-width=0
-                  if r.kind == "name"
+                column flex-shrink=1 flex-grow=(r.kind == "section" ? 1 : 0) width=(wide and r.kind != "section" ? lookMeasure() : "auto") min-width=0 gap=lookTight()
+                  // A suggestion open on the line: its words struck and added in place, then Keep and Reject under it.
+                  if r.sugs.filter(q => q.status == "open").length > 0
+                    for x in r.sugs.filter(q => q.status == "open") key=x.id
+                      Struck(parts=x.parts, heading=(r.kind == "role"), testId=`line-${r.id}`)
+                      Choose(word=x.word, keep=choose(x.id, "keep"), reject=choose(x.id, "reject"), busy=deciding, testId=`sug-${r.id}`)
+                  else if r.kind == "name"
                     Title(text=r.text, testId=`line-${r.id}`)
                   else if r.kind == "section"
                     SectionHead(text=r.text, testId=`line-${r.id}`)
@@ -775,6 +804,8 @@ component ResumeScreen
                       Line(text=r.text, testId=`line-${r.id}`)
                   else
                     Line(text=r.text, testId=`line-${r.id}`)
+                  for x in r.sugs.filter(q => q.status != "open" and decided.includes(q.id)) key=x.id
+                    Chosen(kept=(x.status == "kept"), word=x.word, undo=choose(x.id, "undo"), busy=deciding, testId=`sug-${r.id}`)
                 if r.kind != "section" and (r.notes.length > 0 or opened.startsWith(`${r.id}:`))
                   column width=(wide ? lookMargin() : "auto") flex-shrink=0 padding-left=(wide ? 0 : lookGutter()) gap=look().rowGap role="group" aria-label=notesName(r.text) testId=`notes-${r.id}`
                     for f in view.facts.filter(x => opened == openKey(r.id, x.id)) key=f.id

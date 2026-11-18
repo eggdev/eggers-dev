@@ -20,6 +20,7 @@ import { lf } from './lib/resume.ts';
 import { keepSent, keepStanding, setResume } from './lib/versions.ts';
 import { parseLinks } from './lib/links.ts';
 import { resumeView } from './lib/resumeview.ts';
+import { decide, openCount, seeRoles, suggestAfterRoles, suggestSkills } from './lib/suggest.ts';
 import { allowed, allSkills, CAP, markSkills, reviewed, reviewedOn, syncSkills } from './lib/skills.ts';
 import { markFromList, skillsView } from './lib/skillsview.ts';
 import { type AtsCheck } from './lib/pdf.ts';
@@ -54,7 +55,11 @@ const follow = () => {
   step('questions', () => syncQuestions(Date.now()));
   step('the record’s questions', () => syncRecordQuestions(Date.now()));
   step('flags', () => reflagOpen());
+  // A role whose title, employer or dates changed: on a resume the owner edited, a suggestion, never a change.
+  step('suggestions', () => suggestAfterRoles(Date.now()));
 };
+// The roles as they are now, so the first change after a start is found (a read).
+seeRoles();
 // A request's JSON body, when it is an object; null for no body, bad JSON, null, a list or a value.
 const objectBody = async (req: Request): Promise<Record<string, unknown> | null> => {
   const b = await req.json().catch(() => null);
@@ -384,7 +389,7 @@ const served = Bun.serve({ hostname, port, routes: {
       const o = j;
       const ats: AtsCheck | null = j.ats ? JSON.parse(j.ats) : null;
       const host = hostOf(j.url);
-      return send(curly({ ...jobFacts(j), skillsLine: skillsLineOf(j.id), posted: ago(j.posted_at), added: ago(j.created_at), posting: j.posting, id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
+      return send(curly({ ...jobFacts(j), skillsLine: skillsLineOf(j.id), suggests: (() => { try { return openCount(j as never); } catch { return 0; } })(), posted: ago(j.posted_at), added: ago(j.created_at), posting: j.posting, id: String(j.id), url: j.url, title: j.title || (host ? `Posting from ${host}` : 'Pasted posting'), company: j.company, place: j.place, status: j.status, note: j.note, fit: j.fit, resume: j.resume, edited: (j as JobRow & { edited?: number }).edited === 1, outcome: outcomeNow(o), outcomeNote: o.outcome_note, contact: j.contact, pages: j.pages, pdf: j.resume ? `/jobs/${j.id}/resume.pdf` : '',
         atsOk: ats?.ok ?? false, atsScore: ats?.score ?? -1, atsRequired: ats?.required ?? 85, atsParts: (ats?.parts ?? []).map((x) => `${x.label} ${x.score} (counts ${x.weight}%)`).join(' · '), ats: (ats?.lines ?? []).map((l, i) => ({ id: String(i), label: l.label, ok: l.ok, note: l.note })),
         verdict: a.verdict, strengths: a.strengths, risks: a.risks, changes: a.changes, gaps: a.gaps, covered, asked: a.requirements.length,
         // weighed is false for a job read before evidence was weighed: its fit counts coverage alone.
@@ -461,6 +466,28 @@ const served = Bun.serve({ hostname, port, routes: {
   '/jobs/:id/resume': {
     OPTIONS: preflight,
     GET: (req) => { const v = resumeView(Number(req.params.id)); return v ? send({ ...v, ...(STUB && stubCite ? { cite: stubCite } : {}) }) : send({ error: 'That job was deleted.' }, 404); },
+  },
+  // The owner's choice on a suggestion (lib/suggest.ts): {keep: true}, {reject: true} or {undo: true}. Keep and an Undo
+  // of a Keep change the text (one version letter each) and print the PDF again; Reject and an Undo of a Reject write
+  // only the choice. A suggestion decided already, or whose line changed, is refused in words (409).
+  '/suggestions/:id': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const acts = (['keep', 'reject', 'undo'] as const).filter((k) => b[k] === true);
+      if (acts.length !== 1) return send({ error: 'Send one of keep, reject or undo, set to true.' }, 400);
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return send({ error: 'That suggestion is gone.' }, 404);
+      const d = decide(id, acts[0]);
+      if (!d.ok) return send({ error: d.error }, d.status);
+      if (d.wrote) {
+        const j = db.query('SELECT id, company, title, resume FROM jobs WHERE id = ?').get(d.jobId) as { id: number; company: string; title: string; resume: string } | null;
+        if (j) saveResume(j, j.resume);
+        await publish(d.jobId, !STUB);
+      }
+      return send({ ok: true });
+    },
   },
   // The resume as a PDF, printed when the job was read or its resume last edited; printed now if it is missing.
   '/jobs/:id/resume.pdf': {
@@ -692,7 +719,7 @@ const served = Bun.serve({ hostname, port, routes: {
       const got = markFromList(b.marks, b.reviewed === true, Date.now());
       if (got.refused) return send({ error: got.refused }, 400);
       // Once the list is reviewed, resumes not yet sent take their Skills line from it, with no model; one the person
-      // edited is left as it is. That is done once a sitting of marks is over (lib/jobs.ts, refreshDueSkills, run by the
+      // edited is never changed: a skill on its Skills line marked not confident becomes a suggestion (lib/suggest.ts). That is done once a sitting of marks is over (lib/jobs.ts, refreshDueSkills, run by the
       // worker), so here a change only records that the lines are due. Before the review nothing is due.
       if (got.changed > 0 || b.reviewed === true) skillsChanged(Date.now());
       follow();
@@ -774,6 +801,20 @@ const served = Bun.serve({ hostname, port, routes: {
   ...(STUB ? { '/test/skills-due': { OPTIONS: preflight, POST: async () => send({ ok: true, written: await refreshDueSkills(Date.now() + SKILLS_QUIET_MS, async () => {}) }) } } : {}),
   // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
   // A test server only: how the resume screen draws the facts' references ({cite: "none" | ""}), to try resumeLook().cite.
+  // A test server only: a job's resume as the owner's own edit ({job, resume}), saved as the Save button saves it (its
+  // headings and dates lines then get their suggestions), and with {skills: true} the Skills line's suggestion as the
+  // skills pass makes it after the list changes.
+  ...(STUB ? { '/test/edited': { OPTIONS: preflight, POST: async (req: Request) => {
+    const b = await objectBody(req);
+    if (!b || typeof b.resume !== 'string') return send({ error: 'Send {job, resume}.' }, 400);
+    // The job not sent and not being written (an earlier test may have marked it, or queued it with no worker to run).
+    db.query("UPDATE jobs SET outcome = '', resume_status = 'done', resume_note = '' WHERE id = ?").run(Number(b.job));
+    const id = Number(b.job), saved = saveOwnerEdit(id, lf(b.resume).trim());
+    if (saved === 'gone') return send({ error: 'That job was deleted.' }, 404);
+    if (saved === 'saved') await publish(id, false);
+    if (b.skills === true) suggestSkills(Date.now());
+    return send({ ok: true, saved });
+  } } } : {}),
   ...(STUB ? { '/test/look': { OPTIONS: preflight, POST: async (req: Request) => { const b = await req.json().catch(() => ({})); stubCite = b.cite === 'none' ? 'none' : ''; return send({ ok: true }); } } } : {}),
   ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
     const b = await req.json().catch(() => ({}));
