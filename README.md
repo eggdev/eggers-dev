@@ -309,16 +309,8 @@ apps build with Exact, which is not an npm package. Both jobs check out the publ
 `expo/exact` beside this repository, at the commit that `EXACT_REF` in the workflow names.
 `.github/actions/setup/action.yml` installs the rest.
 
-The workflow has not yet run on GitHub, because nothing has been pushed. Its first run is the proof
-that it works.
+The job "test" has run on pull requests. The job "deploy" has not run yet: its first run on `main`
+is the proof that it works, and it needs the two secrets above.
 
 Deploying from a developer machine still works. From the repository root, run
 `bun studio/tools/deploy.ts`. In `site/`, run `bun tools/deploy.ts --origin https://eggers.dev`.
-
-## Earlier deployments
-
-Until 2026-11-13 this repository held a Next and Nx workspace with two apps: a public holding page
-and a private Studio. Two Vercel projects (`eggers-web` and `eggers-studio`) still build from this
-repository's `main` branch and expect that code. The `eggers.dev` domain was never moved to them.
-Disconnect those projects before this code reaches `main`, or their builds will fail. The earlier
-code is in git history; the last commit that has it is `a2ad996`.

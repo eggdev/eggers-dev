@@ -32,14 +32,14 @@ whether notes are sent and whether to keep a diary; under `never`, skip all of t
 
 ## This repository
 
-This Exact app replaced the earlier Next, Nx and Eve workspace on 2026-11-13. The earlier code is
-in git history (the last commit that has it is `a2ad996`). Do not restore it.
+This repository holds the studio (this Exact app with its server and worker) and the public site in
+`site/`. `main` is the branch that runs in production.
 
 - The repository is public on GitHub. Nothing about the owner's career goes into git: no bank
   content, resumes, job targets, conversations, database files, host names or secrets. All of that
   lives in `.data/`, which is ignored. Tests and fixtures use invented people and companies.
 - Use conventional commits. Do not push, merge to `main` or deploy unless asked. A push to `main`
-  starts builds in two Vercel projects that expect the earlier code (README, "Earlier deployments").
+  runs the tests and then deploys the studio and the public site (README, "Tests and deploys on GitHub").
 - The server has no sign-in. It listens on this machine and is reached only over the tailnet.
   Never expose it to the public internet.
 - A model is asked only through `ask()` in `lib/llm.ts` (headless Claude Code under this machine's

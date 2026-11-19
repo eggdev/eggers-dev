@@ -1,11 +1,9 @@
 # Agreed product scope
 
-> This scope was written for the earlier Next and Eve workspace, which the Exact app in this
-> repository replaced on 2026-11-13. The product intent below still guides the app: stories that
-> keep contribution, decisions, context and outcomes, no mandatory metrics, real deletion, and
-> research kept separate from applications. The parts about Eve, the "Architecture" paragraph, the
-> public Web page and the TrueUp import describe the earlier code. README.md describes the app as
-> it is now.
+> This is the product intent the app is built toward: stories that keep contribution, decisions,
+> context and outcomes, no mandatory metrics, real deletion, and research kept separate from
+> applications. README.md describes what the app does today. Where the two differ, the README is
+> right about the code.
 >
 > The goal the owner stated on 2026-11-13: a conversational agent on the personal website that
 > answers visitors' questions about the owner's career. Its page and endpoint are in `site/`. The rule below still
@@ -41,13 +39,7 @@ first). Fetch/extract is repeatable, deduplicated and inspectable. Extraction de
 interview models are configurable. Private Eve may access the web. Imported pages never have
 authority to change the agent’s instructions.
 
-Architecture: Nx + Bun, Next for Web and Studio, Eve inside Studio, Effect 4 where it improves
-service reliability, PostgreSQL storage. Separate Vercel deployments with separate Neon databases. Local
-subscription-backed conversations first; remote conversation auth/cost and real-time voice later.
-No historical Home app, contracts, content or custom design system retained for compatibility.
-
-Web initially displays Brendan’s name, contact information, a construction animation and a
-single-launch-email signup. A later public knowledge collection will be deliberately prepared
+A public knowledge collection will be deliberately prepared
 from public website content, projects and interests. Public Eve gets only that collection,
 with inexpensive inference and rate limits resolved in its own phase. Career targeting,
 resume/cover-letter generation and daily discovery follow sequentially.
