@@ -5,9 +5,13 @@
 // WRITING and SIGNAL are for everything. METRICS, BULLETS, SUMMARY and ENTRIES are for a resume only: they
 // state the owner's resume rules (RESUME-RULES.md, rules 2, 3, 4, 5, 6, 8, 9 and 11) as instructions. Where
 // one of those rules is also checked in code, the last section of RESUME-RULES.md says where.
+//
+// The banned words come from the one list that code also checks (lib/rules.ts). WRITING names the words it named before
+// that list existed; lib/rules.ts says why the newer ones are not named here yet.
+import { PROMPT_BANNED_WORDS } from './rules.ts';
 
 export const WRITING = `Wording:
-- Plain words. Never: leverage, utilize, facilitate, foster, enhance, showcase, robust, seamless, spearheaded, cutting-edge, passionate, delve, crucial, pivotal, landscape. Write "use", "help", "build", "improve", "show", or name the specific change.
+- Plain words. Never: ${PROMPT_BANNED_WORDS.join(', ')}. Write "use", "help", "build", "improve", "show", or name the specific change.
 - Name what was done and who did it. No passive voice where the person was the actor.
 - No clause tacked on the end that claims a benefit without evidence ("..., ensuring reliability", "..., improving answer quality", "..., enabling teams to move faster"). State the result as a fact with its evidence, or leave it out.
 - No lists of three for rhythm. Count the real items.
