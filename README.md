@@ -309,8 +309,9 @@ apps build with Exact, which is not an npm package. Both jobs check out the publ
 `expo/exact` beside this repository, at the commit that `EXACT_REF` in the workflow names.
 `.github/actions/setup/action.yml` installs the rest.
 
-The job "test" has run on pull requests. The job "deploy" has not run yet: its first run on `main`
-is the proof that it works, and it needs the two secrets above.
+Both jobs have run on `main`. The token behind `CLOUDFLARE_API_TOKEN` is Cloudflare's "Edit
+Cloudflare Workers" template with two account permissions added: Containers Edit and Cloudchamber
+Edit.
 
 Deploying from a developer machine still works. From the repository root, run
 `bun studio/tools/deploy.ts`. In `site/`, run `bun tools/deploy.ts --origin https://eggers.dev`.
