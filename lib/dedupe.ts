@@ -2,7 +2,7 @@
 // repository that shows it. This finds those within one role and folds each set into one fact that
 // keeps the most specific wording, every detail and all the evidence. A fact the person edited is
 // never reworded: it is the one kept, and its duplicates are dropped.
-import { db } from './db.ts';
+import { db, foldFacts } from './db.ts';
 import { ask } from './llm.ts';
 
 type Row = { id: number; role_id: number | null; kind: string; text: string; detail: string; metric: string; skills: string; evidence: string; status: string };
@@ -40,6 +40,9 @@ ${JSON.stringify(facts.map((f) => ({ id: f.id, kind: f.kind, text: f.text, detai
       const evidence = [...new Set(rows.map((f) => f.evidence.trim()).filter(Boolean))].join(' · ').slice(0, 1200);
       if (edited) db.query('UPDATE facts SET evidence = ? WHERE id = ?').run(evidence, keep.id);
       else db.query('UPDATE facts SET text = ?, detail = ?, metric = ?, skills = ?, evidence = ? WHERE id = ?').run(m.text.trim() || keep.text, m.detail.trim(), m.metric.trim(), m.skills.join(', '), evidence, keep.id);
+      // The dropped facts' marks and origins go to the fact that stays, before their rows go: when a dropped fact is
+      // marked kept, the fact that stays is marked kept too.
+      foldFacts(keep.id, rows.filter((f) => f.id !== keep.id).map((f) => f.id));
       for (const f of rows) if (f.id !== keep.id) { db.query('DELETE FROM facts WHERE id = ?').run(f.id); gone++; }
     }
   })();

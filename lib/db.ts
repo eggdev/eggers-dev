@@ -298,7 +298,8 @@ export type Extraction = {
   facts: { roleKey: string; kind: string; text: string; detail: string; metric: string; skills: string[]; evidence: string; replaces?: string }[];
 };
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+// How fact text is compared everywhere: case and spacing do not make two facts different.
+export const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 // Questions the person has already answered as far as they can. Everything that writes questions for
 // them (the profile, a job's reading, a resume's council, Talk) is shown these and told not to ask again.
@@ -315,12 +316,71 @@ export function deleteFact(id: number, now: number) {
 }
 export const deletedFacts = () => (db.query('SELECT text FROM deleted_facts ORDER BY at DESC LIMIT 200').all() as { text: string }[]).map((r) => r.text);
 
+// Rows other modules keep for each fact: marks and months (lib/standing.ts), the words a fact came from
+// (lib/origins.ts). A reading of a source again deletes its proposed facts and makes them again under new ids, and a
+// fold (lib/dedupe.ts) deletes the duplicates of a fact; a carrier takes those rows across, so an owner's `kept` is
+// never lost on the way. Each module registers its carrier when it is imported. key is the fact's text as norm() gives it.
+export type CarriedFact = { id: number; key: string };
+// What a carrier does once a reading has made `made` (new rows) and rewritten `rewritten` (rows of any source it
+// reworded through `replaces`). `skipped` is the words the reading said but did not write, because a confirmed fact
+// already says them or the owner deleted that wording: they are still the reading's words. held: the facts that must
+// not go, because they are kept, the reading has no fact with the same words, and something the reading wrote would not
+// be kept after it; any at all holds the whole reading.
+// carry: takes the rows across.
+export type Skipped = { key: string; why: 'confirmed' | 'deleted' };
+export type Reread = {
+  held: (made: CarriedFact[], rewritten: number[], skipped: Skipped[]) => { id: number; text: string }[];
+  carry: (made: CarriedFact[], rewritten: number[], skipped: Skipped[]) => void;
+};
+export type FactCarrier = {
+  table: string;
+  // Called before a reading deletes `old`, so it can look at them while they are there.
+  reread: (old: CarriedFact[]) => Reread;
+  // Called before the facts in `drop` are deleted as duplicates of `keep`.
+  fold: (keep: number, drop: number[]) => void;
+};
+const carriers: FactCarrier[] = [];
+export const carryFacts = (c: FactCarrier) => { if (!carriers.some((x) => x.table === c.table)) carriers.push(c); };
+// A table of these in the database whose module this process never imported would lose its rows: refuse instead.
+const CARRIED_TABLES = ['fact_standing', 'fact_origins'];
+function readyCarriers(): FactCarrier[] {
+  for (const t of CARRIED_TABLES) {
+    if (!carriers.some((c) => c.table === t) && db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t) !== null) {
+      throw new Error(`The table ${t} is in the database, but its module was not loaded, so its rows would be lost. Import lib/standing.ts and lib/origins.ts in this process.`);
+    }
+  }
+  return carriers;
+}
+// Folds duplicates into `keep` before they are deleted (lib/dedupe.ts): their marks and origins go to the fact kept.
+export function foldFacts(keep: number, drop: number[]): void {
+  for (const c of readyCarriers()) c.fold(keep, drop);
+}
+
+// A reading of a source again that was not applied: it would delete facts the owner keeps out of everything
+// (lib/standing.ts), and it holds no fact with the same words for them. Nothing changed. Any change would be wrong:
+// marking the reading's new facts kept hides the rest of the reading, and leaving them unmarked lets the kept words
+// out in a new wording. Only the owner knows which new words are the kept ones, so the reading waits for them.
+// When this is wired to a source's status, do not call that status 'held': tools/refresh.ts already uses that word
+// for something else.
+export class HeldReading extends Error {
+  constructor(readonly sourceId: number, readonly kept: { id: number; text: string }[]) {
+    super(`The source was not read again. ${kept.length === 1 ? 'A fact you keep out of everything' : `${kept.length} facts you keep out of everything`} would be lost, and the new reading does not say ${kept.length === 1 ? 'it' : 'them'} in the same words. Nothing was changed.`);
+    this.name = 'HeldReading';
+  }
+}
+
 // Writes what a source said as facts, replacing what an earlier reading of that source wrote
 // and leaving alone the facts the person has edited. A role key of `role:<id>` names an existing
 // role; any other key names one of the extraction's own, matched to an existing role by
 // company and title before a new one is made. Returns how many facts were proposed.
+// Throws HeldReading, and changes nothing, when it would lose a kept fact (above): the throw rolls the transaction back.
+// It takes the write lock first (immediate): it reads before it writes, and a read cannot become a write while
+// another connection writes, so it would fail at once instead of waiting (lib/activity.ts says the same).
 export function applyExtraction(sourceId: number, x: Extraction, now: number): number {
   return db.transaction(() => {
+    const before = (db.query("SELECT id, text FROM facts WHERE source_id = ? AND status = 'proposed' ORDER BY id").all(sourceId) as { id: number; text: string }[]).map((f) => ({ id: f.id, key: norm(f.text) }));
+    const after = readyCarriers().map((c) => c.reread(before));
+    const made: CarriedFact[] = [], rewritten: number[] = [], skipped: Skipped[] = [];
     db.query("DELETE FROM facts WHERE source_id = ? AND status = 'proposed'").run(sourceId);
     const existing = db.query('SELECT * FROM roles').all() as RoleRow[];
     const byKey = new Map<string, number>();
@@ -346,7 +406,8 @@ export function applyExtraction(sourceId: number, x: Extraction, now: number): n
     let n = 0;
     for (const f of x.facts ?? []) {
       const text = (f.text ?? '').trim();
-      if (!text || confirmed.has(norm(text)) || gone.has(norm(text))) continue;
+      if (!text) continue;
+      if (confirmed.has(norm(text)) || gone.has(norm(text))) { skipped.push({ key: norm(text), why: confirmed.has(norm(text)) ? 'confirmed' : 'deleted' }); continue; }
       const kind = (KINDS as readonly string[]).includes(f.kind) ? f.kind : 'other';
       // A fuller version of a fact the bank already has takes its place; the person's own wording is left alone.
       const old = /^fact:\d+$/.test(f.replaces ?? '') ? (db.query('SELECT id, status, skills, evidence FROM facts WHERE id = ?').get(Number(f.replaces!.slice(5))) as { id: number; status: string; skills: string; evidence: string } | null) : null;
@@ -356,14 +417,19 @@ export function applyExtraction(sourceId: number, x: Extraction, now: number): n
           const evidence = [...new Set([old.evidence.trim(), (f.evidence ?? '').trim()].filter(Boolean))].join(' · ').slice(0, 1200);
           db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = CASE WHEN ? != '' THEN ? ELSE metric END, skills = ?, evidence = ? WHERE id = ?")
             .run(text, (f.detail ?? '').trim(), (f.detail ?? '').trim(), (f.metric ?? '').trim(), (f.metric ?? '').trim(), skills, evidence, old.id);
+          rewritten.push(old.id);
           n++;
         }
         continue;
       }
-      db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(byKey.get(f.roleKey) ?? null, kind, text, (f.detail ?? '').trim(), (f.metric ?? '').trim(), (f.skills ?? []).join(', '), (f.evidence ?? '').trim(), sourceId, 'proposed', now);
+      const row = db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`)
+        .get(byKey.get(f.roleKey) ?? null, kind, text, (f.detail ?? '').trim(), (f.metric ?? '').trim(), (f.skills ?? []).join(', '), (f.evidence ?? '').trim(), sourceId, 'proposed', now) as { id: number };
+      made.push({ id: row.id, key: norm(text) });
       n++;
     }
+    const held = after.flatMap((a) => a.held(made, rewritten, skipped));
+    if (held.length > 0) throw new HeldReading(sourceId, held);
+    for (const a of after) a.carry(made, rewritten, skipped);
     return n;
-  })();
+  }).immediate();
 }
