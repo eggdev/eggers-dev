@@ -136,6 +136,17 @@ function partsOf(body: string): { head: string; lines: { kind: string; text: str
   end();
   return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') })).filter((p) => p.head !== '' || p.lines.length > 0);
 }
+// A write to a sitting as its reply: the refusal in words, the sitting it was about, and whether it has ended.
+// stale: the question answered no longer waited; the screen reads the sitting again and keeps the draft.
+const tellReply = (r: Awaited<ReturnType<typeof exchange>>, sitting = ''): Result<'startTelling'> =>
+  r.ok ? { ok: true, error: '', sitting: text(r.body.sitting) || sitting, ended: r.body.now === 'ended', stale: false }
+  : { ok: false, error: r.error, sitting, ended: false, stale: r.body?.stale === true };
+// The owner's words as the telling screen draws them (telling.contract, OwnWords, set pre-line): every line break kept,
+// and every space pre-line would fold away drawn as a no-break space: a space at a line's start, all but the last space
+// of a run, and a tab (as four). So the spaces show, and no space hangs past a wrapped line. The stored text is not changed.
+const NB = '\u00a0';
+const drawn = (t: string) => t.replace(/\r\n?/g, '\n').split('\n').map((line) => line.replace(/\t/g, NB.repeat(4))
+  .replace(/^ +/, (m) => NB.repeat(m.length)).replace(/ {2,}/g, (m) => `${NB.repeat(m.length - 1)} `)).join('\n');
 // A flag's severity, the most serious first.
 const SEVERITY = ['high', 'warn', 'info'];
 
@@ -167,6 +178,34 @@ const sources: Sources = {
   decideProposal: ([proposal, how, title, facts, edited]) =>
     made('POST', `/proposals/${id(proposal)}`, how === 'keep' ? { keep: true, ...(edited ? { title, facts } : {}) } : how === 'reject' ? { reject: true } : { result: how }),
   judgeLine: ([key, verdict]) => write('POST', `/derived/${id(key)}`, { verdict }),
+  // Telling a role or a project (telling.contract): where it stands, while it is open in Experience.
+  loadTelling: async ([kind, subject]): Promise<Result<'loadTelling'>> => {
+    if (kind === '' || subject === '') return { loaded: false, kind: '', id: '', open: false, sitting: '', settled: 0, total: 0, lastOn: '' };
+    const b = obj(await get(`/${kind === 'project' ? 'projects' : 'roles'}/${id(subject)}/sitting`)) ?? {};
+    return { loaded: true, kind, id: subject, open: b.open === true, sitting: text(b.sitting), settled: num(b.settled), total: num(b.total), lastOn: text(b.lastOn) };
+  },
+  // One sitting. One deleted since is gone, not a failed read.
+  loadSitting: async ([sitting]): Promise<Result<'loadSitting'>> => {
+    const none = { loaded: false, gone: false, id: '', kind: '', subject: '', name: '', open: false, due: false, position: 0, total: 0, closing: '', answers: 0, turns: [], said: [] };
+    if (sitting === '') return none;
+    const res = await fetch(`${API}/sittings/${id(sitting)}`, { exactTimeout: 10000, headers });
+    if (res.status === 404) return { ...none, gone: true };
+    if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+    const s = obj(await res.json()) ?? {};
+    return { loaded: true, gone: false, id: text(s.id), kind: text(s.kind), subject: text(s.subject), name: text(s.name), open: s.open === true, due: s.due === true,
+      position: num(s.position), total: num(s.total), closing: text(s.closing), answers: num(s.answers),
+      turns: rows(s.turns ?? []).map((t) => ({ id: text(t.id), mine: t.mine === true, step: text(t.step), text: text(t.text), shown: drawn(text(t.text)) })),
+      said: rows(s.said ?? []).map((g) => ({ key: text(g.key), question: text(g.question),
+        answers: rows(g.answers ?? []).map((a) => ({ id: text(a.id), sitting: text(a.sitting), text: text(a.text), shown: drawn(text(a.text)), followUp: text(a.followUp), more: num(a.more) })) })) };
+  },
+  // A start (or the open sitting given back), an answer sent exactly as typed, a stop, a deleted answer: the refusal in
+  // words, the sitting, and whether it has ended.
+  startTelling: async ([kind, subject]) => tellReply(await exchange('POST', `/${kind === 'project' ? 'projects' : 'roles'}/${id(subject)}/sitting`, {})),
+  // turn: the interviewer turn the screen shows as waiting; an answer to one that no longer waits is refused (stale).
+  answerSitting: async ([sitting, turn, answer]) => tellReply(await exchange('POST', `/sittings/${id(sitting)}/answer`, { text: answer, turn }), sitting),
+  stopSitting: async ([sitting]) => tellReply(await exchange('POST', `/sittings/${id(sitting)}/stop`, {}), sitting),
+  deleteSitting: async ([sitting]) => tellReply(await exchange('DELETE', `/sittings/${id(sitting)}`, {}), sitting),
+  deleteAnswer: async ([sitting, turn]) => tellReply(await exchange('DELETE', `/sittings/${id(sitting)}/turns/${id(turn)}`, {}), sitting),
   // One fact whole, while it is open.
   loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
     const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '' };

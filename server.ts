@@ -30,6 +30,8 @@ import { syncProjects } from './lib/projects.ts';
 import { addFact, addProject, addRole, deleteProject, deleteRole, derivedNow, fullFact, patchFact, patchProject, patchRole, readTree, removeFact, type Done } from './lib/record.ts';
 import { askFor, checkProposals, decideResult, keepProposal, proposalsOf, rejectProposal, requestFor, storeProposals, type Decided } from './lib/propose.ts';
 import { judge } from './lib/derived.ts';
+import { isQuestionKey, QUESTIONS, questionText } from './lib/capture.ts';
+import { advance, answerTurn, deleteOwnerTurn, deleteSitting, questionStatus, sitting, sittingsOf, startSitting, turnsOf, type SaidTurn, type Subject } from './lib/sittings.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -209,6 +211,98 @@ const AGAIN: Partial<Record<Kind, (subject: number) => Response>> = {
   'draft-messages': draftMessagesAgain, 'check-watchlist': () => checkWatchlistAgain(),
   'propose-projects': (role) => { const refused = askFor(role); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
 };
+
+// Telling a role or a project (lib/capture.ts, lib/sittings.ts): an interview about one role or one project, one
+// question at a time, in fixed words. No model is asked and no worker job is made, so each answer is answered at once.
+// The owner's answer is stored exactly as sent: it is never trimmed and never given curly quotes (`str`, `curly`).
+type Kinded = 'role' | 'project';
+const GONE: Record<Kinded, string> = { role: 'That role is no longer in your record.', project: 'That project is no longer in your record.' };
+const NO_SITTING = 'That interview is no longer in your record.';
+// The time a sitting's turns are stored at. A test server can fix it (POST /test/clock), so a screen test can say the
+// date "Told on" shows; 0 is the real clock.
+let stubNow = 0;
+const tellNow = () => (stubNow > 0 ? stubNow : Date.now());
+const idOf = (v: string) => (/^\d+$/.test(v) ? Number(v) : null);
+// The role or project a path names, or null when it is not in the record.
+function subjectAt(kind: Kinded, raw: string): Subject | null {
+  const id = idOf(raw);
+  if (id === null) return null;
+  return db.query(`SELECT 1 FROM ${kind === 'role' ? 'roles' : 'projects'} WHERE id = ?`).get(id) === null ? null : { kind, id };
+}
+// The name the screen gives a role ("Title, Employer", or the employer) or a project (its title; for a project that
+// is a roles row, that row's name, as lib/tree.ts shows it).
+function subjectName(s: Subject): string {
+  if (s.kind === 'role') {
+    const r = db.query('SELECT title, company FROM roles WHERE id = ?').get(s.id) as { title: string; company: string } | null;
+    return r ? (r.title ? `${r.title}, ${r.company}` : r.company) : '';
+  }
+  const p = db.query('SELECT p.title, r.company FROM projects p LEFT JOIN roles r ON r.id = p.via_role WHERE p.id = ?').get(s.id) as { title: string; company: string | null } | null;
+  return p ? p.company ?? p.title : '';
+}
+// Where the telling of a role or project stands: whether a sitting is open, the sitting to go to (the open one, else
+// the latest), how many of the questions are answered or closed, and when any of its sittings was last touched.
+function tellingOf(s: Subject) {
+  const all = sittingsOf(s), status = questionStatus(s);
+  const open = all.find((x) => x.state === 'open'), latest = open ?? all.at(-1);
+  const lastAt = Math.max(0, ...all.flatMap((x) => [x.startedAt, x.endedAt, ...turnsOf(x.id).map((t) => t.at)]));
+  const answered = status.filter((q) => q.state === 'answered').length, closed = status.filter((q) => q.state === 'closed').length;
+  return { kind: s.kind, id: String(s.id), open: open !== undefined, sitting: latest ? String(latest.id) : '', answered, closed, settled: answered + closed,
+    total: QUESTIONS.length, lastAt, lastOn: day(lastAt) };
+}
+const saidOf = (t: SaidTurn) => ({ id: String(t.id), step: t.step, text: t.text });
+// The owner's answers about one role or project, from every sitting about it, under each question in the list's order;
+// the answers to one question in the order they were given. An answer to a follow-up carries the follow-up's words.
+// Answers filed under a question no longer in the list come last. sitting: the sitting each answer is in.
+function saidAbout(s: Subject) {
+  const answers: { key: string; sitting: string; id: string; text: string; followUp: string }[] = [];
+  for (const x of sittingsOf(s)) {
+    const turns = turnsOf(x.id);
+    turns.forEach((t, i) => {
+      if (t.who !== 'owner') return;
+      const before = turns[i - 1];
+      answers.push({ key: t.question, sitting: String(x.id), id: String(t.id), text: t.text, followUp: before?.who === 'interviewer' && before.step === 'follow-up' ? before.text : '' });
+    });
+  }
+  const groups = QUESTIONS.map((q) => ({ key: q.key as string, question: questionText(q.key, s.kind), answers: answers.filter((a) => a.key === q.key) }));
+  const others = answers.filter((a) => !isQuestionKey(a.key));
+  return [...groups, { key: '', question: 'A question no longer asked', answers: others }].filter((g) => g.answers.length > 0)
+    .map((g) => ({ key: g.key, question: g.question, answers: g.answers.map((a) => ({ id: a.id, sitting: a.sitting, text: a.text, followUp: a.followUp,
+      // The follow-up answers that deleting this answer takes with it (lib/sittings.ts, deleteOwnerTurn).
+      more: a.followUp !== '' ? 0 : g.answers.filter((x) => x.sitting === a.sitting && x.followUp !== '').length })) }));
+}
+// One sitting as its screen shows it: its turns in order, whether an answer is due, the place in the list of the
+// question waiting (1 to 15; 0 when none waits), the closing line once it has ended, and everything said about its role
+// or project.
+function sittingView(id: number) {
+  const s = sitting(id);
+  if (!s) return null;
+  const turns = turnsOf(id), last = turns.at(-1);
+  const due = s.state === 'open' && last !== undefined && last.who === 'interviewer' && (last.step === 'question' || last.step === 'follow-up');
+  const closing = s.state === 'ended' ? [...turns].reverse().find((t) => t.who === 'interviewer' && t.step === 'closing')?.text ?? '' : '';
+  return { id: String(s.id), kind: s.subject.kind, subject: String(s.subject.id), name: subjectName(s.subject), open: s.state === 'open', due,
+    position: due && last ? QUESTIONS.findIndex((q) => q.key === last.question) + 1 : 0, total: QUESTIONS.length, closing,
+    turns: turns.map((t) => ({ id: String(t.id), mine: t.who === 'owner', step: t.who === 'owner' ? 'answer' : t.step, text: t.text })),
+    // How many answers this sitting holds: what deleting it removes.
+    answers: turns.filter((t) => t.who === 'owner').length,
+    said: saidAbout(s.subject) };
+}
+// GET: where the telling of a role or project stands. POST: starts a sitting about it, or gives back the one open, and
+// lets the interviewer speak until a question waits: the opening, a reminder of the work picked in an earlier sitting,
+// and the first question not yet answered or closed. A refusal (every question already answered, a role sitting on a
+// row that is a project) is said in the module's words.
+const tellRoutes = (kind: Kinded) => ({
+  OPTIONS: preflight,
+  GET: (req: Request & { params: { id: string } }) => { const s = subjectAt(kind, req.params.id); return s ? send(tellingOf(s)) : send({ error: GONE[kind] }, 404); },
+  POST: (req: Request & { params: { id: string } }) => {
+    const s = subjectAt(kind, req.params.id);
+    if (!s) return send({ error: GONE[kind] }, 404);
+    const now = tellNow(), started = startSitting(s, now);
+    if (!started.ok) return send({ error: started.error }, 409);
+    const moved = advance(started.id, now);
+    if (!moved.ok) return send({ error: moved.error }, 409);
+    return send({ ok: true, sitting: String(started.id), resumed: started.resumed, said: moved.said.map(saidOf), now: moved.now }, started.resumed ? 200 : 201);
+  },
+});
 
 // Where it listens: HOST and PORT when set; else the app's API_BASE_URL when that is this machine
 // (a test run on a spare port while a dev server holds the usual one); else LOCAL.
@@ -693,6 +787,55 @@ const served = Bun.serve({ hostname, port, routes: {
     // ?facts=keep (the default) keeps its facts, back in Day to day (or General); ?facts=delete deletes them too.
     DELETE: (req) => { const d = deleteProject(Number(req.params.id), new URL(req.url).searchParams.get('facts') === 'delete' ? 'delete' : 'keep'); if (d.ok && d.wrote) follow(); return done(d); },
   },
+  // Telling a role or a project (above, tellRoutes), and its sittings. Nothing here makes a fact or asks a model.
+  '/roles/:id/sitting': tellRoutes('role'),
+  '/projects/:id/sitting': tellRoutes('project'),
+  '/sittings/:id': {
+    OPTIONS: preflight,
+    GET: (req) => { const id = idOf(req.params.id), v = id === null ? null : sittingView(id); return v ? send(v) : send({ error: NO_SITTING }, 404); },
+    // The sitting and every word in it. Its answers no longer count, so their questions open again.
+    DELETE: (req) => { const id = idOf(req.params.id); return id !== null && deleteSitting(id) ? send({ ok: true }) : send({ error: NO_SITTING }, 404); },
+  },
+  // {text, turn}: the owner's answer to the interviewer's turn `turn`, stored exactly as sent, and what the interviewer
+  // says next, in one transaction (lib/sittings.ts, answerTurn). A turn no longer waiting is refused with the sitting as
+  // it stands now, so a second send or a second tab never files an answer under a question the owner did not see.
+  '/sittings/:id/answer': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const id = idOf(req.params.id);
+      if (id === null || !sitting(id)) return send({ error: NO_SITTING }, 404);
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      if (typeof b.text !== 'string') return send({ error: 'Send the answer as text.' }, 400);
+      const turn = typeof b.turn === 'string' || typeof b.turn === 'number' ? idOf(String(b.turn)) : null;
+      if (turn === null) return send({ error: 'Send the question you are answering as well.' }, 400);
+      const r = answerTurn(id, turn, b.text, tellNow());
+      // A question no longer waiting (a second send, a second tab): the sitting as it stands, for the screen to show.
+      if (!r.ok) return send({ error: r.error, ...('stale' in r && r.stale ? { stale: true, sitting: sittingView(id) } : {}) }, 409);
+      return send({ ok: true, turn: String(r.id), closes: r.closes, said: r.said.map(saidOf), now: r.now });
+    },
+  },
+  // Stop for now: the closing line is said and the sitting ends. The next sitting starts with what is not yet answered.
+  '/sittings/:id/stop': {
+    OPTIONS: preflight,
+    POST: (req) => {
+      const id = idOf(req.params.id);
+      if (id === null || !sitting(id)) return send({ error: NO_SITTING }, 404);
+      const next = advance(id, tellNow(), { stop: true });
+      return next.ok ? send({ ok: true, said: next.said.map(saidOf), now: next.now }) : send({ error: next.error }, 409);
+    },
+  },
+  // One of the owner's own answers, deleted. The interviewer's words are not the owner's to delete.
+  '/sittings/:id/turns/:turn': {
+    OPTIONS: preflight,
+    DELETE: (req) => {
+      const id = idOf(req.params.id), turn = idOf(req.params.turn);
+      const t = id === null || turn === null ? undefined : turnsOf(id).find((x) => x.id === turn);
+      if (!t) return send({ error: 'That answer is no longer in your record.' }, 404);
+      if (t.who !== 'owner') return send({ error: 'Only your own answers can be deleted.' }, 409);
+      return deleteOwnerTurn(t.id) ? send({ ok: true }) : send({ error: 'That answer is no longer in your record.' }, 404);
+    },
+  },
   // The skills list (lib/skills.ts): each skill the bank names, what kind of thing it is, and the person's mark.
   // Only a tool, language or platform the person stands behind goes on a resume.
   '/skills': {
@@ -815,6 +958,7 @@ const served = Bun.serve({ hostname, port, routes: {
     if (b.skills === true) suggestSkills(Date.now());
     return send({ ok: true, saved });
   } } } : {}),
+  ...(STUB ? { '/test/clock': { OPTIONS: preflight, POST: async (req: Request) => { const b = await req.json().catch(() => ({})); stubNow = typeof b.now === 'number' && b.now > 0 ? b.now : 0; return send({ ok: true }); } } } : {}),
   ...(STUB ? { '/test/look': { OPTIONS: preflight, POST: async (req: Request) => { const b = await req.json().catch(() => ({})); stubCite = b.cite === 'none' ? 'none' : ''; return send({ ok: true }); } } } : {}),
   ...(STUB ? { '/test/work': { OPTIONS: preflight, POST: async (req: Request) => {
     const b = await req.json().catch(() => ({}));

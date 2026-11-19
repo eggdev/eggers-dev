@@ -2,13 +2,13 @@
 // that imports only these (the resume's text, its entries, its metrics, numbers, the timeline, the writing rules) must
 // never create or touch a database file. Each is imported in a process of its own, with DB set to a path in a new
 // empty folder, and the folder must still be empty afterwards. The list is the modules of lib/ that opened no database
-// on import at commit a32e6ce, and the modules added since that read none (numbers.ts, links.ts).
+// on import at commit a32e6ce, and the modules added since that read none (numbers.ts, links.ts, rules.ts).
 import { afterAll, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const PURE = ['ats', 'entries', 'github', 'links', 'llm', 'metrics', 'numbers', 'paths', 'pdf', 'place', 'public', 'resume', 'skim', 'timeline', 'tree', 'writing'];
+const PURE = ['ats', 'capture', 'entries', 'github', 'links', 'llm', 'metrics', 'numbers', 'paths', 'pdf', 'place', 'public', 'resume', 'rules', 'skim', 'timeline', 'tree', 'writing'];
 const dirs: string[] = [];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 

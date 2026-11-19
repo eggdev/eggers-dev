@@ -5,6 +5,7 @@
 // (app.contract); a form keeps its drafts itself.
 use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, experienceLook from "./look.contract"
 use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activity.contract"
+use Telling, TellLine from "./telling.contract"
 
 // The record as one tree (lib/tree.ts, GET /tree): Role → Project → Fact, side projects beside the roles, and
 // "General" for facts that belong to no role. Each item carries its reference number. A fact's story and evidence
@@ -345,6 +346,8 @@ component ExperienceScreen
     keepEdited: action
     rejectProposal: action
     decideResult: action
+    // Telling the open role or project (telling.contract).
+    tell: action
     toggleQuestions: action
     showDerived: action
     clearDerived: action
@@ -382,13 +385,13 @@ component ExperienceScreen
         if tree.loaded
           HowYouWork(lines=tree.derived, filter=s.derivedFilter, lastRejected=s.lastRejected, show=showDerived, clear=clearDerived, judge=judgeLine)
         if tree.loaded
-          ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
+          ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
       if s.beside
         BesidePane(label="The opened item", testId="bank-pane")
           if s.open == ""
             QuietLine(text="Open a role, a project or a fact on the left. It opens here, and the list stays.", testId="pane-none")
           else
-            ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
+            ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
 
 // A fact's value for the Facts view's sort: an empty value sorts after the rest.
 fn sortValue(t: Tree, f: TreeFact, key: string): string = key == "fact" ? f.text.toLowerCase() : key == "number" ? (f.metric == "" ? "~" : f.metric.toLowerCase()) : key == "role" ? (factRole(t, f) == "" ? "~" : factRole(t, f).toLowerCase()) : key == "project" ? factGroup(t, f).toLowerCase() : f.ref
@@ -537,6 +540,8 @@ component ExpBody
     keepEdited: action
     rejectProposal: action
     decideResult: action
+    // Telling the open role or project (telling.contract).
+    tell: action
   derive under = not s.beside
   derive sections = s.view == "projects" ? [projectsSection(tree, listed, shownFacts, expanded, s)] : s.view == "facts" ? [factsSection(tree, factOrder, s)] : rolesSections(tree, shownRoles, overlaps, shownProjects, shownFacts, sides, unplaced, general, expanded, s)
   view
@@ -597,7 +602,7 @@ component ExpBody
                   OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`${row.testId}-overlap-${o}`)
               if under and s.open == row.key
                 UnderRow(level=row.level, label="The opened item", testId="under")
-                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult)
+                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
 
 // What the Experience screen is showing and doing, as the root holds it. view: roles | projects | facts. open: the
 // item open, as a key ("role:4", "day:4", "project:12", "fact:142"; "" for none). just: the item just added or moved,
@@ -640,6 +645,10 @@ shape ExpState
   proposeError: string
   work: WorkItem[]
   proposals: Proposals
+  // Telling the open role or project (telling.contract): where it stands, a refused start, and a start in flight.
+  telling: Telling
+  tellError: string
+  tellBusy: bool
 
 // An opened item's head: its reference, its name, when and what it holds, and the way to close it. Under its own
 // row (`full` false, a narrow window) the row already says all that, so only Close is drawn.
@@ -727,6 +736,8 @@ component ItemPane
     keepEdited: action
     rejectProposal: action
     decideResult: action
+    // Telling the open role or project (telling.contract).
+    tell: action
   derive kind = keyKind(s.open)
   derive id = keyId(s.open)
   derive chain = crumbChain(tree, s.open).filter(k => s.view == "roles" or (s.view == "projects" and keyKind(k) == "project"))
@@ -760,6 +771,7 @@ component ItemPane
               FieldRow(label="Location", value=r.location, wide=s.wide, testId="role-location")
             if r.reach != ""
               FieldRow(label="Reached users", value=reachLabel(r.reach), wide=s.wide, testId="role-reach")
+            TellLine(telling=s.telling, kind="role", id=r.id, error=s.tellError, busy=s.tellBusy, tell=tell)
             if s.deleting == s.open
               DeleteAsk(question=`Delete ${r.ref}, its ${projectCount(projectsOf(tree, r.id).filter(p => not p.carried).length)} and ${factCount(tree.facts.filter(f => f.roleId == r.id and (f.projectId == "" or projectsOf(tree, r.id).filter(p => p.id == f.projectId and not p.carried).length > 0)).length)}? A repository filed under it stays, not placed. This cannot be undone.`, label=`Delete ${r.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
             else
@@ -823,6 +835,7 @@ component ItemPane
                 Labelled(label="What I learned", value=p.learned, testId="part-learned")
               else
                 Action(label="Add what you learned", press=startEdit(s.open), disabled=false, keys="", testId="part-learned-add")
+            TellLine(telling=s.telling, kind="project", id=p.id, error=s.tellError, busy=s.tellBusy, tell=tell)
             if s.deleting == s.open
               DeleteAsk(question=`Delete ${p.ref}? ${factsInProject(tree, p.id).length == 0 ? "It holds no fact." : `Its ${factCount(factsInProject(tree, p.id).length)} ${factsInProject(tree, p.id).length == 1 ? "stays" : "stay"} in ${p.place == "role" ? `Day to day at ${companyOf(tree, p.roleId)}` : "General"}.`}`, label=`Delete ${p.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
             else

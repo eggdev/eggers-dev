@@ -373,3 +373,40 @@ What was rejected, and why:
   line's claim changes when words are left out ("Plan the move of billing to Go." becomes "Moved billing to Go."), and
   code cannot tell which words carry the meaning.
 - A shorter line made by leaving words out, for the same reason. A bullet over the word limit keeps its flag.
+
+## 11. Telling a role
+
+The owner can tell the studio about one role or one project in an interview (`telling.contract`, `lib/capture.ts`,
+`lib/sittings.ts`). Each sitting is about exactly one role or one project.
+
+- **Where it starts.** An open role or project in Experience shows one plain action. It says "Tell this role" (or "Tell
+  this project") when nothing is told yet, and "Carry on telling it" while a sitting is open or some questions are
+  still open. When all 15 questions are answered or closed, it says "Told on 19 Nov 2026" with "Read it".
+- **The screen.** A sitting has its own address (`/record/tell/:id`), so a reload lands on it. It shows the conversation
+  in order: the interviewer's lines in the light weight, and the owner's answers in the heavy weight, stepped in, with
+  their spaces and line breaks as typed (a tab is drawn as four spaces). Under it are one quiet line ("Question 4 of
+  15"), one text field, Send (the main action), "I don't know" and "Stop for now". The field is read-only while an
+  answer is on its way. "I don't know" sends exactly those words and closes the question for good. After a sitting
+  ends, the screen shows the closing line and "What you said": every answer about the role or project, from every
+  sitting, under its question in the list's order. Each answer has Delete, and under them the sitting has
+  "Delete this sitting"; both are red and ask first, and neither promises what is asked next.
+- **Deleting.** Delete on an answer deletes the owner's whole reply to that question in that sitting: the answer and
+  every answer to its follow-ups ("Delete this answer and what you added to it?"). Delete on an answer to a follow-up
+  deletes only that answer. "Delete this sitting" deletes only that sitting's answers, and says how many ("Delete this
+  sitting and the 3 answers you gave in it?"); answers from other sittings stay. Then it goes back to Experience. A
+  question left with no answer is asked again in its place in a later sitting.
+- **One answer per question.** Send carries the question it answers. A second send for the same question (a resend, a
+  second tab) is refused with "That question was already answered. Here is where the sitting stands.", and the screen
+  shows the sitting as it is now, with the draft kept. The answer is stored and the next line chosen in one step, so an
+  answer never stands without the sitting moving on.
+- **Fixed words.** The interviewer says only fixed words: the opening, the 15 questions, four follow-ups chosen by
+  rule, a reminder of the piece of work picked in an earlier sitting, and the closing lines. No model is asked and no
+  slow work is made, so the next line comes at once, with no spinner and no Activity row.
+- **The owner's words.** An answer is stored exactly as typed: nothing is trimmed, corrected or given curly quotes. A
+  text that would not read back the same is refused in words, and so is an empty answer or one with no letter or
+  digit in it.
+- **One piece of work per role.** "Pick one piece of work" is asked once for a role or project, and every later
+  question in every sitting about it is about that piece of work.
+
+Left out of this version: facts are not yet made from the answers, so nothing told here reaches the record or a
+resume; and no follow-up is written by a model.

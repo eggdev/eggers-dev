@@ -1614,3 +1614,235 @@ test "a bullet's new opening and its tense are suggested after a Save; one is ke
   clock settle
   expect text "line-7" == "Lead the weekly incident review."
   expect text "sug-7-text" == "Rejected. Your words stay."
+
+// Telling a role (telling.contract). From here R-07 (Staff Engineer, Brightwater Health) has no sitting yet, so its
+// first is sitting 1, and the turns are numbered from 1 in the order they are said. The interviewer's words are the
+// fixed ones of lib/capture.ts; the answers are in the first person and name no habit, so a follow-up comes only where a
+// test asks for one.
+test "a role is told from Experience: each answer brings the next question at once, and I don't know closes a question for good"
+  size 1280x800
+  at "/record/role/7"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-start" == "Tell this role"
+  tap "tell-start"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "tell"
+  expect text "tell-title" == "Staff Engineer, Brightwater Health"
+  expect text "tell-turn-0" == "These questions are a fixed list. They come one at a time, about one piece of your work. Your answers are kept exactly as you give them, word for word."
+  expect text "tell-turn-1" == "Tell me about this job and your role in it."
+  expect text "tell-position" == "Question 1 of 15"
+  type "tell-answer" "I ran the support platform for the clinics."
+  tap "tell-send"
+  clock data
+  expect text "tell-turn-2" == "I ran the support platform for the clinics."
+  expect text "tell-turn-3" == "Pick one piece of work from this job that you remember well."
+  expect text "tell-position" == "Question 2 of 15"
+  expect text "tell-answer" == ""
+  type "tell-answer" "The new booking page, which I built in my first year."
+  tap "tell-send"
+  clock data
+  expect text "tell-turn-5" == "Take me back to the start. What was happening just before you got involved?"
+  expect text "tell-dont-know" == "I don’t know"
+  tap "tell-dont-know"
+  clock data
+  expect text "tell-turn-6" == "I don't know"
+  expect text "tell-turn-7" == "What did you do yourself on this?"
+  expect text "tell-position" == "Question 4 of 15"
+  expect tree missing "tell-error"
+  // Closed for good: the next sitting does not ask it again, and goes on from the question after it.
+  tap "tell-stop"
+  clock data
+  tap "tell-back-end"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-start" == "Carry on telling it"
+  tap "tell-start"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-turn-1" == "We carry on with the piece of work you picked last time: “The new booking page, which I built in my first year.”"
+  expect text "tell-turn-2" == "What did you do yourself on this?"
+  expect text "tell-position" == "Question 4 of 15"
+
+test "a refused send keeps the draft; a question answered elsewhere is refused in words and the sitting shows as it stands; spaces and line breaks show as typed"
+  size 1280x800
+  at "/record/tell/2"
+  clock data
+  type "tell-answer" "?"
+  tap "tell-send"
+  clock data
+  expect text "tell-error" == "The answer has no words in it. If you do not know, say \"I don't know\"."
+  expect text "tell-answer" == "?"
+  type "tell-answer" ""
+  tap "tell-send"
+  clock data
+  expect text "tell-error" == "The answer is empty."
+  // Turn 12 is the question this screen shows; a second tab answers it first.
+  request POST "/sittings/2/answer" {"text": "I wrote the plan.", "turn": "12"}
+  type "tell-answer" "I set up the support rota."
+  tap "tell-send"
+  clock data
+  expect text "tell-error" == "That question was already answered. Here is where the sitting stands."
+  expect text "tell-answer" == "I set up the support rota."
+  expect text "tell-turn-3" == "I wrote the plan."
+  expect text "tell-turn-4" == "Picture a normal week in the middle of it. What were you working on?"
+  expect text "tell-position" == "Question 5 of 15"
+  type "tell-answer" "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  tap "tell-send"
+  clock data
+  expect tree missing "tell-error"
+  expect text "tell-turn-5" == "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  expect text "tell-turn-6" == "Tell me about a point where you had to choose between options."
+  tap "tell-stop"
+  clock data
+  expect text "tell-closing" == "We will stop here for now. Your answers are saved word for word, and the next sitting starts with the questions not yet answered."
+  expect tree missing "tell-answer"
+  expect tree missing "tell-position"
+  expect text "tell-said-head" == "What you said"
+  expect text "tell-q-normal-week" == "Picture a normal week in the middle of it. What were you working on?"
+  expect text "tell-a-normal-week-0" == "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  expect text "tell-a-before-0" == "I don't know"
+  tap "tell-back-end"
+  clock data
+  clock settle
+  clock data
+  expect text "pane-title" == "Staff Engineer"
+  expect text "tell-start" == "Carry on telling it"
+
+test "telling it again starts with a reminder of the work picked, in the owner's own words; a follow-up comes by rule"
+  size 1280x800
+  at "/record/role/7"
+  clock data
+  clock settle
+  clock data
+  tap "tell-start"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-turn-1" == "We carry on with the piece of work you picked last time: “The new booking page, which I built in my first year.”"
+  expect text "tell-turn-2" == "Tell me about a point where you had to choose between options."
+  expect text "tell-position" == "Question 6 of 15"
+  type "tell-answer" "We chose the cheaper queue."
+  tap "tell-send"
+  clock data
+  expect text "tell-turn-4" == "What was your own part in that?"
+  expect text "tell-position" == "Question 6 of 15"
+  type "tell-answer" "I wrote the comparison myself."
+  tap "tell-send"
+  clock data
+  expect text "tell-turn-6" == "What was the hardest part? Tell me what happened."
+  reload
+  clock data
+  clock settle
+  expect text "tell-turn-6" == "What was the hardest part? Tell me what happened."
+
+test "after the sitting has ended, one answer is deleted only after asking, with what was added to it, and its question leaves What you said"
+  size 390x844
+  at "/record/tell/3"
+  clock data
+  tap "tell-stop"
+  clock data
+  expect text "tell-a-pick-0" == "The new booking page, which I built in my first year."
+  expect text "tell-a-choice-1-follow" == "What was your own part in that?"
+  tap "tell-a-before-0-delete"
+  expect text "tell-delete-ask" == "Delete this answer? This cannot be undone."
+  tap "tell-delete-no"
+  expect tree missing "tell-delete-ask"
+  expect tree has "tell-said-before"
+  tap "tell-a-before-0-delete"
+  tap "tell-delete-yes"
+  clock data
+  expect tree missing "tell-said-before"
+  tap "tell-a-choice-0-delete"
+  expect text "tell-delete-ask" == "Delete this answer and what you added to it? This cannot be undone."
+  tap "tell-delete-yes"
+  clock data
+  expect tree missing "tell-said-choice"
+  expect tree missing "tell-delete-ask"
+  expect text "tell-a-pick-0" == "The new booking page, which I built in my first year."
+  expect tree has "tell-back-end"
+
+test "with every question answered or closed, the project says the day it was told, and Read it opens what was said"
+  size 1280x800
+  at "/record/project/3"
+  request POST "/test/clock" {"now": 1794830400000}
+  clock data
+  clock settle
+  clock data
+  expect text "tell-start" == "Tell this project"
+  tap "tell-start"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-turn-1" == "Tell me about this project and your part in it."
+  type "tell-answer" "I rebuilt the index for the search page myself."
+  tap "tell-send"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  tap "tell-dont-know"
+  clock data
+  expect text "tell-closing" == "That is the last question about this. Your answers are saved word for word."
+  request POST "/test/clock" {"now": 0}
+  tap "tell-back-end"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-told" == "Told on 16 Nov 2026"
+  expect tree missing "tell-start"
+  expect text "tell-read" == "Read it"
+  tap "tell-read"
+  clock data
+  clock settle
+  clock data
+  expect text "tell-closing" == "That is the last question about this. Your answers are saved word for word."
+  expect text "tell-q-setting" == "Tell me about this project and your part in it."
+  expect text "tell-a-setting-0" == "I rebuilt the index for the search page myself."
+
+test "a whole sitting is deleted only after asking, saying how many answers it holds, and the screen goes back to its role"
+  size 1280x800
+  at "/record/tell/2"
+  clock data
+  expect text "tell-delete-sitting" == "Delete this sitting"
+  tap "tell-delete-sitting"
+  expect text "tell-delete-sitting-ask" == "Delete this sitting and the 2 answers you gave in it? This cannot be undone."
+  tap "tell-delete-sitting-no"
+  expect tree missing "tell-delete-sitting-ask"
+  tap "tell-delete-sitting"
+  tap "tell-delete-sitting-yes"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "role"
+  expect text "pane-title" == "Staff Engineer"
+  expect text "tell-start" == "Carry on telling it"
+  request GET "/sittings/2" expect 404

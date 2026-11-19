@@ -18,6 +18,7 @@ use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
 use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 use SkillsScreen from "./skills.contract"
+use TellScreen from "./telling.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
 font "Geist" = "assets/fonts/Geist.ttf"
@@ -39,6 +40,8 @@ routes nav
       fFact "/record/facts/:id"
     // Skills: the skills list of resume rule 7, reviewed in one pass (skills.contract).
     skills "/record/skills"
+    // One sitting of telling a role or a project, opened from it in Experience (telling.contract).
+    tell "/record/tell/:id"
     profile "/profile"
       direction "/profile/direction"
       details "/profile/details"
@@ -216,6 +219,7 @@ component App
   members "./home.contract"
   members "./activity.contract"
   members "./skills.contract"
+  members "./telling.contract"
   state kind = "text"
   state draftTitle = ""
   state draftText = ""
@@ -424,7 +428,8 @@ component App
   derive expView = viewOfRoute(topName)
   derive expState = ExpState(view=expView, open=openKey, just=just, justWord=justWord, q=bankQuery, adding=adding, editing=editing, deleting=deleting, shownAll=shownAll, madeError=madeError, madeSplit=roleSplit, changeError=changeError, changeOn=changeOn, busy=(pending(made) or pending(changed)), wide=wide, beside=(viewport.width >= lookBeside()), projectsOf=projectsFilter, sortKey=factSort, sortDesc=factDesc,
     showQuestions=showQuestions, derivedFilter=derivedFilter, lastRejected=lastRejected, editingProposal=editingProposal, proposalOn=proposalOn, proposalError=decideError,
-    proposeError=(roleAsked == openRoleId ? proposeError : ""), work=activity.items, proposals=proposals)
+    proposeError=(roleAsked == openRoleId ? proposeError : ""), work=activity.items, proposals=proposals,
+    telling=telling, tellError=(tellOn == openKey ? tellStartError : ""), tellBusy=pending(tellStarted))
   derive addError = match added { case some(r) => r.error, case none => "" }
   derive rereadError = pending(reread) ? "" : match reread { case some(r) => r.error, case none => "" }
   derive removeSourceError = pending(removedSource) ? "" : match removedSource { case some(r) => r.error, case none => "" }
@@ -1112,7 +1117,11 @@ component App
               // testIds and its scrollers' ids are never on the page twice.
               if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
                 column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
-                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine)
+                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine, tell=tellIt)
+              if e.name == "tell"
+                column navigationKey=`${e.id}` navigationScroll="tell-scroll" position="absolute" inset=0 background-color="look.paper"
+                  scroll id="tell-scroll" flex=1 min-height=0
+                    TellScreen(sitting=sitting, failed=failed(sitting), draft=tellField, sending=pending(tellAnswered), stopping=pending(tellStopped), deleting=pending(tellDeleted), error=tellError, asking=tellAsking, sittingAsked=sittingAsked, removingSitting=pending(sittingDeleted), edit=editTell, send=sendTell, dontKnow=tellDontKnow, stop=stopTell, askDelete=askTellDelete, keep=keepTellAnswer, remove=removeTellAnswer, askSitting=askSittingDelete, keepSitting=keepSitting, removeSitting=removeSitting, retry=pullSitting)
               if e.name == "skills"
                 column navigationKey=`${e.id}` navigationScroll="skills-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="skills-scroll" flex=1 min-height=0
