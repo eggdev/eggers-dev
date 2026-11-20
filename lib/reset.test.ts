@@ -15,6 +15,8 @@ import './sittings.ts';
 import './repoactivity.ts';
 import './activity.ts';
 import './stories.ts';
+import './you.ts';
+import './nextquestion.ts';
 import { CONFIRM, DERIVED, NOT_READ, RECORD, RESET_IN_PLACE, lastReset, resetRecord, sameSite, workInHand } from './reset.ts';
 import { reprintSent } from './jobs.ts';
 import { startServer } from './testserver.ts';
@@ -118,6 +120,7 @@ test('it is refused while work waits or runs, and goes on once nothing does', ()
 });
 
 test('the record and everything derived from it are deleted; the owner, the direction and the job tracker stay', () => {
+  db.run("INSERT INTO profile_answers (question_key, question, words, at) VALUES ('key', 'What changed?', 'We shipped the console.', 1)");
   const r = resetRecord(CONFIRM, 1_700_000_000_000);
   expect(r).toEqual({ ok: true, reset: {
     deleted: { roles: 2, projects: 1, facts: 2, sources: 1, answers: 3, unsentResumes: 1 },

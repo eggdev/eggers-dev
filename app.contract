@@ -12,17 +12,17 @@
 // server.ts keeps it all; worker.ts does the slow reading and writing. Nothing is polled while nothing runs: each
 // screen loads its data when it opens and after the owner acts, and while work waits or runs the app asks only for
 // the activity list, every 10 seconds, while the tab is shown (activity.contract).
-use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight, lookBeside, experienceLook from "./look.contract"
+use Viewport, Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, Record, Labelled, FieldLabel, SearchField, Choices, ChoiceWord, CheckLine, OutLink, WorkLine, MainLine, NavTab, SubBar, SubLine, SubLink, Actions, statusWord, lookNarrow, lookTight, lookBeside, lookWide, lookShellInset, experienceLook from "./look.contract"
 use HomeScreen, Queue, QueueItem, Sent from "./home.contract"
 use JobRow, JobList, Lead, LeadList, LeadDetail, Company, CompanyList, Job, ResumeView, JobsScreen, JobScreen, ResumeScreen, EditResumeScreen, AddJobScreen, LeadScreen, CompaniesScreen from "./jobs.contract"
 use Talk, TalkScreen, QuestionsScreen from "./talk.contract"
-use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
+use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Person, You, Told, ToldScreen, ExperienceScreen, ProfileScreen, DirectionScreen, DetailsScreen, RecordNav, RecordWait, factCount, plainLoadError, keyKind, keyId, chainOf, hrefOf, viewHref from "./record.contract"
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 use SkillsScreen from "./skills.contract"
 use TellScreen from "./telling.contract"
 use StoriesScreen from "./stories.contract"
 
-// The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
+// The look is DESIGN.md's on every screen: the Linear system, Geist, dark only (look.contract, app.tamber).
 font "Geist" = "assets/fonts/Geist.ttf"
 
 routes nav
@@ -50,6 +50,8 @@ routes nav
     profile "/profile"
       direction "/profile/direction"
       details "/profile/details"
+      // Everything the owner has told, as one document, opened from the profile (record.contract's ToldScreen).
+      told "/profile/told"
     sources "/sources"
       source "/source/:id"
       add "/sources/add"
@@ -293,6 +295,18 @@ component App
   // The company the remove alert is asking about.
   state aimedCompany = ""
   state aimedCompanyName = ""
+  // The profile's answer being written, which of answer or skip was sent last, and the question it was about.
+  state youDraft = "" persist
+  state youDraftKey = "" persist
+  state youSent = ""
+  state youAct = ""
+  state youActKey = ""
+  // The line of what stands out being edited (its project, "" for none), its words, and what was done last.
+  state standEditing = ""
+  state standDraft = ""
+  state standAct = ""
+  state standOriginal = ""
+  state standTitle = ""
   // Each screen's data is asked for while that screen shows, and again each time it opens; a screen not shown asks
   // nothing and keeps what it last showed. Nothing is asked on a timer (activity.contract says when work is).
   derive topName = top(nav).name
@@ -310,8 +324,11 @@ component App
   resource lib = loadSources() when sourcesShown as shape SourceList else empty()
   resource inbox = loadInbox() when topName == "add" as shape Inbox else empty()
   resource profile = loadProfile() when topName == "profile" as shape Profile else empty()
-  resource notes = loadDirection() when topName == "direction" as shape Direction else empty()
-  resource me = loadPerson() when topName == "details" as shape Person else empty()
+  resource notes = loadDirection() when topName == "direction" or topName == "profile" as shape Direction else empty()
+  resource me = loadPerson() when topName == "details" or topName == "profile" as shape Person else empty()
+  // The profile's side of the record (what stands out, the question, the counts), and everything told as one document.
+  resource you = loadYou() when topName == "profile" as shape You else empty()
+  resource told = loadTold() when topName == "told" as shape Told else empty()
   resource talk = loadTalk() when talkShown as shape Talk else empty()
   state talkDraft = "" persist
   // What was sent, so the reply clears the composer only if nothing new was typed meanwhile.
@@ -341,6 +358,14 @@ component App
   mutation asked as shape Reply refreshes profile, activity
   mutation notesSaved as shape Reply refreshes notes then afterNotes
   mutation personSaved as shape Reply refreshes me, job then afterPerson
+  // The profile's question: an answer in words (it goes to Talk) and a skip; each brings the next question.
+  mutation youAnswered as shape Reply refreshes you, activity then afterYouAnswer
+  mutation youSkipped as shape Reply refreshes you
+  // What stands out: the owner's own line, a project left out, and the step back.
+  mutation standSaved as shape Reply refreshes you then afterStandSaved
+  mutation standLeft as shape Reply refreshes you
+  mutation standRestored as shape Reply refreshes you
+  mutation standBroughtBack as shape Reply refreshes you
   mutation talkSent as shape Reply refreshes talk, activity then afterTalk
   mutation talkAsked as shape Reply refreshes talk, activity then afterAsk
   mutation talkCleared as shape Reply refreshes talk
@@ -421,8 +446,19 @@ component App
   // What was last tried in Talk and refused: said once, over the entry field.
   derive talkTried = talkAct == "send" ? talkError : talkAct == "ask" ? askTalkError : talkAct == "clear" and clearTalkError != "" ? `The conversation wasn’t cleared. ${clearTalkError}` : ""
   derive lastTalk = match talk.messages.at(-1) { case some(m) => m.id, case none => "" }
+  derive meError = match failure(me) { case some(f) => plainLoadError(f.code), case none => "" }
   derive personError = pending(personSaved) ? "" : match personSaved { case some(r) => r.error, case none => "" }
   derive askError = pending(asked) ? "" : match asked { case some(r) => r.error, case none => "" }
+  derive youError = match failure(you) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive toldError = match failure(told) { case some(f) => plainLoadError(f.code), case none => "" }
+  derive youAnswerError = match youAnswered { case some(r) => r.error, case none => "" }
+  derive youSkipError = match youSkipped { case some(r) => r.error, case none => "" }
+  derive youBusy = pending(youAnswered) or pending(youSkipped)
+  derive youDraftChanged = youDraft != "" and youDraftKey != you.next.key
+  derive askRefusal = youBusy ? "" : youAct == "answer" and youActKey == youDraftKey ? youAnswerError : youAct == "skip" and youActKey == you.next.key ? youSkipError : ""
+  derive standBusy = pending(standSaved) or pending(standLeft) or pending(standRestored) or pending(standBroughtBack)
+  derive standSaveError = pending(standSaved) ? "" : match standSaved { case some(r) => r.error, case none => "" }
+  derive standOtherError = standBusy ? "" : standAct == "leave" ? (match standLeft { case some(r) => r.error, case none => "" }) : standAct == "restore" ? (match standRestored { case some(r) => r.error, case none => "" }) : standAct == "bring" ? (match standBroughtBack { case some(r) => r.error, case none => "" }) : ""
   derive treeError = match failure(tree) { case some(f) => plainLoadError(f.code), case none => "" }
   derive libError = match failure(lib) { case some(f) => plainLoadError(f.code), case none => "" }
   derive madeError = pending(made) ? "" : match made { case some(r) => r.error, case none => "" }
@@ -529,6 +565,12 @@ component App
     refresh sys
 
   // Loads the shown screen again (Try again, a return to the tab): a resource whose screen is not shown asks nothing.
+  action pullMe
+    refresh me
+  action pullYou
+    refresh you
+  action pullTold
+    refresh told
   action pull
     refresh tree
     refresh stories
@@ -896,6 +938,73 @@ component App
       nav = back(nav)
   action writeProfile
     send asked = askProfile()
+  // ---------- The profile's question and what stands out ----------
+  action editYouDraft(key: string, v: string)
+    if not youBusy
+      if youDraft == ""
+        youDraftKey = key
+      youDraft = v
+  action useYouDraft(key: string)
+    if not youBusy and you.asking and you.next.input == "text" and key == you.next.key
+      youDraftKey = key
+      youAct = ""
+  action clearYouDraft
+    if not youBusy
+      youDraft = ""
+      youDraftKey = ""
+      youAct = ""
+  action answerYou
+    if youDraft.trim() != "" and not youBusy and not youDraftChanged and you.asking and you.next.input == "text"
+      youAct = "answer"
+      youActKey = youDraftKey
+      youSent = youDraft
+      send youAnswered = answerYou(youDraftKey, youDraft)
+  action afterYouAnswer
+    let ok = match youAnswered { case some(r) => r.ok, case none => false }
+    if ok and youDraft == youSent and youDraftKey == youActKey
+      youDraft = ""
+      youDraftKey = ""
+  action skipYou(key: string)
+    if not youBusy and youDraft == "" and key == you.next.key
+      youAct = "skip"
+      youActKey = key
+      send youSkipped = skipYou(key)
+  action startStandLine(projectId: string, title: string, line: string)
+    if standEditing == "" and not standBusy
+      standEditing = projectId
+      standDraft = line
+      standOriginal = line
+      standTitle = title
+      standAct = ""
+  action editStandLine(v: string)
+    if not standBusy
+      standDraft = v
+  action saveStandLine
+    let original = match first(you.standsOut.filter(l => l.projectId == standEditing)) { case some(l) => l.text, case none => standOriginal }
+    if standEditing != "" and not standBusy and standDraft.trim() != original.trim()
+      standAct = "edit"
+      send standSaved = saveStandOut(standEditing, standDraft)
+  action afterStandSaved
+    let ok = match standSaved { case some(r) => r.ok, case none => false }
+    if ok
+      standEditing = ""
+      standAct = ""
+  action cancelStandLine
+    if not standBusy
+      standEditing = ""
+      standAct = ""
+  action leaveStandOut(projectId: string)
+    if standEditing == "" and not standBusy
+      standAct = "leave"
+      send standLeft = leaveOutStandOut(projectId)
+  action restoreStandLine(projectId: string)
+    if standEditing == "" and not standBusy
+      standAct = "restore"
+      send standRestored = restoreStandOut(projectId)
+  action bringBackStandLine(projectId: string)
+    if standEditing == "" and not standBusy
+      standAct = "bring"
+      send standBroughtBack = bringBackStandOut(projectId)
   // ---------- Experience ----------
   // An item opens over the list it was opened from (Back closes it); another opened while one is open takes its place.
   action openItem(url: string)
@@ -970,10 +1079,10 @@ component App
     changeOn = `project:${id}`
     lastChange = "edit"
     send changed = saveProject(id, changed, title.trim(), dates.trim(), lives.trim(), result.trim(), context.trim(), act.trim(), learning.trim(), place)
-  action saveFact(id: string, changed: string[], text: string, detail: string, metric: string, kind: string)
+  action saveFact(id: string, changed: string[], text: string, detail: string, metric: string, kind: string, baseline: string, ownPart: string)
     changeOn = `fact:${id}`
     lastChange = "edit"
-    send changed = saveFact(id, changed, text.trim(), detail.trim(), metric.trim(), kind)
+    send changed = saveFact(id, changed, text.trim(), detail.trim(), metric.trim(), kind, baseline.trim(), ownPart.trim())
   // A fact moved stays open, in its new place, marked as an item just put there.
   action moveFact(id: string, home: string)
     just = ""
@@ -1113,393 +1222,404 @@ component App
 
   view
     main navigationKey=`${top(nav).id}` navigationBack="back" navigate=follow testId="app"
-      width="100%" height="100%" display="flex" flex-direction="column" font-family="'Geist', system-ui" background-color="look.paper"
-      // The main line (DESIGN.md): the places as plain words. Record holds Experience, Profile, Direction, Details and
-      // Sources; System holds the Public page and the machine. Each drawn screen has its second line itself.
-      MainLine(testId="nav")
-        NavTab(label="Home", current=(nav.tab == "home"), quiet=false, far=false, controls="panel-home", press=pick("home"), testId="nav-home")
-        NavTab(label="Record", current=inRecord, quiet=false, far=false, controls="panel-bank", press=pick("bank"), testId="nav-record")
-        NavTab(label="Jobs", current=(nav.tab == "jobs"), quiet=false, far=false, controls="panel-jobs", press=pick("jobs"), testId="nav-jobs")
-        NavTab(label="Talk", current=(nav.tab == "talk"), quiet=false, far=false, controls="panel-talk", press=pick("talk"), testId="nav-talk")
-        NavTab(label="Activity", current=(nav.tab == "activity"), quiet=false, far=false, controls="panel-activity", press=pick("activity"), testId="nav-activity")
-        NavTab(label="System", current=inSystem, quiet=true, far=true, controls="panel-publicPage", press=openPublic, testId="nav-system")
-      // The activity list could not be had three times in a row (the studio restarting, the network gone): one line,
-      // under the main line, until it answers again.
-      if activityDown
-        SubBar(testId="studio-down")
-          Line(text="The studio can’t be reached right now. It will try again.", testId="studio-down-line")
-      // The second line of a place that holds several screens, drawn once, under the main line.
-      if inRecord
-        SubBar(testId="subnav")
-          RecordNav(at=recordAt, go=goRecord)
-      if inSystem
-        SubBar(testId="subnav")
-          SystemNav(at=top(nav).name, go=goSystem)
-      column flex=1 min-height=0 position="relative"
-        for t in nav.tabs key=t.name
-          // The bar is the app's own (appearance="none"), so the app hides the tabs not shown (DESIGN.md; docs/recipes/tabs.md).
-          column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0 display=(nav.tab == t.name ? "flex" : "none")
-            for e in t.stack key=e.id
-              if e.name == "home"
-                column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="home-scroll" flex=1 min-height=0
-                    HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome, digest=shownDigest)
-              // Experience: one screen for each of its routes, drawn for the top of the tab's stack only, so its rows'
-              // testIds and its scrollers' ids are never on the page twice.
-              if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
-                column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
-                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine, tell=tellIt, story=tellStory, again=writeStoryAgain)
-              if e.name == "tell"
-                column navigationKey=`${e.id}` navigationScroll="tell-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="tell-scroll" flex=1 min-height=0
-                    TellScreen(sitting=sitting, failed=failed(sitting), draft=tellField, sending=pending(tellAnswered), stopping=pending(tellStopped), deleting=pending(tellDeleted), error=tellError, asking=tellAsking, sittingAsked=sittingAsked, removingSitting=pending(sittingDeleted), edit=editTell, send=sendTell, dontKnow=tellDontKnow, stop=stopTell, askDelete=askTellDelete, keep=keepTellAnswer, remove=removeTellAnswer, askSitting=askSittingDelete, keepSitting=keepSitting, removeSitting=removeSitting, retry=pullSitting)
-              // Stories: one screen for the list and for a story open, drawn for the top of the tab's stack only.
-              if (e.name == "stories" or e.name == "story") and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
-                column navigationKey=`${e.id}` navigationScroll=`stories-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
-                  StoriesScreen(list=stories, listFailed=failed(stories), story=storyShown, storyFailed=failed(storyShown), s=storyState, a=askedState, scrollId=`stories-${e.id}`, write=writeSpoken, edit=editSpoken, cancelEdit=cancelSpoken, save=saveSpokenText, practise=practise, startTimer=startTimer, stopTimer=stopTimer, cancelTimer=cancelTimer, togglePractices=togglePractices, askPracticeDelete=askPracticeDelete, keepPractice=keepPractice, removePractice=removePractice, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, choose=chooseStory, noStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked, retry=pullStories)
-              if e.name == "skills"
-                column navigationKey=`${e.id}` navigationScroll="skills-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="skills-scroll" flex=1 min-height=0
-                    SkillsScreen(list=skillsList, failedToLoad=failed(skillsList), held=heldSkill, heldMark=heldSkillMark, heldName=heldSkillName, sent=sentMarks, error=skillError, opened=openSkill, reviewing=pending(skillsReviewed), wide=(viewport.width >= lookNarrow()), mark=markSkillTap, undo=undoSkill, review=reviewSkillList, toggle=toggleSkillFacts, retry=retrySkills)
-              if e.name == "profile"
-                column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="profile-scroll" flex=1 min-height=0
-                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=workAhead(activity.items, "write-profile", "1"), usual=workUsual(activity.items, "write-profile", "1"), state=workStatus(activity.items, "write-profile", "1", profile.status), write=writeProfile, ask=askQuestion, retry=pull)
-              if e.name == "talk"
-                column navigationKey=`${e.id}` navigationScroll=(talk.loaded and talk.messages.length > 0 ? "transcript" : "talk-scroll") navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
-                  TalkScreen(talk=talk, work=activity.items, usual=kindUsual(activity, "write-reply"), failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
-              if e.name == "questions"
-                column navigationKey=`${e.id}` navigationScroll="questions-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="questions-scroll" flex=1 min-height=0
-                    QuestionsScreen(talk=talk, error=askTalkError, asking=pending(talkAsked), back=back, ask=askQuestion)
-              if e.name == "details"
-                column navigationKey=`${e.id}` navigationScroll="details-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="details-scroll" flex=1 min-height=0
-                    if me.loaded
-                      DetailsScreen(me=me, error=personError, busy=pending(personSaved), save=savePerson, cancel=back)
-                    else
-                      RecordWait(title="Details", waiting=(not failed(me)), message="Your details couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="details-wait")
-              if e.name == "direction"
-                column navigationKey=`${e.id}` navigationScroll="direction-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="direction-scroll" flex=1 min-height=0
-                    if notes.loaded
-                      DirectionScreen(body=notes.body, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
-                    else
-                      RecordWait(title="Direction", waiting=(not failed(notes)), message="Your direction notes couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="direction-wait")
-              if e.name == "activity"
-                column navigationKey=`${e.id}` navigationScroll="activity-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="activity-scroll" flex=1 min-height=0
-                    ActivityScreen(activity=activity, failed=failed(activity), loadError=activityError, digest=shownDigest, acted=actedWork, error=workError, busy=(pending(workRetried) or pending(workDismissed)), wide=wide, retry=retryWork, dismiss=dismissWork, reload=pullActivity)
-              // The public collection: written, saved and published here, each only by the person's own press.
-              if e.name == "publicPage"
-                column navigationKey=`${e.id}` navigationScroll="public-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="public-scroll" flex=1 min-height=0
-                    Page(testId="public")
-                      Section(testId="public-top")
-                        Title(text="Public page", testId="public-title")
-                      if not pub.loaded
-                        Section(testId="public-wait")
-                          if pubLoadError != ""
-                            FailLine(text=pubLoadError, testId="public-load-error")
-                          else
-                            QuietLine(text="Loading…", testId="public-loading")
+      width="100%" height="100%" display="flex" flex-direction=(lookWide(viewport.width) ? "row" : "column") font-family="'Geist', system-ui" background-color="look.paper" color="look.ink" color-scheme="dark"
+      // The shell (DESIGN.md section 4): the places in a sidebar from 1040px wide, in one bar across the top under it,
+      // and the page area beside or under them. Record holds Experience, Stories, Skills, Profile, Direction, Details
+      // and Sources; System holds the Public page and the machine.
+      MainLine(side=lookWide(viewport.width), testId="nav")
+        NavTab(label="Home", current=(nav.tab == "home"), quiet=false, far=false, side=lookWide(viewport.width), controls="panel-home", press=pick("home"), testId="nav-home")
+        NavTab(label="Record", current=inRecord, quiet=false, far=false, side=lookWide(viewport.width), controls="panel-bank", press=pick("bank"), testId="nav-record")
+        NavTab(label="Jobs", current=(nav.tab == "jobs"), quiet=false, far=false, side=lookWide(viewport.width), controls="panel-jobs", press=pick("jobs"), testId="nav-jobs")
+        NavTab(label="Talk", current=(nav.tab == "talk"), quiet=false, far=false, side=lookWide(viewport.width), controls="panel-talk", press=pick("talk"), testId="nav-talk")
+        NavTab(label="Activity", current=(nav.tab == "activity"), quiet=false, far=false, side=lookWide(viewport.width), controls="panel-activity", press=pick("activity"), testId="nav-activity")
+        NavTab(label="System", current=inSystem, quiet=true, far=true, side=lookWide(viewport.width), controls="panel-publicPage", press=openPublic, testId="nav-system")
+      // The page area. Beside the sidebar it moves in by the rest of the wide page inset (lookShellInset).
+      column flex=1 min-width=0 min-height=0 display="flex" flex-direction="column" padding-left=(lookWide(viewport.width) ? lookShellInset() : "0rem")
+        // The activity list could not be had three times in a row (the studio restarting, the network gone): one line,
+        // at the top of the page area, until it answers again.
+        if activityDown
+          SubBar(testId="studio-down")
+            Line(text="The studio can’t be reached right now. It will try again.", testId="studio-down-line")
+        // The second line of a place that holds several screens, drawn once, at the top of the page area.
+        if inRecord
+          SubBar(testId="subnav")
+            RecordNav(at=recordAt, go=goRecord)
+        if inSystem
+          SubBar(testId="subnav")
+            SystemNav(at=top(nav).name, go=goSystem)
+        column flex=1 min-height=0 position="relative"
+          for t in nav.tabs key=t.name
+            // The bar is the app's own (appearance="none"), so the app hides the tabs not shown (DESIGN.md; docs/recipes/tabs.md).
+            column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0 display=(nav.tab == t.name ? "flex" : "none")
+              for e in t.stack key=e.id
+                if e.name == "home"
+                  column navigationKey=`${e.id}` navigationScroll="home-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="home-scroll" flex=1 min-height=0
+                      HomeScreen(list=homeList, failedToLoad=failed(homeList), items=homeItems, focus=homeFocusList, rest=homeRest, picked=homePicked, draft=homeDraft, heldLine=heldLine, refusedKey=refusedKey, refusedError=refusedError, keys=homeKeys, wide=(viewport.width >= lookNarrow()), focusItem=focusItem, choose=chooseItem, type=typeAnswer, save=saveAnswer, snooze=snoozeItem, undo=undoHeld, retry=retryHome, digest=shownDigest)
+                // Experience: one screen for each of its routes, drawn for the top of the tab's stack only, so its rows'
+                // testIds and its scrollers' ids are never on the page twice.
+                if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
+                  column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
+                    ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine, tell=tellIt, story=tellStory, again=writeStoryAgain)
+                if e.name == "tell"
+                  column navigationKey=`${e.id}` navigationScroll="tell-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="tell-scroll" flex=1 min-height=0
+                      TellScreen(sitting=sitting, failed=failed(sitting), draft=tellField, sending=pending(tellAnswered), stopping=pending(tellStopped), deleting=pending(tellDeleted), error=tellError, asking=tellAsking, sittingAsked=sittingAsked, removingSitting=pending(sittingDeleted), edit=editTell, send=sendTell, dontKnow=tellDontKnow, stop=stopTell, askDelete=askTellDelete, keep=keepTellAnswer, remove=removeTellAnswer, askSitting=askSittingDelete, keepSitting=keepSitting, removeSitting=removeSitting, retry=pullSitting)
+                // Stories: one screen for the list and for a story open, drawn for the top of the tab's stack only.
+                if (e.name == "stories" or e.name == "story") and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
+                  column navigationKey=`${e.id}` navigationScroll=`stories-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
+                    StoriesScreen(list=stories, listFailed=failed(stories), story=storyShown, storyFailed=failed(storyShown), s=storyState, a=askedState, scrollId=`stories-${e.id}`, write=writeSpoken, edit=editSpoken, cancelEdit=cancelSpoken, save=saveSpokenText, practise=practise, startTimer=startTimer, stopTimer=stopTimer, cancelTimer=cancelTimer, togglePractices=togglePractices, askPracticeDelete=askPracticeDelete, keepPractice=keepPractice, removePractice=removePractice, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, choose=chooseStory, noStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked, retry=pullStories)
+                if e.name == "skills"
+                  column navigationKey=`${e.id}` navigationScroll="skills-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="skills-scroll" flex=1 min-height=0
+                      SkillsScreen(list=skillsList, failedToLoad=failed(skillsList), held=heldSkill, heldMark=heldSkillMark, heldName=heldSkillName, sent=sentMarks, error=skillError, opened=openSkill, reviewing=pending(skillsReviewed), wide=(viewport.width >= lookNarrow()), mark=markSkillTap, undo=undoSkill, review=reviewSkillList, toggle=toggleSkillFacts, retry=retrySkills)
+                if e.name == "profile"
+                  column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="profile-scroll" flex=1 min-height=0
+                      ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=workAhead(activity.items, "write-profile", "1"), usual=workUsual(activity.items, "write-profile", "1"), state=workStatus(activity.items, "write-profile", "1", profile.status), write=writeProfile, retry=pull,
+                        me=me, meFailed=failed(me), meError=meError, retryMe=pullMe, notes=notes, you=you, youFailed=failed(you), youError=youError, retryYou=pullYou, wide=lookWide(viewport.width),
+                        draft=youDraft, draftChanged=youDraftChanged, answerError=askRefusal, answering=youBusy, editDraft=editYouDraft, answer=answerYou, skip=skipYou, useDraft=useYouDraft, clearDraft=clearYouDraft,
+                        editing=standEditing, lineDraft=standDraft, lineError=(standAct == "edit" ? standSaveError : ""), standError=standOtherError, standBusy=standBusy, originalLine=standOriginal, editingTitle=standTitle,
+                        startLine=startStandLine, editLine=editStandLine, saveLine=saveStandLine, cancelLine=cancelStandLine, leaveOut=leaveStandOut, restore=restoreStandLine, bringBack=bringBackStandLine)
+                if e.name == "told"
+                  column navigationKey=`${e.id}` navigationScroll="told-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="told-scroll" flex=1 min-height=0
+                      ToldScreen(told=told, failed=failed(told), error=toldError, back=back, retry=pullTold)
+                if e.name == "talk"
+                  column navigationKey=`${e.id}` navigationScroll=(talk.loaded and talk.messages.length > 0 ? "transcript" : "talk-scroll") navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                    TalkScreen(talk=talk, work=activity.items, usual=kindUsual(activity, "write-reply"), failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
+                if e.name == "questions"
+                  column navigationKey=`${e.id}` navigationScroll="questions-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="questions-scroll" flex=1 min-height=0
+                      QuestionsScreen(talk=talk, error=askTalkError, asking=pending(talkAsked), back=back, ask=askQuestion)
+                if e.name == "details"
+                  column navigationKey=`${e.id}` navigationScroll="details-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="details-scroll" flex=1 min-height=0
+                      if me.loaded
+                        DetailsScreen(me=me, error=personError, busy=pending(personSaved), save=savePerson, cancel=back)
                       else
-                        Section(testId="public-live-section")
-                          SectionHead(text="On the public page", testId="public-live-head")
-                          if liveHere
-                            WorkLine(word=statusWord("public", (isLive ? "live" : "offline")), place="", text=liveLine, testId="public-live")
-                          else
-                            Line(text=liveLine, testId="public-live")
-                          if liveNote != ""
-                            QuietLine(text=liveNote, testId="public-live-note")
-                          if (pubAct == "publish" and publishError != "") or (pubAct == "unpublish" and unpublishError != "")
-                            FailLine(text=(pubAct == "publish" ? `Not published. ${publishError}` : `The chat is still on. ${unpublishError}`), testId="public-live-error")
-                          if liveHere
-                            MainAction(label=(pending(published) ? "Publishing…" : "Publish saved text"), press=askPublish, disabled=(not canPublish), keys="", testId="public-publish")
-                          if isLive
-                            DangerAction(label=(pending(unpublished) ? "Taking the chat offline…" : "Take the chat offline"), press=askUnpublish, disabled=(pending(unpublished) or pending(published)), testId="public-unpublish")
-                          if (live.loaded and live.where == "starting") or liveError != ""
-                            Action(label="Check again", press=recheckLive, disabled=pending(live), keys="", testId="public-recheck")
-                          QuietLine(text=(not liveHere ? "The public chat answers only from text you publish." : pubDirty ? "Save your changes first. Only the saved text can be published." : "Publishing puts your saved text on the public page."), testId="public-live-hint")
-                        Section(testId="public-collection")
-                          SectionHead(text="Public collection", testId="public-collection-head")
-                          textarea value=pubField input=editPublic rows=16 aria-label="Public collection" testId="public-text"
-                            placeholder="What anyone may ask the public chat about: your work, your projects and your interests, in your words."
-                          if pubTooLong
-                            FailLine(text=pubState, testId=(pubDirty ? "public-unsaved" : "public-saved"))
-                          else if pubDirty
-                            StrongLine(text=pubState, testId="public-unsaved")
-                          else
-                            QuietLine(text=pubState, testId="public-saved")
-                          if pubField.length > 96000 and not pubTooLong
-                            QuietLine(text=`${thousands(pubField.length)} of 120,000 characters`, testId="public-count")
-                          if pubAct == "save" and pubSaveError != ""
-                            FailLine(text=`Not saved. ${pubSaveError}`, testId="public-save-error")
-                          MainAction(label=(pending(pubSaved) ? "Saving…" : "Save"), press=saveCollection, disabled=(not pubDirty or pubTooLong or pubField.trim() == "" or pending(pubSaved)), keys="", testId="public-save")
-                        Section(testId="public-drafting")
-                          Action(label=(pending(drafted) ? "Making a draft…" : "Start from my record"), press=askDraft, disabled=pending(drafted), keys="", testId="public-draft")
-                          if pubAct == "draft" and draftError != ""
-                            FailLine(text=`No draft was made. ${draftError}`, testId="public-draft-error")
-                          QuietLine(text="Puts a draft made from the facts in your record into the field. Nothing is saved until you press Save.", testId="public-draft-hint")
-                        Section(testId="public-notes")
-                          SectionHead(text="Lines to check before you publish", testId="public-notes-head")
-                          if notesStale
-                            QuietLine(text="These notes were for the text before your latest edits.", testId="public-notes-stale")
-                            Action(label=(pending(checked) ? "Checking…" : "Check the field again"), press=checkAgain, disabled=pending(checked), keys="", testId="public-check")
-                            if pubAct == "check" and noteCheckError != ""
-                              FailLine(text=noteCheckError, testId="public-check-error")
-                          else if shownNotes.length == 0
-                            QuietLine(text="No lines to check.", testId="public-notes-none")
-                          else
-                            for n, i in shownNotes key=`${n.line} ${n.kind}`
-                              column
-                                QuietLine(text=noteLabel(n), testId=`public-note-${i}`)
-                                Line(text=n.text, testId=`public-note-text-${i}`)
-                          QuietLine(text="Advice only: these lines may hold money, a person or client, a link, or inside knowledge. You decide what is public.", testId="public-notes-hint")
-              // The cloud machine, from the studio's Worker: backups first, then the model's sign-in, then the machine itself.
-              if e.name == "system"
-                column navigationKey=`${e.id}` navigationScroll="system-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="system-scroll" flex=1 min-height=0
-                    Page(testId="system")
-                      Section(testId="system-top")
-                        Title(text="Backups and sign-in", testId="system-title")
-                      if not sys.loaded or sys.where != "here"
-                        Section(testId="system-wait")
-                          if sys.loaded and sys.where == "absent"
-                            Line(text="Backups and sign-in work only in the deployed studio.", testId="system-absent")
-                          else if sys.loaded and sys.where == "starting"
-                            Line(text="The machine is starting. Try again in a moment.", testId="system-starting")
-                            Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
-                          else if sysLoadError != ""
-                            FailLine(text=`Couldn’t check the machine. ${sysLoadError}`, testId="system-error")
-                            Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
-                          else
-                            QuietLine(text="Checking the machine…", testId="system-loading")
-                        // On a machine with no studio around it a new record can still be started, with no backup.
-                        if sys.loaded and sys.where == "absent"
-                          NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
+                        RecordWait(title="Details", waiting=(not failed(me)), message="Your details couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="details-wait")
+                if e.name == "direction"
+                  column navigationKey=`${e.id}` navigationScroll="direction-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="direction-scroll" flex=1 min-height=0
+                      if notes.loaded
+                        DirectionScreen(body=notes.body, error=notesError, busy=pending(notesSaved), save=saveNotes, cancel=back)
                       else
-                        if sys.backupError != ""
-                          Section(testId="system-backup-failed")
-                            FailLine(text="The last backup failed.", testId="system-backup-failed-head")
-                            Line(text=sys.backupError, testId="system-backup-error")
-                            QuietLine(text="Changes since the last good backup are only on the machine.", testId="system-backup-failed-hint")
-                        Section(testId="system-safety")
-                          SectionHead(text="Data safety", testId="system-safety-head")
-                          Labelled(label="Last backup", value=(sys.backupAt > 0 ? agoAndWhen(sys.backupAt, sys.backupWhen, nowMs) : "None since the machine started"), testId="system-last-backup")
-                          Labelled(label="Changes not backed up", value=(not sys.unsaved ? "None" : sys.unsavedSince > 0 ? `Yes, since ${agoAndWhen(sys.unsavedSince, sys.unsavedWhen, nowMs)}` : "Yes"), testId="system-unsaved")
-                          if sys.startedFrom != ""
-                            Labelled(label="Started from", value=sys.startedFrom, testId="system-started-from")
-                          if pending(backedUp)
-                            WorkLine(word="Running", place="", text="Backing up. Usually a few minutes.", testId="system-backup-work")
-                          Action(label="Back up now", press=backUp, disabled=pending(backedUp), keys="", testId="system-backup")
-                          if sysAct == "backup" and backupReply != ""
-                            if backupFailed
-                              FailLine(text=backupReply, testId="system-backup-result")
+                        RecordWait(title="Direction", waiting=(not failed(notes)), message="Your direction notes couldn’t be loaded. Open them again in a moment.", backLabel="", back=back, testId="direction-wait")
+                if e.name == "activity"
+                  column navigationKey=`${e.id}` navigationScroll="activity-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="activity-scroll" flex=1 min-height=0
+                      ActivityScreen(activity=activity, failed=failed(activity), loadError=activityError, digest=shownDigest, acted=actedWork, error=workError, busy=(pending(workRetried) or pending(workDismissed)), wide=wide, retry=retryWork, dismiss=dismissWork, reload=pullActivity)
+                // The public collection: written, saved and published here, each only by the person's own press.
+                if e.name == "publicPage"
+                  column navigationKey=`${e.id}` navigationScroll="public-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="public-scroll" flex=1 min-height=0
+                      Page(testId="public")
+                        Section(testId="public-top")
+                          Title(text="Public page", testId="public-title")
+                        if not pub.loaded
+                          Section(testId="public-wait")
+                            if pubLoadError != ""
+                              FailLine(text=pubLoadError, testId="public-load-error")
                             else
-                              QuietLine(text=backupReply, testId="system-backup-result")
-                        NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
-                        Section(testId="system-login")
-                          SectionHead(text="ChatGPT sign-in", testId="system-login-head")
-                          Line(text=modelLine(sys), testId="system-model")
-                          if modelDetail(sys) != ""
-                            QuietLine(text=modelDetail(sys), testId="system-model-detail")
-                          if loginWaiting
-                            Line(text="Open the address, sign in to ChatGPT, and type this code.", testId="system-login-steps")
-                            StrongLine(text=loginNow.code, testId="system-login-code")
-                            OutLink(label=loginNow.url, href=loginNow.url, testId="system-login-url")
-                            Action(label="Cancel", press=cancelSignIn, disabled=pending(loginCancelled), keys="", testId="system-login-cancel")
-                          else
-                            if loginNow.state == "done"
-                              QuietLine(text="Signed in to ChatGPT.", testId="system-login-result")
-                            if loginNow.state == "failed"
-                              FailLine(text=`Sign-in failed. ${loginNow.detail}`, testId="system-login-result")
-                            if pending(loginAsked)
-                              WorkLine(word="Running", place="", text="Starting the sign-in. Usually a minute or two.", testId="system-sign-in-work")
-                            Action(label="Sign in again", press=signIn, disabled=pending(loginAsked), keys="", testId="system-sign-in")
-                          if (sysAct == "login" and loginError != "") or (sysAct == "cancel" and cancelError != "")
-                            FailLine(text=(sysAct == "login" ? loginError : cancelError), testId="system-login-error")
-                        Section(testId="system-machine-section")
-                          SectionHead(text="Machine", testId="system-machine-head")
-                          Labelled(label="State", value=(sys.note != "" and sys.machine != "running" ? `${machineLine(sys)}. ${sys.note}` : machineLine(sys)), testId="system-machine")
-                          if not sys.keeper
-                            QuietLine(text="Its details appear once it is up.", testId="system-machine-wait")
-                          if sys.startedAt > 0
-                            Labelled(label="Started", value=agoAndWhen(sys.startedAt, sys.startedWhen, nowMs), testId="system-started")
-                          for p in sys.programs key=p.name
-                            if p.ok
-                              Line(text=`${p.name} works.`, testId=`system-program-${p.name}`)
-                            else
-                              FailLine(text=(p.detail != "" ? `${p.name} failed: ${p.detail}` : `${p.name} failed.`), testId=`system-program-${p.name}`)
-              if e.name == "jobs"
-                column navigationKey=`${e.id}` navigationScroll="jobs-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="jobs-scroll" flex=1 min-height=0
-                    JobsScreen(jobs=jobs, leads=leads, failed=failed(jobs), error=jobsError, stage=stageTab, query=jobQuery, freshOnly=freshOnly, shown=shownJobs, shownLeads=shownLeads, saved=savedJobs, active=activeJobs, done=doneJobs, checking=checking, leadsNote=leadsNote, rowError=rowError, rowJob=rowJob, wide=wide, setStage=setStage, search=searchJobs, setFresh=setFresh, pickOutcome=pickRowOutcome, add=openAddJob, watchlist=openCompanies, retry=pull)
-              if e.name == "job"
-                column navigationKey=`${e.id}` navigationScroll="job-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="job-scroll" flex=1 min-height=0
-                    if not job.loaded or job.id != e.params.id
-                      RecordWait(title="Job", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=back, testId="job-wait")
-                    else
-                      JobScreen(job=job, work=activity.items, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength, asked=jobAsked, askedState=askedState, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, chooseStory=chooseStory, markNoStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked)
-              if e.name == "resume"
-                column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="resume-scroll" flex=1 min-height=0
-                    if not job.loaded or job.id != e.params.id or not resumeView.loaded
-                      RecordWait(title="Resume", waiting=(not failed(job) and not failed(resumeView)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
-                    else
-                      ResumeScreen(job=job, view=resumeView, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume, decide=decideSuggestion, deciding=pending(suggestionDecided), suggestError=suggestError)
-              if e.name == "editResume"
-                column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="resume-editor-scroll" flex=1 min-height=0
-                    if not job.loaded or job.id != e.params.id
-                      RecordWait(title="Edit the resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back", back=back, testId="resume-editor-wait")
-                    else
-                      EditResumeScreen(body=job.resume, error=resumeError, busy=pending(resumeSaved), save=saveResume, cancel=back)
-              if e.name == "lead"
-                column navigationKey=`${e.id}` navigationScroll="lead-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="lead-scroll" flex=1 min-height=0
-                    if not lead.loaded or lead.id != e.params.id
-                      RecordWait(title="Found job", waiting=(not failed(lead)), message="This posting couldn’t be loaded. It may have closed.", backLabel="Back to jobs", back=back, testId="lead-wait")
-                    else
-                      LeadScreen(lead=lead, error=leadError, taking=pending(leadTaken), back=back, take=takeLead, askDismiss=askDismissLead)
-              if e.name == "companies"
-                column navigationKey=`${e.id}` navigationScroll="companies-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="companies-scroll" flex=1 min-height=0
-                    CompaniesScreen(companies=companies, loadError=companiesError, link=companyLink, act=watchAct, addError=companyError, checkError=checkError, removeError=removeCompanyError, adding=pending(companyAdded), checking=checking, checkBusy=pending(checkAsked), wide=wide, back=back, editLink=editCompanyLink, add=addCompany, check=checkNow, askRemove=askRemoveCompany)
-              if e.name == "addJob"
-                column navigationKey=`${e.id}` navigationScroll="add-job-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="add-job-scroll" flex=1 min-height=0
-                    AddJobScreen(url=jobUrl, posting=jobText, refusal=jobRefusal, sending=pending(jobAdded), hint=jobHint, editUrl=editJobUrl, editText=editJobText, add=addJob, cancel=leaveAddJob)
-              if e.name == "sources"
-                column navigationKey=`${e.id}` navigationScroll="sources-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="sources-scroll" flex=1 min-height=0
-                    Page(testId="sources")
-                      Section(testId="sources-top")
-                        Title(text="Sources", testId="sources-title")
-                        if lib.loaded and lib.items.length > 0
-                          QuietLine(text=`${readCount} of ${lib.items.length} read. Each source is read for facts about your work, one at a time.`, testId="sources-count")
-                          MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="add-source")
-                      if not lib.loaded
-                        Section(testId="sources-wait")
-                          if failed(lib)
-                            FailLine(text=libError, testId="sources-error")
-                            Action(label="Try again", press=pull, disabled=false, keys="", testId="sources-retry")
-                          else
-                            QuietLine(text="Loading your sources…", testId="sources-loading")
-                      else if lib.items.length == 0
-                        Section(testId="sources-empty")
-                          Line(text="A source is something the studio reads for facts about your work: pasted text, a file or a git repository.", testId="sources-empty-text")
-                          MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="sources-add")
-                      else
-                        Section(testId="sources-list")
-                          for s in lib.items key=s.id
-                            Record(code="", name=s.title, href=`/source/${s.id}`, strong=false, dates="", extent=(s.status == "done" ? factCount(s.facts) : sourceKind(s.kind)), word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), showWord=(workStatus(activity.items, "read-source", s.id, s.status) != "done"), place=workPlace(activity.items, "read-source", s.id), provenance="", wide=wide, testId=`source-${s.id}`)
-              if e.name == "source"
-                column navigationKey=`${e.id}` navigationScroll="source-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="source-scroll" flex=1 min-height=0
-                    if lib.items.filter(x => x.id == e.params.id).length == 0
-                      RecordWait(title="Source", waiting=(not lib.loaded and libError == ""), message=(lib.loaded ? "This source was deleted." : libError), backLabel="Back to Sources", back=back, testId="source-gone")
-                    for s in lib.items.filter(x => x.id == e.params.id) key=s.id
-                      Page(testId="source")
-                        Section(testId="source-top")
-                          Action(label="Back to Sources", press=back, disabled=false, keys="", testId="source-back")
-                        Section(testId="source-head")
-                          Title(text=s.title, testId="source-title")
-                          if inHand(workStatus(activity.items, "read-source", s.id, s.status))
-                            WorkLine(word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), place=workPlace(activity.items, "read-source", s.id), text=sourceLine(s, workStatus(activity.items, "read-source", s.id, s.status), workUsual(activity.items, "read-source", s.id)), testId="source-status")
-                          else if s.status == "failed"
-                            FailLine(text=sourceLine(s, s.status, -1), testId="source-status")
-                          else
-                            Line(text=sourceLine(s, s.status, -1), testId="source-status")
-                          Labelled(label=sourceKind(s.kind), value=s.detail, testId="source-what")
-                        Section(testId="source-actions")
-                          if actedSource == s.id and (lastSourceAct == "remove" ? removeSourceError : rereadError) != ""
-                            FailLine(text=(lastSourceAct == "remove" ? removeSourceError : rereadError), testId="source-error")
-                          Action(label="Read again", press=readAgain, disabled=(pending(reread) or inHand(workStatus(activity.items, "read-source", s.id, s.status))), keys="", testId="source-read")
-                          DangerAction(label="Delete source", press=askRemoveSource, disabled=false, testId="source-delete")
-                          QuietLine(text=(inHand(workStatus(activity.items, "read-source", s.id, s.status)) ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited."), testId="source-hint")
-              if e.name == "add"
-                column navigationKey=`${e.id}` navigationScroll="add-scroll" position="absolute" inset=0 background-color="look.paper"
-                  scroll id="add-scroll" flex=1 min-height=0
-                    Page(testId="add")
-                      Section(testId="add-top")
-                        Title(text="Add a source", testId="add-heading")
-                        Choices(label="Kind of source")
-                          ChoiceWord(label="Text", chosen=(kind == "text"), press=setKind("text"), testId="kind-text")
-                          ChoiceWord(label="File", chosen=(kind == "file"), press=setKind("file"), testId="kind-file")
-                          ChoiceWord(label="Folder", chosen=(kind == "repo"), press=setKind("repo"), testId="kind-repo")
-                          ChoiceWord(label="GitHub", chosen=(kind == "github"), press=setKind("github"), testId="kind-github")
-                      if kind == "text"
-                        Section(testId="add-text-form")
-                          FieldLabel(label="Title")
-                            input value=draftTitle input=editTitle submit=add placeholder="Such as Resume 2024" aria-label="Title" autofocus=true enterkeyhint="next" testId="add-title"
-                          FieldLabel(label="Text to read")
-                            textarea value=draftText input=editText placeholder="Paste a resume, a LinkedIn profile or a review" aria-label="Text to read" rows=8 aria-invalid=(refusal != "") testId="add-text"
-                          if refusal != "" and not pending(added)
-                            FailLine(text=refusal, testId="add-error")
-                      if kind == "file"
-                        Section(testId="add-file-form")
-                          if pickedName != ""
-                            Labelled(label="Chosen file", value=pickedName, testId="add-picked")
-                          Action(label=(pickedName == "" ? "Choose a file" : "Choose another file"), press=choosePicked, disabled=false, keys="", testId="add-choose")
-                          input type="file" id="add-pick" display="none" change=filePicked aria-label="File to add" testId="add-pick"
-                          if refusal != "" and not pending(added)
-                            FailLine(text=refusal, testId="add-error")
-                          QuietLine(text="PDF, Word or text, or a LinkedIn export zip. Up to 25 MB.", testId="add-file-hint")
-                        if inbox.files.length > 0
-                          Section(testId="add-inbox")
-                            SectionHead(text="Already in the studio’s inbox", testId="add-inbox-head")
-                            FieldLabel(label="File")
-                              select value=draftFile change=pickFile aria-label="File already in the studio’s inbox" align-self="flex-start" max-width="100%" testId="add-file"
-                                option "None" value=""
-                                for name in inbox.files key=name
-                                  option name value=name
-                      if kind == "github"
-                        if not hub.loaded
-                          Section(testId="add-hub-wait")
-                            if failed(hub)
-                              FailLine(text="GitHub couldn’t be asked just now. Try again in a moment.", testId="hub-error")
-                              Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
-                            else
-                              QuietLine(text="Loading your repositories…", testId="hub-loading")
-                        else if not hub.connected or hub.error != ""
-                          Section(testId="add-hub-wait")
-                            Line(text=hub.error, testId="hub-error")
-                            Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
+                              QuietLine(text="Loading…", testId="public-loading")
                         else
-                          Section(testId="add-hub")
-                            SearchField(value=hubQuery, label="Search repositories", hint="Search repositories", change=searchHub, testId="hub-search")
-                            QuietLine(text=(chosen.length == 0 ? `Signed in to GitHub as ${hub.login}. Only your own commits are read.` : `${chosen.length} ${chosen.length == 1 ? "repository" : "repositories"} chosen.`), testId="hub-who")
-                            if hubExtras > 0
-                              CheckLine(label="Show forks and archived", detail="", checked=showExtra, disabled=false, change=tickExtra, testId="hub-extra")
-                          for o in hub.owners.filter(o => hubShown.filter(r => r.owner == o).length > 0) key=o
-                            Section(testId=`add-owner-${o}`)
-                              SectionHead(text=o, testId=`add-owner-${o}-head`)
-                              for r in hubShown.filter(r => r.owner == o) key=r.full
-                                CheckLine(label=r.full, detail=(r.added ? "Already a source" : r.detail), checked=(chosen.includes(r.full)), disabled=r.added, change=tickRepo(r.full), testId=`repo-${r.full}`)
-                          if (refusal != "" and not pending(added)) or hubShown.length == 0
-                            Section(testId="add-hub-end")
-                              if refusal != "" and not pending(added)
-                                FailLine(text=refusal, testId="add-error")
-                              if hubShown.length == 0
-                                QuietLine(text=(hub.repos.length == 0 ? "No repositories found." : hubQuery.trim() == "" ? "Only forks and archived repositories here. Turn them on above." : `No repository matches “${hubQuery.trim()}”.`), testId="hub-none")
-                      if kind == "repo"
-                        Section(testId="add-repo-form")
-                          FieldLabel(label="Folder")
-                            input value=draftRepo input=editRepo submit=add placeholder="/srv/code/app" aria-label="Repository folder"
-                              autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="next" aria-invalid=(refusal != "") testId="add-repo"
-                          FieldLabel(label="Author")
-                            input value=author input=editAuthor submit=add placeholder="Name or email" aria-label="Commit author"
-                              autocapitalize="none" autocomplete="off" enterkeyhint="done" testId="add-author"
-                          if refusal != "" and not pending(added)
-                            FailLine(text=refusal, testId="add-error")
-                          QuietLine(text="A repository folder on the studio’s computer. Only commits by this author count as yours. The history and the code are read, and the repository is never changed.", testId="add-repo-hint")
-                      Section(testId="add-actions")
-                        QuietLine(text=(addHint != "" ? addHint : "What you add is read, and what is found in it goes into your record."), testId="add-hint")
-                        Actions(testId="add-actions-row")
-                          MainAction(label="Add", press=add, disabled=(addHint != ""), keys="", testId="add-save")
-                          Action(label="Cancel", press=leaveAdd, disabled=false, keys="", testId="add-cancel")
+                          Section(testId="public-live-section")
+                            SectionHead(text="On the public page", testId="public-live-head")
+                            if liveHere
+                              WorkLine(word=statusWord("public", (isLive ? "live" : "offline")), place="", text=liveLine, testId="public-live")
+                            else
+                              Line(text=liveLine, testId="public-live")
+                            if liveNote != ""
+                              QuietLine(text=liveNote, testId="public-live-note")
+                            if (pubAct == "publish" and publishError != "") or (pubAct == "unpublish" and unpublishError != "")
+                              FailLine(text=(pubAct == "publish" ? `Not published. ${publishError}` : `The chat is still on. ${unpublishError}`), testId="public-live-error")
+                            if liveHere
+                              MainAction(label=(pending(published) ? "Publishing…" : "Publish saved text"), press=askPublish, disabled=(not canPublish), keys="", testId="public-publish")
+                            if isLive
+                              DangerAction(label=(pending(unpublished) ? "Taking the chat offline…" : "Take the chat offline"), press=askUnpublish, disabled=(pending(unpublished) or pending(published)), testId="public-unpublish")
+                            if (live.loaded and live.where == "starting") or liveError != ""
+                              Action(label="Check again", press=recheckLive, disabled=pending(live), keys="", testId="public-recheck")
+                            QuietLine(text=(not liveHere ? "The public chat answers only from text you publish." : pubDirty ? "Save your changes first. Only the saved text can be published." : "Publishing puts your saved text on the public page."), testId="public-live-hint")
+                          Section(testId="public-collection")
+                            SectionHead(text="Public collection", testId="public-collection-head")
+                            textarea value=pubField input=editPublic rows=16 aria-label="Public collection" testId="public-text"
+                              placeholder="What anyone may ask the public chat about: your work, your projects and your interests, in your words."
+                            if pubTooLong
+                              FailLine(text=pubState, testId=(pubDirty ? "public-unsaved" : "public-saved"))
+                            else if pubDirty
+                              StrongLine(text=pubState, testId="public-unsaved")
+                            else
+                              QuietLine(text=pubState, testId="public-saved")
+                            if pubField.length > 96000 and not pubTooLong
+                              QuietLine(text=`${thousands(pubField.length)} of 120,000 characters`, testId="public-count")
+                            if pubAct == "save" and pubSaveError != ""
+                              FailLine(text=`Not saved. ${pubSaveError}`, testId="public-save-error")
+                            Action(label=(pending(pubSaved) ? "Saving…" : "Save"), press=saveCollection, disabled=(not pubDirty or pubTooLong or pubField.trim() == "" or pending(pubSaved)), keys="", testId="public-save")
+                          Section(testId="public-drafting")
+                            Action(label=(pending(drafted) ? "Making a draft…" : "Start from my record"), press=askDraft, disabled=pending(drafted), keys="", testId="public-draft")
+                            if pubAct == "draft" and draftError != ""
+                              FailLine(text=`No draft was made. ${draftError}`, testId="public-draft-error")
+                            QuietLine(text="Puts a draft made from the facts in your record into the field. Nothing is saved until you press Save.", testId="public-draft-hint")
+                          Section(testId="public-notes")
+                            SectionHead(text="Lines to check before you publish", testId="public-notes-head")
+                            if notesStale
+                              QuietLine(text="These notes were for the text before your latest edits.", testId="public-notes-stale")
+                              Action(label=(pending(checked) ? "Checking…" : "Check the field again"), press=checkAgain, disabled=pending(checked), keys="", testId="public-check")
+                              if pubAct == "check" and noteCheckError != ""
+                                FailLine(text=noteCheckError, testId="public-check-error")
+                            else if shownNotes.length == 0
+                              QuietLine(text="No lines to check.", testId="public-notes-none")
+                            else
+                              for n, i in shownNotes key=`${n.line} ${n.kind}`
+                                column
+                                  QuietLine(text=noteLabel(n), testId=`public-note-${i}`)
+                                  Line(text=n.text, testId=`public-note-text-${i}`)
+                            QuietLine(text="Advice only: these lines may hold money, a person or client, a link, or inside knowledge. You decide what is public.", testId="public-notes-hint")
+                // The cloud machine, from the studio's Worker: backups first, then the model's sign-in, then the machine itself.
+                if e.name == "system"
+                  column navigationKey=`${e.id}` navigationScroll="system-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="system-scroll" flex=1 min-height=0
+                      Page(testId="system")
+                        Section(testId="system-top")
+                          Title(text="Backups and sign-in", testId="system-title")
+                        if not sys.loaded or sys.where != "here"
+                          Section(testId="system-wait")
+                            if sys.loaded and sys.where == "absent"
+                              Line(text="Backups and sign-in work only in the deployed studio.", testId="system-absent")
+                            else if sys.loaded and sys.where == "starting"
+                              Line(text="The machine is starting. Try again in a moment.", testId="system-starting")
+                              Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
+                            else if sysLoadError != ""
+                              FailLine(text=`Couldn’t check the machine. ${sysLoadError}`, testId="system-error")
+                              Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
+                            else
+                              QuietLine(text="Checking the machine…", testId="system-loading")
+                          // On a machine with no studio around it a new record can still be started, with no backup.
+                          if sys.loaded and sys.where == "absent"
+                            NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
+                        else
+                          if sys.backupError != ""
+                            Section(testId="system-backup-failed")
+                              FailLine(text="The last backup failed.", testId="system-backup-failed-head")
+                              Line(text=sys.backupError, testId="system-backup-error")
+                              QuietLine(text="Changes since the last good backup are only on the machine.", testId="system-backup-failed-hint")
+                          Section(testId="system-safety")
+                            SectionHead(text="Data safety", testId="system-safety-head")
+                            Labelled(label="Last backup", value=(sys.backupAt > 0 ? agoAndWhen(sys.backupAt, sys.backupWhen, nowMs) : "None since the machine started"), testId="system-last-backup")
+                            Labelled(label="Changes not backed up", value=(not sys.unsaved ? "None" : sys.unsavedSince > 0 ? `Yes, since ${agoAndWhen(sys.unsavedSince, sys.unsavedWhen, nowMs)}` : "Yes"), testId="system-unsaved")
+                            if sys.startedFrom != ""
+                              Labelled(label="Started from", value=sys.startedFrom, testId="system-started-from")
+                            if pending(backedUp)
+                              WorkLine(word="Running", place="", text="Backing up. Usually a few minutes.", testId="system-backup-work")
+                            Action(label="Back up now", press=backUp, disabled=pending(backedUp), keys="", testId="system-backup")
+                            if sysAct == "backup" and backupReply != ""
+                              if backupFailed
+                                FailLine(text=backupReply, testId="system-backup-result")
+                              else
+                                QuietLine(text=backupReply, testId="system-backup-result")
+                          NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
+                          Section(testId="system-login")
+                            SectionHead(text="ChatGPT sign-in", testId="system-login-head")
+                            Line(text=modelLine(sys), testId="system-model")
+                            if modelDetail(sys) != ""
+                              QuietLine(text=modelDetail(sys), testId="system-model-detail")
+                            if loginWaiting
+                              Line(text="Open the address, sign in to ChatGPT, and type this code.", testId="system-login-steps")
+                              StrongLine(text=loginNow.code, testId="system-login-code")
+                              OutLink(label=loginNow.url, href=loginNow.url, testId="system-login-url")
+                              Action(label="Cancel", press=cancelSignIn, disabled=pending(loginCancelled), keys="", testId="system-login-cancel")
+                            else
+                              if loginNow.state == "done"
+                                QuietLine(text="Signed in to ChatGPT.", testId="system-login-result")
+                              if loginNow.state == "failed"
+                                FailLine(text=`Sign-in failed. ${loginNow.detail}`, testId="system-login-result")
+                              if pending(loginAsked)
+                                WorkLine(word="Running", place="", text="Starting the sign-in. Usually a minute or two.", testId="system-sign-in-work")
+                              Action(label="Sign in again", press=signIn, disabled=pending(loginAsked), keys="", testId="system-sign-in")
+                            if (sysAct == "login" and loginError != "") or (sysAct == "cancel" and cancelError != "")
+                              FailLine(text=(sysAct == "login" ? loginError : cancelError), testId="system-login-error")
+                          Section(testId="system-machine-section")
+                            SectionHead(text="Machine", testId="system-machine-head")
+                            Labelled(label="State", value=(sys.note != "" and sys.machine != "running" ? `${machineLine(sys)}. ${sys.note}` : machineLine(sys)), testId="system-machine")
+                            if not sys.keeper
+                              QuietLine(text="Its details appear once it is up.", testId="system-machine-wait")
+                            if sys.startedAt > 0
+                              Labelled(label="Started", value=agoAndWhen(sys.startedAt, sys.startedWhen, nowMs), testId="system-started")
+                            for p in sys.programs key=p.name
+                              if p.ok
+                                Line(text=`${p.name} works.`, testId=`system-program-${p.name}`)
+                              else
+                                FailLine(text=(p.detail != "" ? `${p.name} failed: ${p.detail}` : `${p.name} failed.`), testId=`system-program-${p.name}`)
+                if e.name == "jobs"
+                  column navigationKey=`${e.id}` navigationScroll="jobs-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="jobs-scroll" flex=1 min-height=0
+                      JobsScreen(jobs=jobs, leads=leads, failed=failed(jobs), error=jobsError, stage=stageTab, query=jobQuery, freshOnly=freshOnly, shown=shownJobs, shownLeads=shownLeads, saved=savedJobs, active=activeJobs, done=doneJobs, checking=checking, leadsNote=leadsNote, rowError=rowError, rowJob=rowJob, wide=wide, setStage=setStage, search=searchJobs, setFresh=setFresh, pickOutcome=pickRowOutcome, add=openAddJob, watchlist=openCompanies, retry=pull)
+                if e.name == "job"
+                  column navigationKey=`${e.id}` navigationScroll="job-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="job-scroll" flex=1 min-height=0
+                      if not job.loaded or job.id != e.params.id
+                        RecordWait(title="Job", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=back, testId="job-wait")
+                      else
+                        JobScreen(job=job, work=activity.items, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength, asked=jobAsked, askedState=askedState, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, chooseStory=chooseStory, markNoStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked)
+                if e.name == "resume"
+                  column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="resume-scroll" flex=1 min-height=0
+                      if not job.loaded or job.id != e.params.id or not resumeView.loaded
+                        RecordWait(title="Resume", waiting=(not failed(job) and not failed(resumeView)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=pick("jobs"), testId="resume-wait")
+                      else
+                        ResumeScreen(job=job, view=resumeView, work=activity.items, wide=wide, back=backToJob(e.params.id), edit=openEditResume, decide=decideSuggestion, deciding=pending(suggestionDecided), suggestError=suggestError)
+                if e.name == "editResume"
+                  column navigationKey=`${e.id}` navigationScroll="resume-editor-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="resume-editor-scroll" flex=1 min-height=0
+                      if not job.loaded or job.id != e.params.id
+                        RecordWait(title="Edit the resume", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back", back=back, testId="resume-editor-wait")
+                      else
+                        EditResumeScreen(body=job.resume, error=resumeError, busy=pending(resumeSaved), save=saveResume, cancel=back)
+                if e.name == "lead"
+                  column navigationKey=`${e.id}` navigationScroll="lead-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="lead-scroll" flex=1 min-height=0
+                      if not lead.loaded or lead.id != e.params.id
+                        RecordWait(title="Found job", waiting=(not failed(lead)), message="This posting couldn’t be loaded. It may have closed.", backLabel="Back to jobs", back=back, testId="lead-wait")
+                      else
+                        LeadScreen(lead=lead, error=leadError, taking=pending(leadTaken), back=back, take=takeLead, askDismiss=askDismissLead)
+                if e.name == "companies"
+                  column navigationKey=`${e.id}` navigationScroll="companies-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="companies-scroll" flex=1 min-height=0
+                      CompaniesScreen(companies=companies, loadError=companiesError, link=companyLink, act=watchAct, addError=companyError, checkError=checkError, removeError=removeCompanyError, adding=pending(companyAdded), checking=checking, checkBusy=pending(checkAsked), wide=wide, back=back, editLink=editCompanyLink, add=addCompany, check=checkNow, askRemove=askRemoveCompany)
+                if e.name == "addJob"
+                  column navigationKey=`${e.id}` navigationScroll="add-job-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="add-job-scroll" flex=1 min-height=0
+                      AddJobScreen(url=jobUrl, posting=jobText, refusal=jobRefusal, sending=pending(jobAdded), hint=jobHint, editUrl=editJobUrl, editText=editJobText, add=addJob, cancel=leaveAddJob)
+                if e.name == "sources"
+                  column navigationKey=`${e.id}` navigationScroll="sources-scroll" navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="sources-scroll" flex=1 min-height=0
+                      Page(testId="sources")
+                        Section(testId="sources-top")
+                          Title(text="Sources", testId="sources-title")
+                          if lib.loaded and lib.items.length > 0
+                            QuietLine(text=`${readCount} of ${lib.items.length} read. Each source is read for facts about your work, one at a time.`, testId="sources-count")
+                            MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="add-source")
+                        if not lib.loaded
+                          Section(testId="sources-wait")
+                            if failed(lib)
+                              FailLine(text=libError, testId="sources-error")
+                              Action(label="Try again", press=pull, disabled=false, keys="", testId="sources-retry")
+                            else
+                              QuietLine(text="Loading your sources…", testId="sources-loading")
+                        else if lib.items.length == 0
+                          Section(testId="sources-empty")
+                            Line(text="A source is something the studio reads for facts about your work: pasted text, a file or a git repository.", testId="sources-empty-text")
+                            MainAction(label="Add a source", press=openAdd, disabled=false, keys="", testId="sources-add")
+                        else
+                          Section(testId="sources-list")
+                            for s in lib.items key=s.id
+                              Record(code="", name=s.title, href=`/source/${s.id}`, strong=false, dates="", extent=(s.status == "done" ? factCount(s.facts) : sourceKind(s.kind)), word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), showWord=(workStatus(activity.items, "read-source", s.id, s.status) != "done"), place=workPlace(activity.items, "read-source", s.id), provenance="", wide=wide, testId=`source-${s.id}`)
+                if e.name == "source"
+                  column navigationKey=`${e.id}` navigationScroll="source-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="source-scroll" flex=1 min-height=0
+                      if lib.items.filter(x => x.id == e.params.id).length == 0
+                        RecordWait(title="Source", waiting=(not lib.loaded and libError == ""), message=(lib.loaded ? "This source was deleted." : libError), backLabel="Back to Sources", back=back, testId="source-gone")
+                      for s in lib.items.filter(x => x.id == e.params.id) key=s.id
+                        Page(testId="source")
+                          Section(testId="source-top")
+                            Action(label="Back to Sources", press=back, disabled=false, keys="", testId="source-back")
+                          Section(testId="source-head")
+                            Title(text=s.title, testId="source-title")
+                            if inHand(workStatus(activity.items, "read-source", s.id, s.status))
+                              WorkLine(word=statusWord("work", workStatus(activity.items, "read-source", s.id, s.status)), place=workPlace(activity.items, "read-source", s.id), text=sourceLine(s, workStatus(activity.items, "read-source", s.id, s.status), workUsual(activity.items, "read-source", s.id)), testId="source-status")
+                            else if s.status == "failed"
+                              FailLine(text=sourceLine(s, s.status, -1), testId="source-status")
+                            else
+                              Line(text=sourceLine(s, s.status, -1), testId="source-status")
+                            Labelled(label=sourceKind(s.kind), value=s.detail, testId="source-what")
+                          Section(testId="source-actions")
+                            if actedSource == s.id and (lastSourceAct == "remove" ? removeSourceError : rereadError) != ""
+                              FailLine(text=(lastSourceAct == "remove" ? removeSourceError : rereadError), testId="source-error")
+                            Action(label="Read again", press=readAgain, disabled=(pending(reread) or inHand(workStatus(activity.items, "read-source", s.id, s.status))), keys="", testId="source-read")
+                            DangerAction(label="Delete source", press=askRemoveSource, disabled=false, testId="source-delete")
+                            QuietLine(text=(inHand(workStatus(activity.items, "read-source", s.id, s.status)) ? "It can be read again once this reading finishes." : "Reading again replaces its facts, except ones you edited."), testId="source-hint")
+                if e.name == "add"
+                  column navigationKey=`${e.id}` navigationScroll="add-scroll" position="absolute" inset=0 background-color="look.paper"
+                    scroll id="add-scroll" flex=1 min-height=0
+                      Page(testId="add")
+                        Section(testId="add-top")
+                          Title(text="Add a source", testId="add-heading")
+                          Choices(label="Kind of source")
+                            ChoiceWord(label="Text", chosen=(kind == "text"), press=setKind("text"), testId="kind-text")
+                            ChoiceWord(label="File", chosen=(kind == "file"), press=setKind("file"), testId="kind-file")
+                            ChoiceWord(label="Folder", chosen=(kind == "repo"), press=setKind("repo"), testId="kind-repo")
+                            ChoiceWord(label="GitHub", chosen=(kind == "github"), press=setKind("github"), testId="kind-github")
+                        if kind == "text"
+                          Section(testId="add-text-form")
+                            FieldLabel(label="Title")
+                              input value=draftTitle input=editTitle submit=add placeholder="Such as Resume 2024" aria-label="Title" autofocus=true enterkeyhint="next" testId="add-title"
+                            FieldLabel(label="Text to read")
+                              textarea value=draftText input=editText placeholder="Paste a resume, a LinkedIn profile or a review" aria-label="Text to read" rows=8 aria-invalid=(refusal != "") testId="add-text"
+                            if refusal != "" and not pending(added)
+                              FailLine(text=refusal, testId="add-error")
+                        if kind == "file"
+                          Section(testId="add-file-form")
+                            if pickedName != ""
+                              Labelled(label="Chosen file", value=pickedName, testId="add-picked")
+                            Action(label=(pickedName == "" ? "Choose a file" : "Choose another file"), press=choosePicked, disabled=false, keys="", testId="add-choose")
+                            input type="file" id="add-pick" display="none" change=filePicked aria-label="File to add" testId="add-pick"
+                            if refusal != "" and not pending(added)
+                              FailLine(text=refusal, testId="add-error")
+                            QuietLine(text="PDF, Word or text, or a LinkedIn export zip. Up to 25 MB.", testId="add-file-hint")
+                          if inbox.files.length > 0
+                            Section(testId="add-inbox")
+                              SectionHead(text="Already in the studio’s inbox", testId="add-inbox-head")
+                              FieldLabel(label="File")
+                                select value=draftFile change=pickFile aria-label="File already in the studio’s inbox" align-self="flex-start" max-width="100%" testId="add-file"
+                                  option "None" value=""
+                                  for name in inbox.files key=name
+                                    option name value=name
+                        if kind == "github"
+                          if not hub.loaded
+                            Section(testId="add-hub-wait")
+                              if failed(hub)
+                                FailLine(text="GitHub couldn’t be asked just now. Try again in a moment.", testId="hub-error")
+                                Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
+                              else
+                                QuietLine(text="Loading your repositories…", testId="hub-loading")
+                          else if not hub.connected or hub.error != ""
+                            Section(testId="add-hub-wait")
+                              Line(text=hub.error, testId="hub-error")
+                              Action(label="Try again", press=reloadHub, disabled=false, keys="", testId="hub-retry")
+                          else
+                            Section(testId="add-hub")
+                              SearchField(value=hubQuery, label="Search repositories", hint="Search repositories", change=searchHub, testId="hub-search")
+                              QuietLine(text=(chosen.length == 0 ? `Signed in to GitHub as ${hub.login}. Only your own commits are read.` : `${chosen.length} ${chosen.length == 1 ? "repository" : "repositories"} chosen.`), testId="hub-who")
+                              if hubExtras > 0
+                                CheckLine(label="Show forks and archived", detail="", checked=showExtra, disabled=false, change=tickExtra, testId="hub-extra")
+                            for o in hub.owners.filter(o => hubShown.filter(r => r.owner == o).length > 0) key=o
+                              Section(testId=`add-owner-${o}`)
+                                SectionHead(text=o, testId=`add-owner-${o}-head`)
+                                for r in hubShown.filter(r => r.owner == o) key=r.full
+                                  CheckLine(label=r.full, detail=(r.added ? "Already a source" : r.detail), checked=(chosen.includes(r.full)), disabled=r.added, change=tickRepo(r.full), testId=`repo-${r.full}`)
+                            if (refusal != "" and not pending(added)) or hubShown.length == 0
+                              Section(testId="add-hub-end")
+                                if refusal != "" and not pending(added)
+                                  FailLine(text=refusal, testId="add-error")
+                                if hubShown.length == 0
+                                  QuietLine(text=(hub.repos.length == 0 ? "No repositories found." : hubQuery.trim() == "" ? "Only forks and archived repositories here. Turn them on above." : `No repository matches “${hubQuery.trim()}”.`), testId="hub-none")
+                        if kind == "repo"
+                          Section(testId="add-repo-form")
+                            FieldLabel(label="Folder")
+                              input value=draftRepo input=editRepo submit=add placeholder="/srv/code/app" aria-label="Repository folder"
+                                autofocus=true autocapitalize="none" autocomplete="off" enterkeyhint="next" aria-invalid=(refusal != "") testId="add-repo"
+                            FieldLabel(label="Author")
+                              input value=author input=editAuthor submit=add placeholder="Name or email" aria-label="Commit author"
+                                autocapitalize="none" autocomplete="off" enterkeyhint="done" testId="add-author"
+                            if refusal != "" and not pending(added)
+                              FailLine(text=refusal, testId="add-error")
+                            QuietLine(text="A repository folder on the studio’s computer. Only commits by this author count as yours. The history and the code are read, and the repository is never changed.", testId="add-repo-hint")
+                        Section(testId="add-actions")
+                          QuietLine(text=(addHint != "" ? addHint : "What you add is read, and what is found in it goes into your record."), testId="add-hint")
+                          Actions(testId="add-actions-row")
+                            MainAction(label="Add", press=add, disabled=(addHint != ""), keys="", testId="add-save")
+                            Action(label="Cancel", press=leaveAdd, disabled=false, keys="", testId="add-cancel")
       dialog id="clear-talk" role="alertdialog" aria-label="Start the conversation over?"
         text "The messages are cleared. Facts already added to your record stay."
         button press=clearTalk destructive=true commandfor="clear-talk" command="close" testId="clear-talk-confirm"

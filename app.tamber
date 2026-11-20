@@ -1,11 +1,29 @@
 tamber brand
 
+// The Linear design system (DESIGN.md section 3). It has one theme, dark, so each token is one value. Names are
+// kept from the earlier look where the role is the same (ink, paper, grey, line), so every screen follows.
 theme
-  AccentColor = light-dark(#bf5700, #cc5f0a)
-  surface.note = light-dark(#f5f5f5, #1c1c1c)
-  text.muted = light-dark(#5c5c5c, #b0b0b0)  pair=surface.note
-  // The new look (DESIGN.md section 3): one ink, one paper (the white tone), a grey for secondary text, a line for rules.
-  look.ink = light-dark(#111111, #ededed)  pair=look.paper
-  look.paper = light-dark(#ffffff, #111111)
-  look.grey = light-dark(#5c5c5c, #a6a6a6)  pair=look.paper
-  look.line = light-dark(#d9d9d9, #333333)
+  // The accent: the main action's fill, the focus ring, a selected control.
+  AccentColor = #5e6ad2  scheme=fixed
+  look.accent = #5e6ad2  scheme=fixed
+  look.on-accent = #ffffff  scheme=fixed
+  // Surfaces, each one step lighter than the one under it: the page, a card, a control or well, a hovered row.
+  look.paper = #08090a  scheme=fixed
+  look.card = #0d0e11  scheme=fixed
+  look.raised = #16171b  scheme=fixed
+  look.hover = #1d1e22  scheme=fixed
+  look.line = #24262b  scheme=fixed
+  // Text: ink, secondary, and the faintest that still passes 4.5 to 1 on a card.
+  look.ink = #f7f8f8  scheme=fixed  pair=look.paper
+  look.grey = #9b9eab  scheme=fixed  pair=look.card
+  look.faint = #868798  scheme=fixed  pair=look.card
+  // A link or a selected word in text: the accent, lighter, so it passes on the dark page.
+  look.link = #95a4f6  scheme=fixed  pair=look.card
+  // States, always beside a word that says the same thing.
+  look.green = #67d283  scheme=fixed  pair=look.card
+  look.amber = #e9b452  scheme=fixed  pair=look.card
+  look.red = #fd736d  scheme=fixed  pair=look.card
+  look.danger = #7f1d1d  scheme=fixed
+  // Kept for the screens not yet rebuilt, which still name them.
+  surface.note = #16171b  scheme=fixed
+  text.muted = #9b9eab  scheme=fixed  pair=surface.note

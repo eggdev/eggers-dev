@@ -210,6 +210,8 @@ members App
       refresh companies
     if changedKinds.length > 0
       refresh homeList
+      refresh you
+      refresh told
     changedSeen = activity.lastChanged
   action noteDue
     dueAt = performanceNow() + activity.dueIn + 5000
@@ -228,6 +230,8 @@ members App
     refresh companies
     refresh notes
     refresh me
+    refresh you
+    refresh told
     pull()
   // Another screen: this answer again, so its slow-work lines and whether to keep asking are up to date. (It runs once
   // at launch too, a moment after the first answer: one request more, which a launch skipped by a latch would lose

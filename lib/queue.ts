@@ -37,8 +37,9 @@ export type Item = { key: string; kind: string; text: string; from: string; bloc
 export type Queue = { items: Item[]; snoozed: number };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-// A short, stable key for a question known only by its words.
-const keyOf = (text: string) => createHash('sha256').update(text.trim().toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
+// A short, stable key for a question known only by its words. The You screen (lib/nextquestion.ts) keys Talk's questions
+// with it too, so one question has one key wherever it is shown.
+export const keyOf = (text: string) => createHash('sha256').update(text.trim().toLowerCase().replace(/\s+/g, ' ')).digest('hex').slice(0, 12);
 
 // The resumes not yet sent that show one of these roles: each has an entry whose company is the role's.
 export function resumesShowing(roleIds: number[]): number {
@@ -70,7 +71,9 @@ type JobLite = { id: number; title: string; company: string; applied_at: number 
 // places the record's questions have on Home. With `all`, every record question is given (to snooze or count one).
 export function allItems(now: number, hidden: Set<string> = new Set(), all = false): Item[] {
   // The record's own questions are many on a large record: Home takes the first few, in their rows' order (lib/gaps.ts).
-  const open = openRaised();
+  // The agenda's questions (lib/agenda.ts) ask for a story in the owner's words, which Home has no place to take: they
+  // are asked one at a time on the You screen (lib/nextquestion.ts).
+  const open = openRaised().filter((q) => q.kind !== 'agenda');
   const ranked = open.filter((q) => q.kind === 'record' && !hidden.has(q.key)).sort((a, b) => Number(a.data.rank ?? 0) - Number(b.data.rank ?? 0));
   const record = all ? open.filter((q) => q.kind === 'record') : ranked.slice(0, HOME_RECORD);
   const raised = [...open.filter((q) => q.kind !== 'record'), ...record].map(raisedItem);

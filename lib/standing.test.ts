@@ -14,7 +14,7 @@ import { addFact, deleteProject, patchFact, patchRole } from './record.ts';
 import { recordRepo } from './repoactivity.ts';
 import { SURFACES } from './rules.ts';
 import {
-  allows, clearToolMark, clearToolMarks, factMark, factWhen, markFactsPublic, MARKS, mayUse, monthsWorked, placed, placeProject, projectMark, projectOfFact,
+  allows, clearToolMark, clearToolMarks, currentByRecord, factMark, factWhen, markFactsPublic, MARKS, mayUse, monthsWorked, placed, placeProject, projectMark, projectOfFact,
   projectStanding, publicOffered, rank, rankItems, setFactMark, setFactMonth, setProjectMark, setProjectWork, toolMarks, triggerKey, type ProjectMark, type RankItem,
 } from './standing.ts';
 
@@ -719,4 +719,57 @@ test('the order now: the owner\'s places stay, the tool places the rest, and it 
   // Taken back, they are the tool's to place again.
   for (const p of [tidepool, console1, undated]) expect(placeProject(p, null)).toBe('');
   expect(placed('2026-11').map((p) => p.placedBy)).toEqual(['tool', 'tool', 'tool']);
+});
+
+// ---------- Current work, by the record's own convention ----------
+
+const projectRow = (id: number) => db.query('SELECT * FROM projects WHERE id = ?').get(id) as Parameters<typeof currentByRecord>[0];
+const roleRows = () => db.query('SELECT * FROM roles').all() as Parameters<typeof currentByRecord>[1];
+
+test('a project under a current role, with a start and no end, comes before one that ended, and counts to today', () => {
+  // Harborlight (role 1) is current: it has a start and no end. A project in it with a start and no end is current work.
+  const now1 = (db.query("INSERT INTO projects (role_id, title, start) VALUES (1, 'Depot map', '2025-03') RETURNING id").get() as { id: number }).id;
+  // An undated project in the current role: its role's start makes it current, and it has no size of its own.
+  const undatedNow = (db.query("INSERT INTO projects (role_id, title) VALUES (1, 'Hiring round') RETURNING id").get() as { id: number }).id;
+  expect(currentByRecord(projectRow(now1), roleRows())).toBe(true);
+  expect(currentByRecord(projectRow(undatedNow), roleRows())).toBe(true);
+  // console1 has its own end; `undated` is in Quillfeather (role 2), which ended.
+  for (const p of [console1, undated]) expect(currentByRecord(projectRow(p), roleRows())).toBe(false);
+  const items = rankItems('2026-11');
+  expect(items.find((i) => i.id === now1)).toEqual({ id: now1, state: 'running', lastWorked: '2026-11', months: 21, commits: 0, ownerPlace: null });
+  expect(items.find((i) => i.id === undatedNow)).toEqual({ id: undatedNow, state: 'running', lastWorked: '2026-11', months: 0, commits: 0, ownerPlace: null });
+  expect(items.find((i) => i.id === console1)).toMatchObject({ state: 'unknown', lastWorked: '2023-06', months: 18 });
+  expect(rank(items).slice(0, 3)).toEqual([now1, undatedNow, tidepool]);
+  // Nothing is stored: the owner's standing of the project is still unsaid.
+  expect(projectStanding(now1)).toMatchObject({ state: 'unknown', lastWorked: '' });
+  // A role with no start: nothing says when its work began, and nothing is guessed.
+  role({ id: 4, company: 'Fernway', title: 'Head of Platform' });
+  const noStart = (db.query("INSERT INTO projects (role_id, title) VALUES (4, 'Platform') RETURNING id").get() as { id: number }).id;
+  expect(currentByRecord(projectRow(noStart), roleRows())).toBe(false);
+});
+
+test('a state the owner set on such a project wins: ended and off are kept', () => {
+  const now1 = (db.query("INSERT INTO projects (role_id, title, start) VALUES (1, 'Depot map', '2025-03') RETURNING id").get() as { id: number }).id;
+  expect(setProjectWork(now1, { state: 'ended' })).toBe('');
+  expect(rankItems('2026-11').find((i) => i.id === now1)).toEqual({ id: now1, state: 'ended', lastWorked: '', months: 0, commits: 0, ownerPlace: null });
+  expect(setProjectWork(now1, { state: 'off' })).toBe('');
+  expect(rankItems('2026-11').find((i) => i.id === now1)).toMatchObject({ state: 'off', lastWorked: '' });
+  expect(rank(rankItems('2026-11')).at(-1)).toBe(now1);
+  // The owner's own month of last work also wins over today.
+  expect(setProjectWork(now1, { state: 'unknown', lastWorked: '2025-09' })).toBe('');
+  expect(rankItems('2026-11').find((i) => i.id === now1)).toMatchObject({ state: 'running', lastWorked: '2025-09', months: 21 });
+});
+
+test('a side project with a start and no end stays unknown: no role says it is current', () => {
+  db.run("UPDATE roles SET end = '' WHERE id = 10");
+  expect(currentByRecord(projectRow(tidepool), roleRows())).toBe(false);
+  expect(rankItems('2026-11').find((i) => i.id === tidepool)).toMatchObject({ state: 'unknown', lastWorked: '', months: 0 });
+  // A repository filed under the current role, with a start and no end, is current work in that role.
+  role({ id: 11, company: 'harborlight/rota', title: '', start: '2024-04', part_of: 1, standing: '' });
+  syncProjects(1);
+  const repo = (db.query('SELECT id FROM projects WHERE via_role = 11').get() as { id: number }).id;
+  expect(currentByRecord(projectRow(repo), roleRows())).toBe(true);
+  // Filed under the role that ended, it is not.
+  db.run('UPDATE roles SET part_of = 2 WHERE id = 11');
+  expect(currentByRecord(projectRow(repo), roleRows())).toBe(false);
 });

@@ -1,7 +1,9 @@
 // Where a fact came from, in the owner's own words: the turn of Talk, the source text, the owner's answer in a telling
 // sitting, or the fact as the owner typed it, the span of characters inside that text, and a copy of the words. A writer
 // can then show the words behind a line, and a check can tell when the text it points at has changed since. Deriving a
-// told project (lib/derive.ts) adds told origins; the other kinds are added only by tests so far. One table and its
+// told project (lib/derive.ts) adds told origins; a Talk reply (lib/talk.ts) adds talk origins; reading a pasted text
+// (worker.ts, sourceOrigins below) adds source origins; backfillOrigins adds both, once, for facts stored before. Typed
+// origins are added only by tests so far. One table and its
 // triggers, created when this file is imported. Safe to import alone: the `talk` table belongs to lib/talk.ts and
 // `capture_turns` to lib/sittings.ts, and nothing here needs them until an origin of their kind is added.
 import { carryFacts, db, type CarriedFact } from './db.ts';
@@ -94,6 +96,9 @@ export function addOrigin(factId: number, o: { kind: OriginKind; refId: number; 
     if (o.kind === 'talk' && (db.query('SELECT who FROM talk WHERE id = ?').get(refId) as { who: string }).who !== 'you') return { ok: false, error: 'That turn of Talk is not the owner’s.' };
     if (o.kind === 'source' && (db.query('SELECT kind FROM sources WHERE id = ?').get(refId) as { kind: string }).kind !== 'text') return { ok: false, error: 'Only a source of pasted text holds the words themselves.' };
     if (!Number.isInteger(o.start) || !Number.isInteger(o.end) || o.start < 0 || o.end <= o.start || o.end > text.length || splits(text, o.start) || splits(text, o.end)) return { ok: false, error: 'The span is not inside the text.' };
+    const existing = db.query('SELECT id FROM fact_origins WHERE fact_id = ? AND kind = ? AND ref_id = ? AND span_start = ? AND span_end = ? ORDER BY id LIMIT 1')
+      .get(factId, o.kind, refId, o.start, o.end) as { id: number } | null;
+    if (existing) return { ok: true, id: existing.id };
     const quote = text.slice(o.start, o.end);
     const r = db.query('INSERT INTO fact_origins (fact_id, kind, ref_id, span_start, span_end, quote, added_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id')
       .get(factId, o.kind, refId, o.start, o.end, quote, now) as { id: number };
@@ -121,6 +126,159 @@ export function checkSpan(text: string | null, o: { start: number; end: number; 
 
 // The same, for a stored origin against the text it points at now.
 export const checkOrigin = (o: Origin): SpanCheck => checkSpan(originText(o.kind, o.refId), o);
+
+// ---------- Origins written as facts are stored, and once for facts stored before ----------
+
+// A quote is taken as the words behind a fact only when it says something: at least MIN_QUOTE characters and two words,
+// standing whole in the text. A single letter, a word or a heading ("I", "a", "Skills") is found inside anything.
+export const MIN_QUOTE = 12;
+const WORDISH = /[\p{L}\p{N}]/u;
+export const quoteOk = (words: string) => words.length >= MIN_QUOTE && /\S\s+\S/.test(words);
+// The first place `words` stand in `text` as whole words (not inside a longer word at either end), or -1.
+function wholeAt(text: string, words: string): number {
+  for (let at = text.indexOf(words); at >= 0; at = text.indexOf(words, at + 1)) {
+    const before = at === 0 ? '' : text[at - 1], after = text[at + words.length] ?? '';
+    if (!(WORDISH.test(words[0]) && WORDISH.test(before)) && !(WORDISH.test(words.at(-1)!) && WORDISH.test(after))) return at;
+  }
+  return -1;
+}
+
+// Pure: where a fact's evidence stands in a pasted text, or null. A reading's evidence is "a short verbatim quote"
+// (lib/ingest.ts), but it may come in quotation marks, or with words around a quote, or as several pieces joined by " · "
+// when a later reading added to the fact (applyExtraction in lib/db.ts). Each piece, each piece without its outer
+// quotation marks, and each quoted part is tried; the longest that is a quote (quoteOk) and stands whole in the text is
+// taken, at its first place. Nothing else is guessed: evidence whose words are not in the text gives no span.
+export function evidenceSpan(evidence: string, body: string): { start: number; end: number } | null {
+  const pieces = new Set<string>();
+  for (const part of evidence.split(' · ')) {
+    const p = part.trim();
+    pieces.add(p);
+    pieces.add(p.replace(/^["“‘'](.*)["”’'][.,;]?$/s, '$1').trim());
+    for (const m of p.matchAll(/["“]([^"“”]+)["”]/g)) pieces.add(m[1].trim());
+  }
+  let best: { start: number; end: number } | null = null;
+  for (const w of pieces) {
+    if (!quoteOk(w) || (best && w.length <= best.end - best.start)) continue;
+    const at = wholeAt(body, w);
+    if (at >= 0) best = { start: at, end: at + w.length };
+  }
+  return best;
+}
+
+// Pure: which of the owner's messages a fact Talk wrote came from, and where in it. `messages` are the owner's messages
+// the reply answers: every one since the last reply that was written (a reply that failed leaves its message
+// unanswered, and the model may take a fact from it), oldest first. `said` is the model's copy of the owner's words.
+// - `said` is a quote (quoteOk) that stands whole in exactly one of them: that message, that passage.
+// - Otherwise (no `said`, a scrap, words changed in the copying, or words in more than one message): the whole message,
+//   only when there is just one; with more, which one is not guessed, and there is no origin.
+export function talkOriginOf(said: unknown, messages: { id: number; body: string }[]): { talkId: number; start: number; end: number } | null {
+  const s = typeof said === 'string' ? said.trim() : '';
+  if (quoteOk(s)) {
+    const hits = messages.map((m) => ({ m, at: wholeAt(m.body, s) })).filter((h) => h.at >= 0);
+    if (hits.length === 1) return { talkId: hits[0].m.id, start: hits[0].at, end: hits[0].at + s.length };
+  }
+  return messages.length === 1 && messages[0].body.length > 0 ? { talkId: messages[0].id, start: 0, end: messages[0].body.length } : null;
+}
+
+// The owner's messages a reply answers: every one since the last reply that was written, oldest first. A reply is the
+// row say() (lib/talk.ts) writes right after the owner's message, so a reply that was written is a done turn of Claude's
+// that follows one of the owner's. A turn the tool put (a question, put() in lib/talk.ts and lib/nextquestion.ts) and a
+// reply that failed are passed over.
+export function unansweredBefore(replyId: number): { id: number; body: string }[] {
+  if (!hasTalk()) return [];
+  const rows = db.query('SELECT id, who, status, body FROM talk WHERE id < ? ORDER BY id DESC LIMIT 200').all(replyId) as { id: number; who: string; status: string; body: string }[];
+  const out: { id: number; body: string }[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.who === 'you') { if (r.body.length > 0) out.push({ id: r.id, body: r.body }); continue; }
+    if (r.status === 'done' && rows[i + 1]?.who === 'you') break;
+  }
+  return out.reverse();
+}
+
+// Links a fact Talk wrote to the owner's words it came from (talkOriginOf). Returns null when no origin is added.
+export function addTalkOrigin(factId: number, messages: { id: number; body: string }[], said: unknown, now = Date.now()): Added | null {
+  const o = talkOriginOf(said, messages);
+  if (!o) return null;
+  const got = addOrigin(factId, { kind: 'talk', refId: o.talkId, start: o.start, end: o.end }, now);
+  // A span that cuts a character in two is refused; the whole message never is.
+  const body = messages.find((m) => m.id === o.talkId)!.body;
+  return got.ok ? got : addOrigin(factId, { kind: 'talk', refId: o.talkId, start: 0, end: body.length }, now);
+}
+
+const noOrigin = (factId: number) => db.query('SELECT 1 FROM fact_origins WHERE fact_id = ? LIMIT 1').get(factId) === null;
+type Planned = { factId: number; kind: 'talk' | 'source'; refId: number; start: number; end: number };
+// Adds what was planned, under the write lock, to the facts that still have no origin. Nothing planned, nothing written.
+function addPlanned(plan: Planned[], now: number): number {
+  if (plan.length === 0) return 0;
+  return db.transaction(() => {
+    let n = 0;
+    for (const p of plan) if (noOrigin(p.factId) && addOrigin(p.factId, { kind: p.kind, refId: p.refId, start: p.start, end: p.end }, now).ok) n++;
+    return n;
+  }).immediate();
+}
+
+// The source origins to add for a pasted text's facts that have none: one where the evidence stands in the text.
+function plannedFromSource(sourceId: number): Planned[] {
+  const s = db.query('SELECT kind, body FROM sources WHERE id = ?').get(sourceId) as { kind: string; body: string } | null;
+  if (!s || s.kind !== 'text') return [];
+  const facts = db.query('SELECT id, evidence FROM facts f WHERE source_id = ? AND NOT EXISTS (SELECT 1 FROM fact_origins o WHERE o.fact_id = f.id) ORDER BY id').all(sourceId) as { id: number; evidence: string }[];
+  return facts.flatMap((f) => { const span = evidenceSpan(f.evidence, s.body); return span ? [{ factId: f.id, kind: 'source' as const, refId: sourceId, ...span }] : []; });
+}
+
+// After a pasted text is read (worker.ts): each of its facts with no origin yet gets the passage its evidence quotes,
+// when that passage is in the text. A file's or a repository's facts get none: their source's body is a name. A fact
+// made again with the same words has kept its origins already (carryFacts below). Returns how many were added.
+export const sourceOrigins = (sourceId: number, now = Date.now()) => addPlanned(plannedFromSource(sourceId), now);
+
+// Once, for the facts stored before origins were written for Talk and pasted text: safe to run at every start, since
+// it only adds to a fact with no origin at all, and what it adds is copied from the text it points at.
+// - A fact Talk wrote: Talk's reply row lists the sentences of the facts it added (talk.added, lib/talk.ts), and the
+//   owner's message is the last of theirs before that reply. A fact is linked to the whole message only when exactly
+//   one reply lists its sentence and exactly one fact Talk wrote has it: words since reworded, or said twice, are not
+//   guessed at.
+// - A fact read from a pasted text: as sourceOrigins does.
+// Returns how many origins were added.
+export function backfillOrigins(now = Date.now()): number {
+  const plan: Planned[] = [];
+  if (hasTalk()) {
+    // Read once, so a start with nothing to add costs a few queries, not some for each reply.
+    const rows = db.query('SELECT id, who, status, body, added FROM talk ORDER BY id').all() as { id: number; who: string; status: string; body: string; added: string }[];
+    const sentencesOf = (added: string): string[] => {
+      try { const l = JSON.parse(added) as unknown; return Array.isArray(l) ? l.filter((x): x is string => typeof x === 'string').map((x) => x.replace(/^Updated: /, '')) : []; } catch { return []; }
+    };
+    // Each reply that was written, with the owner's messages it answers: the same walk as unansweredBefore, forwards.
+    const replies: { added: string[]; since: { id: number; body: string }[] }[] = [];
+    let since: { id: number; body: string }[] = [];
+    rows.forEach((r, i) => {
+      if (r.who === 'you') { if (r.body.length > 0) since.push({ id: r.id, body: r.body }); return; }
+      if (r.status !== 'done' || rows[i - 1]?.who !== 'you') return;
+      if (r.added !== '' && r.added !== '[]') replies.push({ added: sentencesOf(r.added), since });
+      since = [];
+    });
+    // A sentence more than one reply lists (said, then said again; or reworded away and back) could be any of them.
+    const listed = new Map<string, number>();
+    for (const r of replies) for (const t of new Set(r.added)) listed.set(t, (listed.get(t) ?? 0) + 1);
+    // The facts Talk wrote, by their words, and the facts that already have an origin.
+    const byText = new Map<string, number[]>();
+    for (const f of db.query("SELECT id, text FROM facts WHERE source_id IS NULL AND evidence LIKE '%Said by you in Talk on %'").all() as { id: number; text: string }[]) byText.set(f.text, [...(byText.get(f.text) ?? []), f.id]);
+    const linked = new Set((db.query('SELECT DISTINCT fact_id FROM fact_origins').all() as { fact_id: number }[]).map((r) => r.fact_id));
+    for (const r of replies) {
+      // The message the reply answers, as talkOriginOf takes it: only when it is the one message since the reply before.
+      if (r.since.length !== 1) continue;
+      const owner = r.since[0];
+      for (const text of r.added) {
+        const same = byText.get(text) ?? [];
+        if (listed.get(text) !== 1 || same.length !== 1 || linked.has(same[0])) continue;
+        linked.add(same[0]);
+        plan.push({ factId: same[0], kind: 'talk', refId: owner.id, start: 0, end: owner.body.length });
+      }
+    }
+  }
+  const texts = db.query("SELECT DISTINCT s.id FROM sources s JOIN facts f ON f.source_id = s.id WHERE s.kind = 'text' AND NOT EXISTS (SELECT 1 FROM fact_origins o WHERE o.fact_id = f.id) ORDER BY s.id").all() as { id: number }[];
+  for (const s of texts) plan.push(...plannedFromSource(s.id));
+  return addPlanned(plan, now);
+}
 
 // A fact made again with the same words, when its source is read again, keeps its origins under the new id (a typed
 // origin then points at the new fact). Origins of a fact with no such successor go with it. A fold moves the origins

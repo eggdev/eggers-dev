@@ -31,9 +31,40 @@ in `.data/`, which git ignores, and in private storage on Cloudflare.
 - **Bank.** You add sources: pasted text, files, a LinkedIn export, git repositories. A worker has
   a model read each source and writes what it finds as facts under the role they belong to.
   Duplicate facts from several sources are folded into one.
-- **Profile.** One document written from the whole bank. Where the bank is thin, it asks
-  questions instead of guessing.
-- **Talk.** One running conversation about your work. What you say is written into the bank.
+- **Profile.** Your name, the document readers meet you by, the lines that stand out (yours to edit or
+  leave out) and one question at a time where the bank is thin. "Read it" opens everything you have told
+  as one document, with your own words behind each fact (`/profile/told`).
+- **Talk.** One running conversation about your work. What you say is written into the bank. Each
+  fact keeps the words you said it in (`lib/origins.ts`). When the model copies a passage of at
+  least 12 characters and two words, and it stands whole in exactly one of your messages since the
+  last reply, the fact keeps that passage. Otherwise it keeps your whole message, but only when you
+  sent one message since the last reply; with more, it keeps none. A fact read from pasted text
+  keeps the passage its evidence quotes, by the same length rule, and only when the passage is in
+  the text. Facts stored before this are linked once, at server start: a Talk fact to its whole
+  message, only when one reply lists its sentence and one message came before that reply.
+- **You.** One page about you, built by code (`lib/you.ts`, `GET /you`, `GET /told`).
+  - "What stands out" shows every line you wrote yourself first, then lines chosen from the record,
+    up to four lines in all. Lines follow the order of projects (`lib/standing.ts`). Current work
+    comes first: a project with no end, in a role with no end, unless you set its state. A chosen
+    line is one of the project's own facts: one a saved job leans on, else one with a measured
+    result, else the first. Your own line is never replaced. Leaving a project out hides it and
+    keeps your line. The page lists the projects you left out, and bringing one back restores your own line if you wrote one.
+  - "Everything you have told" is the whole record as one document, with the words behind each fact.
+  - Kept facts and kept projects are left out of both. So are words behind a fact when a kept fact
+    was taken from the same words.
+  - The page asks one question at a time (`lib/nextquestion.ts`). First come the agenda questions
+    (`lib/agenda.ts`): a term that two or more unsent postings require, that their readings found
+    nothing for, and that no fact in the record names. Then a project your last resumes lean on.
+    Then the record's gaps that ask for story: a job with no story, a project's missing part, the
+    number before, your own part. Last come the questions a model wrote while writing a resume, the
+    profile's gaps, and what a posting's reading found missing.
+  - Questions code raises about dates, titles, skills or where a repository belongs are never asked
+    here. Neither are the six-second skim's or the council review's questions. A question a model
+    wrote that uses a word of doubt (confirm, verify, overlap and the like) is held back. A model
+    can still word a doubt another way, so that check is a guard, not a guarantee.
+  - Your answer is saved immediately. If Talk is busy, it waits its turn before going into the
+    conversation, where the studio learns from it. A draft stays tied to the question you started
+    answering, even after a reload. You can skip a question to move on.
 - **Jobs.** A posting is read against the bank: what it requires, what supports each requirement,
   and a fit score computed from that coverage. Each job gets a tailored resume built only from
   bank facts, a PDF that an applicant tracking system reads cleanly, and draft outreach messages.
@@ -304,7 +335,7 @@ The Worker's own controls, behind the same Access check:
 The System screen's "Start a new record" deletes the career record so it can be told again from nothing
 (`lib/reset.ts`, `POST /record/reset` with `{"confirm": "start a new record"}`). It deletes every role,
 project, fact and source, Talk, the telling sittings, the owner's answers and everything written from the
-record: the profile, the questions, the skills list, marks and origins, `profile.md`, `unslop.md`, `inbox/`,
+record: the profile, the questions, the skills list, marks and origins, the lines of "What stands out", `profile.md`, `unslop.md`, `inbox/`,
 `repos/` and the `egg.db.before-*` copies. It keeps the owner's details and direction, the job tracker and the
 watchlist. A job already sent keeps its resume, links, PDF and versions. A job not yet sent keeps its posting
 and tracking, loses its reading, resume, PDF and drafts, and waits until the owner reads it again. Reference

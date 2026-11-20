@@ -37,6 +37,10 @@ import { askDerive, checkDerived, writeDerived, type Raw } from './lib/derive.ts
 import { askSpoken, runSpoken, saveSpoken } from './lib/spoken.ts';
 import { addPractice, addQuestion, deletePractice, deleteQuestion, jobQuestions, settleQuestion, storiesList, storyView } from './lib/stories.ts';
 import { fakeAsk } from './lib/llm.ts';
+import { syncAgenda } from './lib/agenda.ts';
+import { answerText, next, skip, waitingAnswers } from './lib/nextquestion.ts';
+import { backfillOrigins } from './lib/origins.ts';
+import { bringBack, leaveOut, leftOut, restore, setStandOut, standsOut, told, toldCounts } from './lib/you.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -61,12 +65,20 @@ const follow = () => {
   step('projects', () => syncProjects());
   step('questions', () => syncQuestions(Date.now()));
   step('the record’s questions', () => syncRecordQuestions(Date.now()));
+  step('the agenda', () => syncAgenda(Date.now()));
   step('flags', () => reflagOpen());
   // A role whose title, employer or dates changed: on a resume the owner edited, a suggestion, never a change.
   step('suggestions', () => suggestAfterRoles(Date.now()));
 };
 // The roles as they are now, so the first change after a start is found (a read).
 seeRoles();
+// The words behind facts stored before Talk and pasted texts wrote them (lib/origins.ts): adds only to a fact with none,
+// so it runs at every start and writes nothing once done.
+step('the words behind facts', () => backfillOrigins(Date.now()));
+// This month, as the order of projects counts a running project's months (lib/standing.ts).
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+// A project named in a request: its id as a number, or NaN.
+const projectIdOf = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN);
 // A request's JSON body, when it is an object; null for no body, bad JSON, null, a list or a value.
 const objectBody = async (req: Request): Promise<Record<string, unknown> | null> => {
   const b = await req.json().catch(() => null);
@@ -713,7 +725,7 @@ const served = Bun.serve({ hostname, port, routes: {
         analysis: JSON.stringify({ verdict: str(b.verdict), requirements: reqs, strengths: b.strengths ?? [], risks: b.risks ?? [], changes: b.changes ?? [], gaps: b.gaps ?? [], knockouts: b.knockouts ?? [],
           terms: termsOf(Array.isArray(b.terms) ? b.terms : [], str(b.resume), ''), checks: b.checks ?? [] }), bank_sig: bankSignature(), updated_at: Date.now() } });
       // A resume given with its links has its flags taken at once, as publish would, so its screen can be tried.
-      if (given) { syncQuestions(Date.now()); syncRecordQuestions(Date.now()); reflag(Number(req.params.id)); }
+      if (given) { syncQuestions(Date.now()); syncRecordQuestions(Date.now()); syncAgenda(Date.now()); reflag(Number(req.params.id)); }
       return send({ ok: true });
     },
   } } : {}),
@@ -973,7 +985,8 @@ const served = Bun.serve({ hostname, port, routes: {
   // must be sent with it: "month" (YYYY-MM), "line" (one line of text) or "" (nothing).
   '/questions': {
     OPTIONS: preflight,
-    GET: () => { follow(); return send({ questions: openRaised().map((q) => ({ key: q.key, kind: q.kind, text: q.text, choices: q.choices, about: q.about, inputs: inputsOf(q) })) }); },
+    // The agenda's questions (lib/agenda.ts) have no choice to give: they are answered in words on the You screen.
+    GET: () => { follow(); return send({ questions: openRaised().filter((q) => q.kind !== 'agenda').map((q) => ({ key: q.key, kind: q.kind, text: q.text, choices: q.choices, about: q.about, inputs: inputsOf(q) })) }); },
     // An answer: the question's key, the number of the choice (from 0), the words of that choice as the person saw them
     // (`text`; required, and checked against the choice at that place now), and the value that choice needs, if any.
     POST: async (req) => {
@@ -987,6 +1000,81 @@ const served = Bun.serve({ hostname, port, routes: {
       return send({ ok: true });
     },
   },
+  // You (lib/you.ts, lib/nextquestion.ts): what stands out in the record and the projects left out of it, the one
+  // question to answer next and how many are open, and the counts of everything told. The questions are taken again first, as Home's list does.
+  '/you': {
+    OPTIONS: preflight,
+    GET: () => {
+      follow();
+      const n = next();
+      return send({ standsOut: standsOut(thisMonth()), leftOut: leftOut(thisMonth()), next: n.question, open: n.open, waiting: waitingAnswers(), told: toldCounts() });
+    },
+  },
+  // An answer in the owner's own words: {key, words}. The question closes, and the words go to Talk as the owner's
+  // message, where the worker records what they say as facts. The words wait if a reply is being written.
+  '/you/answer': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      if (typeof b.words !== 'string') return send({ error: 'Write your answer, or skip the question.' }, 400);
+      // The words as sent: answerText trims their ends, refuses more than MAX_WORDS characters, and keeps the rest.
+      const refused = answerText(str(b.key), b.words, Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // {key}: the question is closed with no answer and never asked again.
+  '/you/skip': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = skip(str(b.key), Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // {projectId, text}: the owner's own words for that project's line of what stands out.
+  '/you/stands-out': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = setStandOut(projectIdOf(b.projectId), typeof b.text === 'string' ? b.text : '', Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // {projectId}: that project is left out, and the next one takes its place.
+  '/you/stands-out/leave-out': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = leaveOut(projectIdOf(b.projectId), Date.now());
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // {projectId}: bring back a project with its saved line.
+  '/you/stands-out/bring-back': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = bringBack(projectIdOf(b.projectId));
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // {projectId}: use the record's line again for a shown project.
+  '/you/stands-out/restore': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = restore(projectIdOf(b.projectId));
+      return refused ? send({ error: refused }, 400) : send({ ok: true });
+    },
+  },
+  // Everything the owner has told, as one document, with the words behind each fact (lib/you.ts).
+  '/told': { OPTIONS: preflight, GET: () => send(told()) },
   // Home's list: everything that needs the person, in order (lib/queue.ts), and how many items are snoozed.
   '/queue': {
     OPTIONS: preflight,

@@ -402,10 +402,11 @@ export function resumeView(jobId: number): ResumeView | null {
   }
 
   // The questions still open about the record: one about a fact on each line that uses it; one about a role on the
-  // heading that is about that role. One about anything else is answered where it is asked.
+  // heading that is about that role. One about anything else is answered where it is asked. The agenda's questions
+  // (lib/agenda.ts) are about no line: they ask for a new story, on the You screen.
   if (rows.length) {
     const home = homeKeys(Date.now());
-    for (const q of openRaised()) {
+    for (const q of openRaised().filter((x) => x.kind !== 'agenda')) {
       const about = q.about.split(',').map((x) => x.trim());
       const factIds = about.map((x) => /^fact:(\d+)$/.exec(x)).filter((m) => m !== null).map((m) => Number(m![1]));
       const roleIds = about.map((x) => /^role:(\d+)$/.exec(x)).filter((m) => m !== null).map((m) => Number(m![1]));

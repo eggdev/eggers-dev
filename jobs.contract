@@ -752,7 +752,7 @@ component ResumeScreen
     decided = act == "undo" ? decided.filter(x => x != id) : decided.concat([id])
     decide(id, act)
   view
-    column max-width=resumeWidth() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Geist', system-ui" testId="resume"
+    column max-width=resumeWidth() padding-left=lookGutter() padding-right=lookGutter() padding-top=lookGutter() padding-bottom=look().sectionGap gap=look().sectionGap align-items="stretch" color="look.ink" font-family="'Inter', system-ui" testId="resume"
       Section(testId="resume-head")
         Action(label="Back to the job", press=back, disabled=false, keys="", testId="resume-back")
         if inHand(writingIt)
