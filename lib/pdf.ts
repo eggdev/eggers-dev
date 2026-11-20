@@ -4,7 +4,7 @@
 // check that nothing was lost, that the section headers, the role headings and the bullets come in the
 // Markdown's order (the parse test, readingOrder in lib/resume.ts), and that the posting's terms are in the file.
 import { bullets, density, overall, type Part, REQUIRED, unreadable, WEIGHTS } from './ats.ts';
-import { readingOrder } from './resume.ts';
+import { readingOrder, TECHNOLOGIES } from './resume.ts';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +26,8 @@ const contact = (line: string) => line.split(/\s+[·|•]\s+/).map((x) => x.trim
 const plain = (line: string) => line.replace(/\s+[–—]\s+/g, ' - ').replace(/\s+[·•]\s+/g, ' | ');
 
 // The resume's Markdown as the few HTML elements a resume needs. The line under the name is the
-// contact line, and the line under a role's heading is its dates and place.
+// contact line, and the line under a role's heading is its dates and place. An entry's Technologies line is one plain
+// line under its bullets, in the body's size, wherever it stands.
 // `companies` are the employers' names as the bank has them. A role's heading "Title, Company" is printed as the
 // title on its own line and the company at the start of the next, with the dates: a title that holds a comma
 // ("Director, Software Engineering, Acme") leaves a parser guessing which part is the employer.
@@ -45,6 +46,9 @@ export function resumeHtml(markdown: string, scale = 1, companies: string[] = []
       if (h[1].length === 3) { const at = known.find((c) => title.toLowerCase().endsWith(`, ${c.toLowerCase()}`)); if (at) { company = title.slice(title.length - at.length); title = title.slice(0, title.length - at.length - 2); } }
       out.push(`<h${h[1].length}>${inline(title)}</h${h[1].length}>`); after = `h${h[1].length}`; continue;
     }
+    // An entry's Technologies line, with or without a bullet's mark, is one plain line, as every other reader takes it.
+    const tech = l.trim().replace(/^[-*•]\s+/, '');
+    if (TECHNOLOGIES.test(tech)) { close(); owed(); out.push(`<p>${inline(tech)}</p>`); after = ''; continue; }
     const b = l.match(/^\s*[-*]\s+(.*)$/);
     if (b) { owed(); if (!list) { out.push('<ul>'); list = true; } out.push(`<li>${inline(b[1])}</li>`); after = ''; continue; }
     close();
@@ -123,7 +127,7 @@ export async function atsCheck(pdf: Uint8Array, markdown: string, terms: { inRes
   const total = terms.inResume.length + terms.inBankOnly.length + terms.missing.length, lost = terms.inResume.filter((t) => !has(t));
   const odd = unreadable(read), count = read.split(' ').filter(Boolean).length, room = density(count, pages);
   // A bullet names its method when it names one of the posting's terms or a tool the bank holds.
-  const b = bullets(markdown, [...terms.inResume, ...terms.inBankOnly, ...tools]);
+  const b = bullets(markdown, [...terms.inResume, ...terms.inBankOnly, ...tools], pages);
   // The top third of the file is what a recruiter's first glance takes in: the posting's terms should be there.
   const top = read.slice(0, Math.ceil(read.length * 0.3)).toLowerCase(), up = terms.inResume.filter((t) => top.includes(t.toLowerCase()));
   const lines = [

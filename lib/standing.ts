@@ -336,6 +336,9 @@ export function setFactMark(factId: number, mark: Mark | '', now = Date.now()): 
     const other = mark === 'public' || mark === 'documents' ? keptElsewhere(factId, f.text) : null;
     if (other !== null) return `These words are kept back on ${factRef(other)}. Clear that mark first.`;
     markFact(factId, f, mark, now);
+    // A told fact the owner marked is theirs (lib/derive.ts): deriving again keeps it, and so never brings its words back
+    // unmarked. A source's fact keeps its status: a reading again carries its mark (carryFacts below).
+    if (mark !== '') db.query("UPDATE facts SET status = 'confirmed' WHERE id = ? AND told = 1").run(factId);
     return '';
   });
 }

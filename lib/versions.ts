@@ -5,7 +5,8 @@
 // one text and one PDF. A Save that changes nothing makes no letter.
 //
 // Nothing is written at a start: a resume with no row is version A by rule. Its first change stores the text as it
-// stood as A (with no date), then the new one as B. A version is never changed or deleted, except with its job.
+// stood as A (with no date), then the new one as B. A version is never changed or deleted, except with its job, or when
+// the owner starts a new record (clearUnsent below).
 import { db } from './db.ts';
 import { storeLinks, type Links } from './links.ts';
 
@@ -70,6 +71,17 @@ function staleAfter(jobId: number, text: string, why: Why): void {
   for (const s of db.query("SELECT id, old FROM resume_suggestions WHERE job_id = ? AND status = 'open'").all(jobId) as { id: number; old: string }[]) {
     if (why === 'written' || lines.filter((l) => l === s.old).length !== 1) db.query("UPDATE resume_suggestions SET status = 'stale' WHERE id = ?").run(s.id);
   }
+}
+
+// Starting a new record (lib/reset.ts): every job not yet sent loses its resume text, its links, every version of it and
+// every suggestion on it, since all of them were written from the record that is gone. A sent job keeps all of it. Run
+// inside the caller's transaction. Gives how many unsent jobs had a resume.
+export function clearUnsent(): number {
+  const had = (db.query("SELECT count(*) AS n FROM jobs WHERE outcome = '' AND resume != ''").get() as { n: number }).n;
+  db.run("DELETE FROM resume_versions WHERE job_id IN (SELECT id FROM jobs WHERE outcome = '')");
+  db.run("DELETE FROM resume_suggestions WHERE job_id IN (SELECT id FROM jobs WHERE outcome = '')");
+  db.run("UPDATE jobs SET resume = '', links = '', edited = 0 WHERE outcome = ''");
+  return had;
 }
 
 // Keeps the text as it stands as A before something changes what the next writing is measured against (a new length):

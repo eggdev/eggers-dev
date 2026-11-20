@@ -2,13 +2,13 @@
 // owner's rule 9). Two uses:
 //
 // 1. Redaction, before context is sent to a model (lib/jobs.ts, bank and brief; lib/outreach.ts). In what is context
-//    and not evidence (a project's situation, what the person did, its result; what was learned; a kept line of "How
-//    you work"), each number is replaced by "[number]" unless a fact of the same project holds it strictly: the same
-//    value, the same kind of unit (a percent, money, a multiple such as "3x") and the same noun after it, which must
-//    not be empty; or the same words after it (up to three), which must not be empty either. With no noun on either
-//    side, and with no word after it, it is taken out. Only a name that needs no guess stays (below). The match is
-//    strict on purpose: a number wrongly taken out only means the writer does not see it there, and the fact still has
-//    it. The stored text is never changed.
+//    and not evidence (a project's context, action, result and learning; a kept line of "How you work"), each number
+//    is replaced by "[number]" unless a fact of the same project holds it strictly: the same value, the same kind of
+//    unit (a percent, money, a multiple such as "3x") and the same noun after it, which must not be empty; or the same
+//    words after it (up to three), which must not be empty either. With no noun on either side, and with no word after
+//    it, it is taken out. Only a name that needs no guess stays (below). The match is strict on purpose: a number
+//    wrongly taken out only means the writer does not see it there, and the fact still has it. The stored text is
+//    never changed.
 //
 // 2. The check after writing (lib/checks.ts, `context-number`; lib/outreach.ts). A number is unsupported when its
 //    value stands in the context as stored and in no stated source (the facts the text may draw on). Only the value is

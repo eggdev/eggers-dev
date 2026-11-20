@@ -10,6 +10,8 @@ import { analyze, publish, saveResume, type JobRow } from '../lib/jobs.ts';
 import { setResume } from '../lib/versions.ts';
 import { DB_FILE, inData } from '../lib/paths.ts';
 import { write } from '../lib/profile.ts';
+// A reading again carries each fact's origins to its new id (lib/db.ts refuses to read without their module).
+import '../lib/origins.ts';
 
 const steps = process.argv.slice(2).length ? process.argv.slice(2) : ['sources', 'dedupe', 'profile', 'jobs'];
 const count = () => (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;

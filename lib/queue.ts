@@ -2,7 +2,9 @@
 // Nothing here decides anything. It gathers what other parts already know needs the person:
 // 1. the questions code raised from their own data (lib/raised.ts), answered in place with POST /questions;
 // 2. the questions a model wrote that are open in Talk (lib/talk.ts), which are answered in Talk;
-// 3. applications with no reply 14 days after they were sent, which are settled on the job's page.
+// 3. applications with no reply 14 days after they were sent, which are settled on the job's page;
+// 4. questions asked in real interviews that no story answers yet (lib/stories.ts), settled on the Stories screen.
+// On an empty record one more item comes first: the way to start it, in Experience.
 // A job read but not yet opened is not here: the jobs table does not record whether the person opened one.
 //
 // A snooze hides one item until a time. It is kept by the item's key, so an item that comes back
@@ -14,6 +16,7 @@ import { HOME_RECORD } from './gaps.ts';
 import { openProposalRoles } from './propose.ts';
 import { inputsOf, openRaised, routeOf, type Raised } from './raised.ts';
 import { parseResume } from './resume.ts';
+import { unanswered } from './stories.ts';
 import { openQuestions } from './talk.ts';
 
 db.run('CREATE TABLE IF NOT EXISTS queue_snoozes (key TEXT PRIMARY KEY, until INTEGER NOT NULL)');
@@ -25,7 +28,8 @@ export const SNOOZE_MS = DAY;
 export const QUIET_DAYS = 14;
 
 // kind: timeline | linkedin | skill | record (a raised question), proposals (projects suggested for a role), talk (a
-// question open in Talk), quiet (an application).
+// question open in Talk), quiet (an application), asked (an interview question no story answers), start (the record
+// is empty).
 // choices and inputs are a raised question's: inputs[i] is what choice i needs beside the tap ("month", "line" or "").
 // route is where the item is settled when it is not answered here ("" for a raised question).
 // from says where the item came from; blocks says what it holds up, when that is known ("" when not).
@@ -80,7 +84,11 @@ export function allItems(now: number, hidden: Set<string> = new Set(), all = fal
       const what = j.title && j.company ? `${j.title} at ${j.company}` : j.title || j.company || 'An application';
       return { key: `quiet:${j.id}`, kind: 'quiet', text: `${what}: no reply in ${days} days.`, from: 'From your applications', blocks: '', choices: [], inputs: [], route: `/job/${j.id}` };
     });
-  return [...raised, ...proposals, ...talk, ...quiet];
+  const asked = unanswered().map((q): Item => ({ key: `asked:${q.id}`, kind: 'asked', text: `You were asked “${q.text}” and no story answers it yet.`,
+    from: q.job ? `From your interview for ${q.job}` : q.jobId ? 'From an interview at a job with no title yet' : 'From your interviews', blocks: '', choices: [], inputs: [], route: `/record/stories#question-${q.id}` }));
+  const empty = ['roles', 'projects', 'facts'].every((t) => db.query(`SELECT 1 FROM ${t} LIMIT 1`).get() === null);
+  const start: Item[] = empty ? [{ key: 'record:start', kind: 'start', text: 'Your record is empty. Add your first job, then tell a story from it.', from: '', blocks: '', choices: [], inputs: [], route: '/record' }] : [];
+  return [...start, ...raised, ...proposals, ...talk, ...quiet, ...asked];
 }
 
 // The keys of the items Home shows now, read with no write (the resume screen says "Answer it on Home" only for these).

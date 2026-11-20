@@ -1,0 +1,654 @@
+// Stories (DESIGN.md section 12; lib/stories.ts, lib/spoken.ts): every project with something to tell, kept in one
+// place to read aloud and practise before an interview. Record's second line holds it, after Experience, at
+// /record/stories, and a story open at /record/stories/:id, so a reload lands on it.
+//
+// On a wide window (Experience's breakpoint) the list is on the left and the open story on the right; on a narrow one
+// the list is its own screen and a story opens as another, with a way back. The list groups the stories under their
+// jobs, each with one quiet line: its spoken time and how often it was practised. Under it, the questions the owner was
+// asked in real interviews, each with the story that answers it. The open story is set for reading aloud: its spoken
+// text, the time it takes to say, Edit, Write it again, I practised this and Time it, the practices, the four parts
+// and the questions it answers. Writing it is slow work: one line in the Activity style, never a spinner.
+use Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Action, MainAction, DangerAction, GoTo, Actions, InPlaceForm, FieldLabel, Labelled, WorkLine, TreeRow, Beside, BesideList, BesidePane, ItemTitle, ReadAloud, ReadParagraph, statusWord, look, lookTight, lookBeside from "./look.contract"
+use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activity.contract"
+
+// A story in the list: its reference, title, and one quiet line ("2 min 40 s · Practised 3 times, last on 19 Nov 2026").
+shape StoryRow
+  id: string
+  ref: string
+  title: string
+  line: string
+
+// The stories of one job (or of the side projects, or of those not placed yet), jobs newest first.
+shape StoryGroup
+  key: string
+  name: string
+  stories: StoryRow[]
+
+// A question the owner was asked in an interview: the job it was asked at ("" for none) and its name, the day it was
+// added, the story that answers it ("" for none) and its title, and whether the owner said no story is needed.
+shape AskedQuestion
+  id: string
+  text: string
+  jobId: string
+  job: string
+  added: string
+  projectId: string
+  story: string
+  noStory: bool
+  // The stories its select offers.
+  choices: StoryChoice[]
+
+// A story as a question's select offers it: its title and its job.
+shape StoryChoice
+  id: string
+  label: string
+
+// GET /stories. untold: the pieces of work with nothing to tell yet, which are not listed.
+shape StoriesList
+  loaded: bool
+  groups: StoryGroup[]
+  untold: number
+  questions: AskedQuestion[]
+
+// One practice: its day, and the time it took when it was timed ("" when not).
+shape Practice
+  id: string
+  on: string
+  timed: string
+
+shape StoryParts
+  context: string
+  action: string
+  result: string
+  learning: string
+
+shape StoryQuestion
+  id: string
+  text: string
+  job: string
+
+// One story (GET /stories/:id). spoken: its spoken text, and paragraphs, the same text as the screen sets it. held: the
+// text is the owner's own, so writing it again asks first. status: '' | queued | running | done | failed, and note,
+// what was kept or why it failed. canWrite: it has something to write from. timeLine: about how long it takes to say,
+// and over, whether that is past 3 min 30 s ("" and false with no spoken text). gone: it is no longer in the record.
+shape StoryFull
+  loaded: bool
+  gone: bool
+  id: string
+  ref: string
+  title: string
+  job: string
+  spoken: string
+  paragraphs: ReadParagraph[]
+  held: bool
+  status: string
+  note: string
+  canWrite: bool
+  timeLine: string
+  over: bool
+  practiceLine: string
+  practices: Practice[]
+  parts: StoryParts
+  questions: StoryQuestion[]
+
+// The questions asked at one job (GET /jobs/:id/questions).
+shape JobQuestions
+  loaded: bool
+  job: string
+  questions: AskedQuestion[]
+
+shape StoryReply
+  ok: bool
+  error: string
+
+// The open story's screen state. open: its id ("" for none). beside: the list and the story side by side. editing:
+// its spoken text is being edited; saving and asking: a save or a request to write it is in flight. timing: the timer
+// runs, at timerSeconds. askingPractice: the practice whose deletion is asked about, and removing, one in flight. error: the last refusal on it.
+shape StoryState
+  open: string
+  beside: bool
+  wide: bool
+  editing: bool
+  saving: bool
+  asking: bool
+  practising: bool
+  timing: bool
+  timerSeconds: number
+  showPractices: bool
+  askingPractice: string
+  removing: bool
+  error: string
+  work: WorkItem[]
+
+// The questions' state, on Stories and on a job. form: where the add form is open ("stories", "job" or ""); busy: an
+// add is in flight; error: a refused add. asking: the question whose deletion is asked about; on: the question the last
+// change was about, and changeError, its refusal.
+shape AskedState
+  form: string
+  busy: bool
+  error: string
+  asking: string
+  on: string
+  changeError: string
+
+fn pad2(n: number): string = n < 10 ? `0${n}` : `${n}`
+// A time in words, as lib/spoken.ts writes it: "2 min 40 s", "50 s".
+fn timeWords(seconds: number): string = seconds < 60 ? `${seconds} s` : `${floor(seconds / 60)} min ${pad2(seconds % 60)} s`
+fn untoldLine(n: number): string = n == 1 ? "1 more piece of work has nothing told yet." : `${n} more pieces of work have nothing told yet.`
+// Where a question came from, and when it was added.
+fn askedFrom(q: AskedQuestion, showJob: bool): string = not showJob or q.jobId == "" ? `Added ${q.added}.` : q.job != "" ? `Asked for ${q.job}. Added ${q.added}.` : `Asked at a job with no title yet. Added ${q.added}.`
+fn practiceText(p: Practice): string = p.timed == "" ? p.on : `${p.on}, timed at ${p.timed}`
+
+members App
+  // The list while Stories is shown; the open story while one is.
+  derive onStories = nav.tab == "bank" and (topName == "stories" or topName == "story")
+  resource stories = loadStories() when onStories as shape StoriesList else empty()
+  derive storyOpen = topName == "story" ? top(nav).params.id : ""
+  resource storyShown = loadStory(storyOpen) when storyOpen != "" as shape StoryFull else empty()
+  // The questions asked at the job shown.
+  resource jobAsked = loadJobQuestions(selectedJob) when selectedJob != "" as shape JobQuestions else empty()
+  // Writing the spoken story is slow work: the activity list is read again at once.
+  mutation spokenAsked as shape StoryReply refreshes storyShown, stories, activity
+  mutation spokenSaved as shape StoryReply refreshes storyShown, stories then afterSpokenSave
+  mutation practised as shape StoryReply refreshes storyShown, stories then afterPractised
+  mutation practiceRemoved as shape StoryReply refreshes storyShown, stories then afterPracticeRemove
+  // A question changes Home's list too.
+  mutation askedAdded as shape StoryReply refreshes stories, jobAsked, storyShown, homeList then afterAskedAdd
+  mutation askedSettled as shape StoryReply queue refreshes stories, jobAsked, storyShown, homeList
+  mutation askedRemoved as shape StoryReply refreshes stories, jobAsked, storyShown, homeList then afterAskedRemove
+  // The story the last action was on, and which (write | save | practise | timer | delete-practice), so a refusal is said
+  // there. The edit, the timer and the practices shown belong to that story: when another opens, they are put away.
+  state spokenOn = ""
+  state spokenAct = ""
+  state spokenEditing = false
+  state practicesShown = false
+  state practiceAsking = ""
+  // The timer: the story it runs for ("" when stopped), and when it started and last ticked, on this page's clock.
+  state timerFor = ""
+  state timerStart = 0
+  state timerNow = 0
+  state askedForm = ""
+  state askedAsking = ""
+  state askedOn = ""
+  derive spokenRefusal = spokenAct == "write" ? (pending(spokenAsked) ? "" : match spokenAsked { case some(r) => r.error, case none => "" }) : spokenAct == "save" ? (pending(spokenSaved) ? "" : match spokenSaved { case some(r) => r.error, case none => "" }) : spokenAct == "practise" or spokenAct == "timer" ? (pending(practised) ? "" : match practised { case some(r) => r.error, case none => "" }) : spokenAct == "delete-practice" ? (pending(practiceRemoved) ? "" : match practiceRemoved { case some(r) => r.error, case none => "" }) : ""
+  derive storyState = StoryState(open=storyOpen, beside=(viewport.width >= lookBeside()), wide=wide, editing=(spokenEditing and spokenOn == storyOpen), saving=pending(spokenSaved), asking=pending(spokenAsked), practising=pending(practised),
+    timing=(timerFor != "" and timerFor == storyOpen), timerSeconds=floor(max(0, timerNow - timerStart) / 1000), showPractices=(practicesShown and spokenOn == storyOpen), askingPractice=(spokenOn == storyOpen ? practiceAsking : ""), removing=pending(practiceRemoved),
+    error=(spokenOn == storyOpen ? spokenRefusal : ""), work=activity.items)
+  derive askedAddError = pending(askedAdded) ? "" : match askedAdded { case some(r) => r.error, case none => "" }
+  derive askedChangeError = pending(askedSettled) or pending(askedRemoved) ? "" : match askedRemoved { case some(r) => r.error, case none => match askedSettled { case some(r) => r.error, case none => "" } }
+  derive askedState = AskedState(form=askedForm, busy=pending(askedAdded), error=askedAddError, asking=askedAsking, on=askedOn, changeError=askedChangeError)
+  task storyTimer when timerFor != ""
+    every(250, tickTimer)
+  task storyLeft when spokenOn != "" and spokenOn != storyOpen
+    after(1, leaveStory)
+
+  // Another story opened, or none: what was in hand on the last one is put away, and its timer stopped.
+  action leaveStory
+    spokenOn = ""
+    spokenAct = ""
+    spokenEditing = false
+    timerFor = ""
+    practicesShown = false
+    practiceAsking = ""
+
+  // Write it, or again. A text the owner holds asks first: their text is kept, so nothing would change.
+  action writeSpoken(id: string, held: bool)
+    spokenOn = id
+    spokenAct = "write"
+    if held
+      showModal("replace-spoken")
+    else
+      send spokenAsked = askSpoken(id, false)
+  action replaceSpoken
+    if spokenOn == storyOpen
+      spokenAct = "write"
+      send spokenAsked = askSpoken(spokenOn, true)
+  action editSpoken(id: string)
+    spokenOn = id
+    spokenAct = ""
+    spokenEditing = true
+  action cancelSpoken
+    spokenEditing = false
+  // Only the story open, and only while it is the one being edited.
+  action saveSpokenText(text: string)
+    if spokenEditing and spokenOn == storyOpen and not pending(spokenSaved)
+      spokenAct = "save"
+      send spokenSaved = saveSpoken(spokenOn, text)
+  action afterSpokenSave
+    match spokenSaved
+      case some(r)
+        if r.ok
+          spokenEditing = false
+      case none
+        spokenAct = spokenAct
+  action practise(id: string)
+    if not pending(practised)
+      spokenOn = id
+      spokenAct = "practise"
+      send practised = addPractice(id, 0)
+  // Time it: the seconds count up while the owner reads aloud; Stop records the practice with the time it took.
+  action startTimer(id: string)
+    spokenOn = id
+    spokenAct = ""
+    timerFor = id
+    timerStart = performanceNow()
+    timerNow = performanceNow()
+  action tickTimer
+    timerNow = performanceNow()
+  // The timer stops once the practice is kept, so a refusal leaves it to be tried again.
+  action stopTimer
+    if timerFor != "" and timerFor == storyOpen and not pending(practised)
+      spokenAct = "timer"
+      send practised = addPractice(timerFor, max(1, floor((performanceNow() - timerStart) / 1000)))
+  action afterPractised
+    match practised
+      case some(r)
+        if r.ok and spokenAct == "timer"
+          timerFor = ""
+      case none
+        spokenAct = spokenAct
+  action cancelTimer
+    timerFor = ""
+  action togglePractices
+    spokenOn = storyOpen
+    practicesShown = not practicesShown
+    practiceAsking = ""
+  action askPracticeDelete(id: string)
+    spokenOn = storyOpen
+    practiceAsking = id
+  action keepPractice
+    practiceAsking = ""
+  action removePractice(id: string)
+    if not pending(practiceRemoved)
+      spokenOn = storyOpen
+      spokenAct = "delete-practice"
+      send practiceRemoved = removePractice(id)
+  action afterPracticeRemove
+    match practiceRemoved
+      case some(r)
+        if r.ok
+          practiceAsking = ""
+      case none
+        practiceAsking = practiceAsking
+  // The add form of the questions, on Stories ("stories") or on a job ("job").
+  action openAsked(where: string)
+    askedForm = where
+    askedAsking = ""
+  action closeAsked
+    askedForm = ""
+  action addAsked(jobId: string, text: string)
+    if not pending(askedAdded)
+      send askedAdded = addAsked(jobId, text)
+  action afterAskedAdd
+    if askedAddError == ""
+      askedForm = ""
+  // A select hands its question first, then the story chosen ("" for none).
+  action chooseStory(id: string, project: string)
+    askedOn = id
+    send askedSettled = chooseStory(id, project)
+  action markNoStory(id: string, on: bool)
+    askedOn = id
+    send askedSettled = markNoStory(id, on)
+  action askAskedDelete(id: string)
+    askedAsking = id
+  action keepAsked
+    askedAsking = ""
+  action removeAsked(id: string)
+    askedOn = id
+    send askedRemoved = removeAsked(id)
+  action afterAskedRemove
+    match askedRemoved
+      case some(r)
+        if r.ok
+          askedAsking = ""
+      case none
+        askedAsking = askedAsking
+  action pullStories
+    refresh stories
+    refresh storyShown
+
+// The Stories screen: the list (and, on a wide window, the open story beside it), or on a narrow window the open story
+// as its own screen.
+component StoriesScreen
+  props
+    list: StoriesList
+    listFailed: bool
+    story: StoryFull
+    storyFailed: bool
+    s: StoryState
+    a: AskedState
+    scrollId: string
+    write: action
+    edit: action
+    cancelEdit: action
+    save: action
+    practise: action
+    startTimer: action
+    stopTimer: action
+    cancelTimer: action
+    togglePractices: action
+    askPracticeDelete: action
+    keepPractice: action
+    removePractice: action
+    openAsked: action
+    closeAsked: action
+    addAsked: action
+    choose: action
+    noStory: action
+    askAskedDelete: action
+    keepAsked: action
+    removeAsked: action
+    retry: action
+  view
+    Beside(beside=s.beside, testId=(s.beside ? "stories-beside" : "stories-frame"))
+      BesideList(beside=s.beside, scrollId=scrollId, testId="stories")
+        if s.beside or s.open == ""
+          StoryList(list=list, failed=listFailed, s=s, a=a, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, choose=choose, noStory=noStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked, retry=retry)
+        else
+          StoryPage(story=story, failed=storyFailed, s=s, back=true, write=write, edit=edit, cancelEdit=cancelEdit, save=save, practise=practise, startTimer=startTimer, stopTimer=stopTimer, cancelTimer=cancelTimer, togglePractices=togglePractices, askPracticeDelete=askPracticeDelete, keepPractice=keepPractice, removePractice=removePractice, retry=retry)
+      if s.beside
+        BesidePane(label="The open story", testId="stories-pane")
+          if s.open == ""
+            QuietLine(text="Open a story on the left. It opens here, set to be read aloud, and the list stays.", testId="story-none")
+          else
+            StoryPage(story=story, failed=storyFailed, s=s, back=false, write=write, edit=edit, cancelEdit=cancelEdit, save=save, practise=practise, startTimer=startTimer, stopTimer=stopTimer, cancelTimer=cancelTimer, togglePractices=togglePractices, askPracticeDelete=askPracticeDelete, keepPractice=keepPractice, removePractice=removePractice, retry=retry)
+
+// The list: the stories under their jobs, how many pieces of work have nothing told yet, and the questions.
+component StoryList
+  props
+    list: StoriesList
+    failed: bool
+    s: StoryState
+    a: AskedState
+    openAsked: action
+    closeAsked: action
+    addAsked: action
+    choose: action
+    noStory: action
+    askAskedDelete: action
+    keepAsked: action
+    removeAsked: action
+    retry: action
+  view
+    Section(testId="stories-head")
+      Title(text="Stories", testId="stories-title")
+      QuietLine(text="Each piece of work as you would tell it in an interview, to read aloud and practise.", testId="stories-hint")
+    if not list.loaded
+      Section(testId="stories-wait")
+        if failed
+          FailLine(text="The stories couldn’t be loaded.", testId="stories-load-error")
+          Action(label="Try again", press=retry, disabled=false, keys="", testId="stories-retry")
+        else
+          QuietLine(text="Loading…", testId="stories-loading")
+    else
+      if list.groups.length == 0
+        Section(testId="stories-empty")
+          Line(text="No piece of work has anything to tell yet.", testId="stories-empty-text")
+      for g in list.groups key=g.key
+        Section(testId=`stories-group-${g.key}`)
+          SectionHead(text=g.name, testId=`stories-group-${g.key}-head`)
+          for st in g.stories key=st.id
+            TreeRow(code=st.ref, name=st.title, href=path("story", st.id), strong=true, quiet=false, sub=st.line, mark="", level=0, current=(s.open == st.id), rule=false, wide=s.wide, testId=`story-${st.id}`)
+      if list.untold > 0
+        Section(testId="stories-untold")
+          QuietLine(text=untoldLine(list.untold), testId="stories-untold-line")
+          GoTo(label="Tell them in Experience", href=path("bank"), testId="stories-untold-go")
+      Section(testId="asked")
+        SectionHead(text="Questions you were asked", testId="asked-head")
+        if list.questions.length == 0
+          QuietLine(text="None yet. After an interview, add the questions you were asked and choose the story that answers each.", testId="asked-none")
+        for q in list.questions key=q.id
+          AskedRow(q=q, showJob=true, where="asked", a=a, choose=choose, noStory=noStory, askDelete=askAskedDelete, keep=keepAsked, remove=removeAsked)
+        QuestionAdd(jobId="", open=(a.form == "stories"), error=a.error, busy=a.busy, start=openAsked("stories"), save=addAsked, cancel=closeAsked, testId="asked-add")
+
+// One story, set to be read aloud. With no spoken text yet, its four parts come first, and one line to write it.
+component StoryPage
+  props
+    story: StoryFull
+    failed: bool
+    s: StoryState
+    back: bool
+    write: action
+    edit: action
+    cancelEdit: action
+    save: action
+    practise: action
+    startTimer: action
+    stopTimer: action
+    cancelTimer: action
+    togglePractices: action
+    askPracticeDelete: action
+    keepPractice: action
+    removePractice: action
+    retry: action
+  derive state = workStatus(s.work, "write-spoken", story.id, story.status)
+  derive spoken = story.spoken != "" or s.editing
+  view
+    column gap=look().sectionGap align-items="stretch" testId="story-page"
+      if not story.loaded or story.id != s.open
+        Section(testId="story-wait")
+          if back
+            GoTo(label="Back to stories", href=path("stories"), testId="story-back")
+          if story.gone
+            Line(text="This story is no longer in your record.", testId="story-gone")
+          else if failed
+            FailLine(text="This story couldn’t be loaded.", testId="story-load-error")
+            Action(label="Try again", press=retry, disabled=false, keys="", testId="story-retry")
+          else
+            QuietLine(text="Loading…", testId="story-loading")
+      else
+        Section(testId="story-top")
+          if back
+            GoTo(label="Back to stories", href=path("stories"), testId="story-back")
+          ItemTitle(text=story.title, testId="story-title")
+          QuietLine(text=story.job, testId="story-job")
+        if not spoken
+          PartsList(parts=story.parts, id=story.id, testId="story-parts-first")
+        Section(testId="story-spoken")
+          if s.editing
+            SpokenEdit(text=story.spoken, error=s.error, busy=s.saving, save=save, cancel=cancelEdit)
+          else if spoken
+            ReadAloud(paragraphs=story.paragraphs, testId="story-text")
+            if story.over
+              StrongLine(text=story.timeLine, testId="story-time")
+            else
+              QuietLine(text=story.timeLine, testId="story-time")
+            if story.held
+              QuietLine(text="This is your own text. Writing it again asks first.", testId="story-held")
+          else
+            Line(text="No spoken story yet: one text in your own voice, in the order of the four parts, to say in under 3 min 30 s.", testId="story-unwritten")
+          if not s.editing
+            if inHand(state)
+              WorkLine(word=statusWord("work", state), place=workPlace(s.work, "write-spoken", story.id), text=`Writing the spoken story. Usually ${usualWords(workUsual(s.work, "write-spoken", story.id))}.`, testId="story-work")
+            else if state == "failed"
+              FailLine(text=`The spoken story couldn’t be written. ${story.note}`, testId="story-failed")
+            else if story.note != ""
+              QuietLine(text=story.note, testId="story-note")
+            if s.timing
+              Line(text=`Timing: ${timeWords(s.timerSeconds)}. Read it aloud, then press Stop.`, testId="story-timer")
+            Actions(testId="story-actions")
+              if spoken
+                if s.timing
+                  MainAction(label="Stop", press=stopTimer, disabled=s.practising, keys="", testId="story-timer-stop")
+                  Action(label="Cancel", press=cancelTimer, disabled=false, keys="", testId="story-timer-cancel")
+                else
+                  MainAction(label="I practised this", press=practise(story.id), disabled=s.practising, keys="", testId="story-practise")
+                  Action(label="Time it", press=startTimer(story.id), disabled=false, keys="", testId="story-time-it")
+                  Action(label="Edit", press=edit(story.id), disabled=inHand(state), keys="", testId="story-edit")
+                  Action(label="Write it again", press=write(story.id, story.held), disabled=(s.asking or inHand(state)), keys="", testId="story-write")
+              else
+                MainAction(label="Write the spoken story", press=write(story.id, story.held), disabled=(s.asking or inHand(state) or not story.canWrite), keys="", testId="story-write")
+            if not spoken and not story.canWrite
+              QuietLine(text="There is nothing to tell yet. Tell this project, or write its four parts, first.", testId="story-cannot")
+            if s.error != ""
+              FailLine(text=s.error, testId="story-error")
+            if spoken
+              PracticeList(story=story, s=s, toggle=togglePractices, askDelete=askPracticeDelete, keep=keepPractice, remove=removePractice)
+        if spoken
+          PartsList(parts=story.parts, id=story.id, testId="story-parts")
+        Section(testId="story-questions")
+          SectionHead(text="Questions this answers", testId="story-questions-head")
+          if story.questions.length == 0
+            QuietLine(text="None yet. Choose this story for a question you were asked, in the list of questions.", testId="story-questions-none")
+          for q in story.questions key=q.id
+            column gap=0 testId=`story-question-${q.id}`
+              Line(text=`“${q.text}”`, testId=`story-question-${q.id}-text`)
+              if q.job != ""
+                QuietLine(text=`Asked for ${q.job}.`, testId=`story-question-${q.id}-job`)
+
+// How often the story was practised, in one quiet line, and behind "Show them" each practice with Delete, which asks.
+component PracticeList
+  props
+    story: StoryFull
+    s: StoryState
+    toggle: action
+    askDelete: action
+    keep: action
+    remove: action
+  view
+    column gap=lookTight() align-items="stretch" testId="story-practice"
+      QuietLine(text=story.practiceLine, testId="story-practised")
+      if story.practices.length > 0
+        Action(label=(s.showPractices ? "Hide them" : "Show them"), press=toggle, disabled=false, keys="", testId="story-practices-toggle")
+      if s.showPractices
+        for p in story.practices key=p.id
+          column gap=lookTight() testId=`practice-${p.id}`
+            Line(text=practiceText(p), testId=`practice-${p.id}-text`)
+            if s.askingPractice == p.id
+              column gap=lookTight() role="alert"
+                StrongLine(text="Delete this practice? This cannot be undone.", testId="practice-delete-ask")
+                Actions(testId="practice-delete-actions")
+                  DangerAction(label="Delete it", press=remove(p.id), disabled=s.removing, testId="practice-delete-yes")
+                  Action(label="Keep it", press=keep, disabled=false, keys="", testId="practice-delete-no")
+            else
+              DangerAction(label="Delete", press=askDelete(p.id), disabled=false, testId=`practice-${p.id}-delete`)
+
+// The four parts as the project holds them, read-only here, with the way to change them.
+component PartsList
+  props
+    parts: StoryParts
+    id: string
+    testId: string
+  view
+    Section(testId=testId)
+      SectionHead(text="The four parts", testId=`${testId}-head`)
+      Labelled(label="Context", value=(parts.context != "" ? parts.context : "Not written yet."), testId=`${testId}-context`)
+      Labelled(label="Action", value=(parts.action != "" ? parts.action : "Not written yet."), testId=`${testId}-action`)
+      Labelled(label="Result", value=(parts.result != "" ? parts.result : "Not written yet."), testId=`${testId}-result`)
+      Labelled(label="Learning", value=(parts.learning != "" ? parts.learning : "Not written yet."), testId=`${testId}-learning`)
+      GoTo(label="Open in Experience", href=path("project", id), testId=`${testId}-open`)
+
+// The spoken text edited in place. The form keeps its draft itself; Save makes it the owner's own text.
+component SpokenEdit
+  props
+    text: string
+    error: string
+    busy: bool
+    save: action
+    cancel: action
+  state draft = text
+  action editDraft(v: string)
+    draft = v
+  action submit
+    save(draft)
+  view
+    InPlaceForm(label="Edit the spoken story", testId="spoken-form")
+      textarea value=draft input=editDraft field-sizing="content" min-height="16em" max-height="80vh" aria-label="The spoken story" autofocus=true testId="spoken-text"
+      QuietLine(text="Once you save it, it is your own text: writing it again asks before it replaces it.", testId="spoken-hint")
+      if error != ""
+        FailLine(text=error, testId="spoken-error")
+      Actions(testId="spoken-actions")
+        MainAction(label="Save", press=submit, disabled=busy, keys="", testId="spoken-save")
+        Action(label="Cancel", press=cancel, disabled=false, keys="", testId="spoken-cancel")
+
+// One question the owner was asked: its words, where it came from, the story that answers it (a select), No story
+// needed, and Delete, which asks first. Its element id lets Home's item open the screen at it.
+component AskedRow
+  props
+    q: AskedQuestion
+    showJob: bool
+    // The testIds' first word: asked on Stories, job-asked on a job.
+    where: string
+    a: AskedState
+    choose: action
+    noStory: action
+    askDelete: action
+    keep: action
+    remove: action
+  view
+    column id=(showJob ? `question-${q.id}` : `job-question-${q.id}`) gap=lookTight() align-items="stretch" testId=`${where}-${q.id}`
+      Line(text=`“${q.text}”`, testId=`${where}-${q.id}-text`)
+      QuietLine(text=askedFrom(q, showJob), testId=`${where}-${q.id}-from`)
+      select value=q.projectId change=choose(q.id) aria-label=`The story that answers “${q.text}”` align-self="flex-start" max-width="100%" testId=`${where}-${q.id}-story`
+        option (q.noStory ? "No story needed" : "No story yet") value=""
+        for c in q.choices key=c.id
+          option c.label value=c.id
+      if a.on == q.id and a.changeError != ""
+        FailLine(text=a.changeError, testId=`${where}-${q.id}-error`)
+      if a.asking == q.id
+        column gap=lookTight() role="alert"
+          StrongLine(text="Delete this question? This cannot be undone.", testId=`${where}-delete-ask`)
+          Actions(testId=`${where}-delete-actions`)
+            DangerAction(label="Delete it", press=remove(q.id), disabled=false, testId=`${where}-delete-yes`)
+            Action(label="Keep it", press=keep, disabled=false, keys="", testId=`${where}-delete-no`)
+      else
+        Actions(testId=`${where}-${q.id}-actions`)
+          if q.projectId == "" and not q.noStory
+            Action(label="No story needed", press=noStory(q.id, true), disabled=false, keys="", testId=`${where}-${q.id}-none`)
+          if q.noStory
+            Action(label="It needs a story after all", press=noStory(q.id, false), disabled=false, keys="", testId=`${where}-${q.id}-needs`)
+          DangerAction(label="Delete", press=askDelete(q.id), disabled=false, testId=`${where}-${q.id}-delete`)
+
+// "Add a question you were asked": a one-field form in place. It keeps its draft itself; Add sends it, and a refusal is
+// said under the field with the draft kept.
+component QuestionAdd
+  props
+    jobId: string
+    open: bool
+    error: string
+    busy: bool
+    start: action
+    save: action
+    cancel: action
+    testId: string
+  state words = ""
+  action editWords(v: string)
+    words = v
+  action submit
+    save(jobId, words)
+  view
+    if open
+      InPlaceForm(label="Add a question you were asked", testId=`${testId}-form`)
+        FieldLabel(label="The question, in the words you remember.")
+          input value=words input=editWords submit=submit placeholder="Tell me about a time you changed a plan." aria-label="The question, in the words you remember." autocomplete="off" autofocus=true aria-invalid=(error != "") testId=`${testId}-text`
+        if error != ""
+          FailLine(text=error, testId=`${testId}-error`)
+        Actions(testId=`${testId}-actions`)
+          MainAction(label="Add", press=submit, disabled=busy, keys="", testId=`${testId}-save`)
+          Action(label="Cancel", press=cancel, disabled=false, keys="", testId=`${testId}-cancel`)
+    else
+      Action(label="Add a question you were asked", press=start, disabled=false, keys="", testId=`${testId}-start`)
+
+// On a job past "applied": the questions asked at its interviews, each with the story that answers it, and the form.
+component AskedSection
+  props
+    asked: JobQuestions
+    jobId: string
+    a: AskedState
+    openAsked: action
+    closeAsked: action
+    addAsked: action
+    choose: action
+    noStory: action
+    askDelete: action
+    keep: action
+    remove: action
+  view
+    Section(testId="job-asked")
+      SectionHead(text="Questions you were asked", testId="job-asked-head")
+      if asked.loaded and asked.job == jobId
+        if asked.questions.length == 0
+          QuietLine(text="Add each question you were asked, then choose the story that answers it. One with no story waits on Home.", testId="job-asked-none")
+        for q in asked.questions key=q.id
+          AskedRow(q=q, showJob=false, where="job-asked", a=a, choose=choose, noStory=noStory, askDelete=askDelete, keep=keep, remove=remove)
+      QuestionAdd(jobId=jobId, open=(a.form == "job"), error=a.error, busy=a.busy, start=openAsked("job"), save=addAsked, cancel=closeAsked, testId="job-asked-add")

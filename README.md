@@ -10,6 +10,24 @@ in `.data/`, which git ignores, and in private storage on Cloudflare.
 
 ## What it does
 
+- **Telling.** The record starts with your jobs. Under each job you tell one story at a time: you
+  name a piece of work, then answer fixed questions about it by talking freely. Your answers are
+  kept word for word. A worker then has a model write the story's four parts and a few facts from
+  what you said, leaving out the asides. Code checks that each fact quotes at least three of your words
+  that show it, that every number in a part or a fact (digits with their magnitude and unit, or a number word) is
+  one you said about that story in the same form, and that each skill is one you named. Only the
+  prompt keeps names, employers and tools in the parts to what you said. A part you typed, changed or
+  cleared is never written over.
+- **Stories.** Every story with something to tell, in one place to read aloud before an interview,
+  grouped under its job. On request, a worker has a model write each story's spoken version: one
+  text in the first person, in CARL order, in your own words, to say in under three and a half
+  minutes. Code refuses a text with a number you did not say, a heading or a list, or more than 520
+  words; a refused text is asked for once more with the reason, and refused again it is not kept. It
+  waits while the story is being written from what you said. A text you edited or cleared is never
+  written over unless you choose to replace it, and a failed replacement leaves it protected. The screen shows how long each story
+  takes to say (at 140 words a minute), and keeps each time you practised it, timed or not. After a
+  real interview you note the questions you were asked, at the job or on their own, and choose the
+  story that answers each. A question with no story waits on Home.
 - **Bank.** You add sources: pasted text, files, a LinkedIn export, git repositories. A worker has
   a model read each source and writes what it finds as facts under the role they belong to.
   Duplicate facts from several sources are folded into one.
@@ -19,6 +37,9 @@ in `.data/`, which git ignores, and in private storage on Cloudflare.
 - **Jobs.** A posting is read against the bank: what it requires, what supports each requirement,
   and a fit score computed from that coverage. Each job gets a tailored resume built only from
   bank facts, a PDF that an applicant tracking system reads cleanly, and draft outreach messages.
+  A project in the bank is told in four parts: Context, Action, Result, Learning (CARL). A resume's
+  bullets follow the same form, and each job on it ends with one line of the technologies its facts
+  name, which code writes from your skills list (RESUME-RULES.md, rules 13 and 14).
 - **Council.** Three readers, each a different model, score a tailored resume and name its weak
   lines. A reviser rewrites it from the bank until it passes or three rounds are spent.
 - **Discovery.** The public job boards of companies on a watchlist are read daily, and each new
@@ -97,7 +118,9 @@ Run the `tools/` commands while the worker is idle.
 Every model call goes through `ask()` in `lib/llm.ts`. On a developer machine, it runs headless
 Claude Code under that machine's existing login. There is no API key. The studio uses Codex
 instead (below). `EGG_MODEL` sets the default model. A variable for each task (`EGG_READ_MODEL`,
-`EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL` and others in `lib/`) overrides it.
+`EGG_JOB_MODEL`, `EGG_PROFILE_MODEL`, `EGG_TALK_MODEL`, `EGG_DERIVE_MODEL` for writing a told story
+(default `opus`), `EGG_SPOKEN_MODEL` for writing a story's spoken version (default `opus`), and others
+in `lib/`) overrides it.
 
 ### Codex instead of Claude Code
 
@@ -117,6 +140,19 @@ and the sandbox, and asks no model. Do not put an `AGENTS.md` file in `CODEX_HOM
 that file into every call.
 
 Codex cannot read a PDF itself. Under `EGG_LLM=codex`, the worker takes the text out of a PDF first.
+
+### Ways back
+
+Each switch gives back an earlier way of writing resumes, with no deploy of old code. The tests in `lib/` prove that
+each one gives the earlier prompts byte for byte.
+
+- `EGG_CARL=off` gives the bullet rules, the project parts sent to the writer, the length limits and the resume as they
+  were before CARL: no Technologies line (one an earlier pass wrote is taken out when the Skills lines are next written,
+  never from a resume you edited), and no project Learning sent to the writer. The code that scores and checks a resume
+  reads it as before too: no context clause, and a line of up to 28 words. The project columns keep their
+  new names either way. `lib/prompts.carl.test.ts` lists what the switch changes. Turning the switch writes unsent
+  resumes again once when a project that holds a fact has a Learning, because the writer is given it only with CARL on.
+- `EGG_LINKS=off` leaves out the links of each resume line to its facts (`lib/links.ts`, RESUME-RULES.md rule 7).
 
 ### Other machines
 
@@ -226,7 +262,8 @@ bucket, `eggers-studio-data`:
 - **Back up.** When the data changes, the keeper waits for 45 seconds of quiet (at most 5 minutes)
   and uploads one archive: the database, the data folder's files and the Codex sign-in. It leaves
   out `repos/`. A new backup becomes the one to restore only after its upload is complete. A backup
-  much smaller than the last one is refused, unless `EGG_ALLOW_SHRINK=1` is set. The bucket keeps
+  much smaller than the last one is refused, unless `EGG_ALLOW_SHRINK=1` is set or the owner just started a
+  new record ("Start a new record" below). The bucket keeps
   the newest 30 backups and one for each day of the last 30 days.
 - **Sleep.** After about 20 minutes with no request, no work in hand and nothing unsaved, the
   container stops. The keeper backs up anything unsaved before it exits. The next request starts
@@ -261,6 +298,32 @@ The Worker's own controls, behind the same Access check:
 - `POST /api/_studio/codex/login` starts a Codex sign-in, and `POST /api/_studio/codex/cancel`
   stops one that waits.
 - The publishing controls are under "The public collection" above.
+
+### Start a new record
+
+The System screen's "Start a new record" deletes the career record so it can be told again from nothing
+(`lib/reset.ts`, `POST /record/reset` with `{"confirm": "start a new record"}`). It deletes every role,
+project, fact and source, Talk, the telling sittings, the owner's answers and everything written from the
+record: the profile, the questions, the skills list, marks and origins, `profile.md`, `unslop.md`, `inbox/`,
+`repos/` and the `egg.db.before-*` copies. It keeps the owner's details and direction, the job tracker and the
+watchlist. A job already sent keeps its resume, links, PDF and versions. A job not yet sent keeps its posting
+and tracking, loses its reading, resume, PDF and drafts, and waits until the owner reads it again. Reference
+numbers continue above the old ones, so a sent resume never comes to cite a new fact. It is refused while any
+work waits or runs. The model sign-in and the public collection are not touched.
+
+In the studio the screen backs up the record first and goes on only when that backup succeeded. Then it backs up
+the new record at once and says whether that worked. The keeper's shrink guard would refuse a backup with no
+roles or facts, so the reset writes a one-time mark into the database (the `record_resets` table). The guard lets
+a smaller backup through only while that mark is newer than the last accepted backup's own mark and the time that
+backup was taken. The backup it lets through records the mark in its manifest (`db.resetAt`), so the mark is spent
+at once, and a later shrink is refused as before. A mark restored from a backup is never newer than that backup.
+If the machine restarts before the new record is backed up, the old record comes back and the reset is lost.
+
+Older backups stay in the bucket under the usual retention, which keeps the newest 30 backups, the newest backup of
+each day (UTC) of the last 30 days, and the one to restore (`toPrune` in `cloud/lib/manifest.ts`). A backup of the old
+record stays only while it is one of the newest 30 or the newest of its day in the last 30 days. So the last one
+taken before the reset goes once 30 newer backups exist, and each older one goes 30 days after its day, unless it is
+still among the newest 30.
 
 ### Commands
 

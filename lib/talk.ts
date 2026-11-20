@@ -124,9 +124,12 @@ Reply to the person's last message.` });
       // The story alone is kept when the correction gives none: the model is not shown the old story, so an empty one means "not retold", not "erase it".
       // A correction stands whole: its metric, filing, category and skills take the old ones' place, so nothing stale is left on the new sentence.
       // A fact moved to another role leaves the project it was filed in, which belongs to the old role.
-      if (old) db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = ?, role_id = coalesce(?, role_id), project_id = CASE WHEN coalesce(?, role_id) IS NOT role_id THEN NULL ELSE project_id END, kind = ?, skills = ?, evidence = evidence || ' ' || ?, status = 'confirmed' WHERE id = ?")
-        .run(text, f.detail.trim(), f.detail.trim(), f.metric.trim(), roleId, roleId, kind, skills, evidence, old.id);
-      else db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?)`)
+      if (old) {
+        db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = ?, role_id = coalesce(?, role_id), project_id = CASE WHEN coalesce(?, role_id) IS NOT role_id THEN NULL ELSE project_id END, kind = ?, skills = ?, evidence = evidence || ' ' || ?, status = 'confirmed' WHERE id = ?")
+          .run(text, f.detail.trim(), f.detail.trim(), f.metric.trim(), roleId, roleId, kind, skills, evidence, old.id);
+        // Reworded, a told fact no longer says what its quoted passages showed (lib/derive.ts): they go with the old words.
+        if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fact_origins'").get()) db.query("DELETE FROM fact_origins WHERE fact_id = ? AND kind = 'told'").run(old.id);
+      } else db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?)`)
         .run(roleId, kind, text, f.detail.trim(), f.metric.trim(), skills, evidence, now);
       // The person is shown which facts are new and which were rewritten.
       added.push(old ? `Updated: ${text}` : text);

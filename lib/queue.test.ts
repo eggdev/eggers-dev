@@ -106,3 +106,11 @@ test('a snoozed item that stops needing the person is no longer counted', () => 
   syncQuestions(NOW);
   expect(queue(NOW).snoozed).toBe(0);
 });
+
+test('an empty record has one item, first, that leads to Experience; the first job takes it away', () => {
+  for (const t of ['facts', 'projects', 'roles']) db.run(`DELETE FROM ${t}`);
+  const first = queue(NOW).items[0];
+  expect(first).toEqual({ key: 'record:start', kind: 'start', text: 'Your record is empty. Add your first job, then tell a story from it.', from: '', blocks: '', choices: [], inputs: [], route: '/record' });
+  role({ id: 7, company: 'Fernway', title: 'Head of Platform', start: '2023-03' });
+  expect(queue(NOW).items.some((i) => i.key === 'record:start')).toBe(false);
+});

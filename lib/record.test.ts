@@ -161,7 +161,7 @@ test('the tree of a full record (19 roles, 40 projects, 350 facts) stays small e
     first ||= made.id;
     for (let p = 0; p < 2; p++) {
       const part = `${words}, which the finance team had asked for since the spring.`;
-      const proj = ok(addProject({ title: `Moved billing to one pipeline ${r}.${p}`, roleId: made.id, when: `${2000 + r}`, situation: part, did: part, result: part, learned: part }));
+      const proj = ok(addProject({ title: `Moved billing to one pipeline ${r}.${p}`, roleId: made.id, when: `${2000 + r}`, context: part, action: part, result: part, learning: part }));
       for (let f = 0; f < 9; f++) ok(addFact({ text: `${words} (${r}.${p}.${f}).`, metric: '6 hours to 40 minutes', projectId: String(proj.id) }));
     }
   }
@@ -223,7 +223,7 @@ test('a project saved with no change writes nothing, one carried by a roles row 
   const typed = (p: { start: string; end: string }) => (p.start === '' ? '' : p.end === '' ? `${shown(p.start)} – now` : p.start === p.end ? shown(p.start) : `${shown(p.start)} – ${shown(p.end)}`);
   for (const p of readTree().projects) {
     const place = p.place === 'side' ? { side: true } : p.carried ? { roleId: Number(p.roleId) } : {};
-    const d = ok(patchProject(Number(p.id), { title: p.title, when: typed(p), lives: p.lives, result: p.result, situation: p.situation, did: p.did, learned: p.learned, ...place }));
+    const d = ok(patchProject(Number(p.id), { title: p.title, when: typed(p), lives: p.lives, result: p.result, context: p.context, action: p.action, learning: p.learning, ...place }));
     expect([p.title, d.wrote]).toEqual([p.title, false]);
   }
   expect({ roles: db.query('SELECT * FROM roles ORDER BY id').all(), projects: db.query('SELECT * FROM projects ORDER BY id').all() }).toEqual(before);
@@ -244,8 +244,8 @@ test('a field sent as null or as a number is left as it is, never blanked', () =
   ok(patchRole(1, { title: null, company: 7, location: 'Remote' }));
   expect(db.query('SELECT title, company, location FROM roles WHERE id = 1').get()).toEqual({ title: 'Director of Engineering', company: 'Harborlight Systems', location: 'Remote' });
   const p = ok(addProject({ title: 'Billing', roleId: 1, result: 'One queue.' }));
-  ok(patchProject(p.id, { title: null, result: 3, did: 'Moved the queue.' }));
-  expect(db.query('SELECT title, result, did FROM projects WHERE id = ?').get(p.id)).toEqual({ title: 'Billing', result: 'One queue.', did: 'Moved the queue.' });
+  ok(patchProject(p.id, { title: null, result: 3, action: 'Moved the queue.' }));
+  expect(db.query('SELECT title, result, action FROM projects WHERE id = ?').get(p.id)).toEqual({ title: 'Billing', result: 'One queue.', action: 'Moved the queue.' });
 });
 
 test('a role line that says "at" more than once is refused, not split by a guess; a role needs a title', () => {

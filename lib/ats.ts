@@ -9,6 +9,12 @@
 //
 // Tense follows the role (RESUME-RULES.md, rule 11): a bullet under the current role opens in the present
 // tense, one under a past role in the past tense. The resume is read with the one parser (lib/resume.ts).
+//
+// With CARL a bullet may open with a context clause (rule 13): "Facing a 20% order backlog, redesigned…". The clause opens
+// with a context word, holds no action verb, and ends at the comma that a known verb follows. That verb is scored,
+// tense-checked and counted for a verb run, and the clause is never read as a duty. A clause past ten words is flagged.
+// With EGG_CARL=off a bullet is read as before. An entry's Technologies line is no bullet (lib/resume.ts).
+import { carlOn } from './carl.ts';
 import { parseResume } from './resume.ts';
 
 export type Flag = { quote: string; why: string; fix: string };
@@ -24,8 +30,43 @@ const VERBS = new Set(['built', 'led', 'won', 'wrote', 'ran', 'cut', 'drove', 'g
 const METHOD = /\b(?:by|with|using|through|in|on|from)\s+[A-Z][\w.+#-]+|\bso (?:that\s)?\w+/;
 
 const words = (s: string) => s.split(/\s+/).filter(Boolean);
-// "As sole engineer, shipped Ledgerly…" leads with "shipped".
-const lead = (b: string) => (/^(?:As|While|With|After|In|On)\b[^,]{0,40},\s*([\w-]+)/.exec(b)?.[1] ?? words(b)[0] ?? '').toLowerCase().replace(/[.,:;]+$/, '');
+// The words a context clause opens with: "Facing a backlog,", "With 3 engineers,", "As sole engineer,".
+const CONTEXT_WORDS = new Set(['facing', 'faced', 'with', 'without', 'after', 'before', 'during', 'amid', 'across', 'given', 'following', 'under', 'despite', 'within', 'as', 'while', 'when', 'in', 'on', 'at', 'for', 'over', 'from', 'through', 'throughout', 'inheriting']);
+const CONTEXT_MOST = 10;
+// Words that open what a verb acts on: a verb followed by one is in a verb position ("built a scheduler").
+const OBJECT_WORDS = new Set(['a', 'an', 'the', 'its', 'their', 'our', 'his', 'her', 'every', 'each', 'all']);
+const bare = (w: string) => w.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}-]+$/gu, '');
+// A word read as an action verb: a known past form, any word ending in "ed", or a known present form.
+const verbal = (w: string) => { const x = bare(w); return x !== '' && (past(x) || base(x)); };
+// A bullet's opening: its context clause ('' for none) and what follows it, the action. A clause opens with a context
+// word and ends at the first comma that a word read as a verb, or a duty opening, follows ("With Go, Kafka and Redis, built…" ends before
+// "built"), and holds no verb in a verb position ("For 12 hospitals built a scheduler, cutting…" has none: its verb is
+// "built"). With no such comma, a past-tense verb within its first ten words ends it ("In 2023 led…" leads with "led").
+// With EGG_CARL=off there is never a clause.
+function opening(b: string): { clause: string; rest: string } {
+  const ws = words(b), none = { clause: '', rest: b };
+  if (!carlOn() || !CONTEXT_WORDS.has(bare(ws[0] ?? ''))) return none;
+  const acts = (w: string, next = '') => { const x = bare(w); return (VERBS.has(x) && !EITHER.has(x)) || ((past(x) || base(x)) && OBJECT_WORDS.has(bare(next))); };
+  for (let i = 1; i < ws.length - 1; i++) {
+    if (acts(ws[i], ws[i + 1])) break;
+    if (ws[i].endsWith(',') && (verbal(ws[i + 1]) || DUTY.test(ws.slice(i + 1).join(' ')))) return { clause: ws.slice(0, i + 1).join(' ').slice(0, -1), rest: ws.slice(i + 1).join(' ') };
+  }
+  for (let i = 1; i <= CONTEXT_MOST && i < ws.length; i++) {
+    if (ws[i - 1].endsWith(',')) break;
+    const x = bare(ws[i]);
+    if ((VERBS.has(x) && !EITHER.has(x)) || (/\w{2,}ed$/.test(x) && OBJECT_WORDS.has(bare(ws[i + 1] ?? '')))) return { clause: ws.slice(0, i).join(' '), rest: ws.slice(i).join(' ') };
+  }
+  return none;
+}
+// A bullet's opening context clause, without its comma; '' when it has none.
+export const contextClause = (b: string): string => opening(b).clause;
+// What follows the context clause: the action, then the rest of the bullet.
+const action = (b: string) => opening(b).rest;
+// The verb a bullet leads with. Before CARL: "As sole engineer, shipped Ledgerly…" leads with "shipped".
+const leadBefore = (b: string) => (/^(?:As|While|With|After|In|On)\b[^,]{0,40},\s*([\w-]+)/.exec(b)?.[1] ?? words(b)[0] ?? '').toLowerCase().replace(/[.,:;]+$/, '');
+const lead = (b: string) => (carlOn() ? (words(action(b))[0] ?? '').toLowerCase().replace(/[.,:;]+$/, '') : leadBefore(b));
+// The action verb of a bullet as written, for the checklist's count of openers (lib/rules.ts).
+export const actionVerb = lead;
 // Present-tense openers, for the current role. A word outside this list still counts when it reads as one (see present).
 export const PRESENT = new Set(['build', 'lead', 'win', 'write', 'run', 'drive', 'grow', 'make', 'take', 'rebuild', 'teach', 'sell', 'bring', 'keep', 'find', 'give', 'begin', 'choose', 'hold', 'send', 'get', 'do', 'rewrite', 'oversee', 'speak', 'stand',
   'manage', 'design', 'develop', 'maintain', 'own', 'ship', 'create', 'support', 'train', 'coach', 'mentor', 'deliver', 'implement', 'architect', 'operate', 'partner', 'define', 'automate', 'deploy', 'migrate', 'test', 'review', 'plan', 'coordinate', 'direct', 'guide', 'analyze', 'improve', 'reduce', 'launch', 'integrate', 'scale', 'advise', 'serve', 'handle', 'prototype', 'help', 'work', 'turn', 'move', 'replace', 'add', 'set up']);
@@ -50,15 +91,17 @@ export function bulletsOf(markdown: string): { role: string; text: string; curre
 }
 
 // Each bullet: (25 for an action verb in its role's tense + 45 for a measured result + 30 for a named method or
-// tool) less 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb.
+// tool) less 40 for a duty statement, 25 for running past 35 words, 15 for a third bullet in a row on one verb. A
+// context clause past ten words is flagged and costs nothing.
 // Each bullet that opens in the wrong tense for its role (as `bullets` flags it), with the heading of its entry, so the
 // flag is placed on that bullet only (lib/checks.ts) and never on the same words under a role where the tense is right.
 export const wrongTense = (markdown: string): { role: string; text: string; current: boolean }[] =>
-  bulletsOf(markdown).filter((b) => !DUTY.test(b.text) && slip(lead(b.text), b.current)).map((b) => ({ role: b.role, text: b.text, current: b.current }));
-// Whether a bullet opens as a duty ("Responsible for", "Worked on"…), as the skim reads it.
-export const opensAsDuty = (text: string) => DUTY.test(text);
+  bulletsOf(markdown).filter((b) => !DUTY.test(action(b.text)) && slip(lead(b.text), b.current)).map((b) => ({ role: b.role, text: b.text, current: b.current }));
+// Whether a bullet's action opens as a duty ("Responsible for", "Worked on"…), as the skim reads it.
+export const opensAsDuty = (text: string) => DUTY.test(action(text));
 
-export function bullets(markdown: string, terms: string[] = []): Bullets {
+// `pages`: the resume's length, for the words a bullet may hold (rule 13); not given, both are named.
+export function bullets(markdown: string, terms: string[] = [], pages?: number): Bullets {
   const all = bulletsOf(markdown), flags: Flag[] = [];
   // Whole words only, so "go" is not found in "going".
   const named = terms.map((t) => t.toLowerCase().trim()).filter((t) => t.length > 1).map((t) => new RegExp(`(?:^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[^a-z0-9])`));
@@ -66,19 +109,23 @@ export function bullets(markdown: string, terms: string[] = []): Bullets {
   all.forEach((b, i) => {
     const verb = lead(b.text), n = words(b.text).length;
     const bare = NOT_RESULTS.reduce((s, re) => s.replace(re, ' '), b.text);
-    const duty = DUTY.test(b.text), result = COUNTED.test(bare) || OUTCOME.test(b.text);
+    const duty = DUTY.test(action(b.text)), clause = words(contextClause(b.text)).length, result = COUNTED.test(bare) || OUTCOME.test(b.text);
     const low = b.text.toLowerCase(), method = METHOD.test(b.text) || named.some((t) => t.test(low));
     const run = i >= 2 && all[i - 1].role === b.role && all[i - 2].role === b.role && lead(all[i - 1].text) === verb && lead(all[i - 2].text) === verb;
     let penalty = 0;
     if (duty) { penalty += 40; flags.push({ quote: b.text, why: 'It opens as a duty, not as something done.', fix: `Open with what the person ${b.current ? 'does, as a present-tense verb' : 'did, as a past-tense verb'}.` }); }
     else if (slip(verb, b.current)) flags.push({ quote: b.text, why: b.current ? 'It opens in the past tense, and this role is current.' : 'It opens in the present tense, and this role has ended.', fix: b.current ? 'Open it in the present tense (“Build”, “Lead”).' : 'Open it in the past tense (“Built”, “Led”).' });
-    if (n > 35) { penalty += 25; flags.push({ quote: b.text, why: `It runs to ${n} words, past what a skim takes in.`, fix: 'Cut it to under 30 words, or split it if it says two things.' }); }
+    if (carlOn() && clause > CONTEXT_MOST) flags.push({ quote: b.text, why: `Its opening context runs to ${clause} words, more than ${CONTEXT_MOST}.`, fix: `Cut the opening context to ${CONTEXT_MOST} words or fewer, or leave it out.` });
+    if (n > 35) { penalty += 25; flags.push({ quote: b.text, why: `It runs to ${n} words, past what a skim takes in.`, fix: `Cut it to ${lengthFix(pages)}, or split it if it says two things.` }); }
     if (run) { penalty += 15; flags.push({ quote: b.text, why: `It is the third bullet in a row to open with “${verb}”.`, fix: 'Open it with a different verb that is still exact.' }); }
     if (result) measured++;
     total += Math.max(0, (!duty && acted(verb, b.current) ? 25 : 0) + (result ? 45 : 0) + (method ? 30 : 0) - penalty);
   });
   return { count: all.length, measured, score: all.length ? Math.round(total / all.length) : 0, flags };
 }
+
+// The words a bullet is cut to: with CARL 30 on one page and 34 on two (rule 13); before it, under 30.
+const lengthFix = (pages?: number) => (!carlOn() ? 'under 30 words' : pages === 1 ? 'at most 30 words' : pages === 2 ? 'at most 34 words' : 'at most 30 words on one page, or 34 on two');
 
 // One page holds 350 to 650 words, two hold 650 to 1,100. Past either edge the score falls a point every three words.
 export function density(wordCount: number, pages: number): { score: number; low: number; high: number } {
@@ -101,7 +148,7 @@ export const REQUIRED = 85;
 // Structure is taken as sound: the PDF check settles that part once the file is printed.
 export function draftScore(markdown: string, supported: string[], pages: number, tools: string[] = []): { score: number; parts: Part[]; notes: string[] } {
   const low = markdown.toLowerCase(), left = supported.filter((t) => !low.includes(t.toLowerCase()));
-  const b = bullets(markdown, [...supported, ...tools]), count = markdown.replace(/[#*_`>|]/g, ' ').split(/\s+/).filter(Boolean).length, room = density(count, pages);
+  const b = bullets(markdown, [...supported, ...tools], pages), count = markdown.replace(/[#*_`>|]/g, ' ').split(/\s+/).filter(Boolean).length, room = density(count, pages);
   const parts: Part[] = [
     { label: 'Supported terms', weight: WEIGHTS.terms, score: supported.length ? Math.round(((supported.length - left.length) / supported.length) * 100) : 100 },
     { label: 'Bullets', weight: WEIGHTS.bullets, score: b.score },

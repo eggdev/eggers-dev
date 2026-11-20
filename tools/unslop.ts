@@ -1,5 +1,5 @@
 // `bun tools/unslop.ts`: rewords the bank's facts to the writing rules (lib/writing.ts) without
-// changing what any of them says. Facts the person edited themselves are left alone. Backs the
+// changing what any of them says. Facts the person edited or told themselves are left alone. Backs the
 // database up first and writes every change, before and after, to .data/unslop.md.
 import { copyFileSync, writeFileSync } from 'node:fs';
 import { db } from '../lib/db.ts';
@@ -9,7 +9,7 @@ import { WRITING } from '../lib/writing.ts';
 
 copyFileSync(inData('egg.db'), inData('egg.db.before-unslop'));
 type Fact = { id: number; text: string };
-const facts = db.query("SELECT id, text FROM facts WHERE status != 'confirmed' AND kind != 'skill' AND length(text) > 30 ORDER BY id").all() as Fact[];
+const facts = db.query("SELECT id, text FROM facts WHERE status != 'confirmed' AND told = 0 AND kind != 'skill' AND length(text) > 30 ORDER BY id").all() as Fact[];
 const SCHEMA = { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'text'], properties: { id: { type: 'number' }, text: { type: 'string' } } } } } };
 const batches: Fact[][] = [];
 for (let i = 0; i < facts.length; i += 30) batches.push(facts.slice(i, i + 30));

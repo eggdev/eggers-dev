@@ -1,11 +1,12 @@
 // Record: the owner's working life as records (DESIGN.md rule 4), and the screens beside it. Its second line
 // (`RecordNav`, drawn once by the root under the main line) holds Experience (the record as one tree: roles, their
-// projects and facts, at /record), Skills (skills.contract), Profile, Direction, Details and Sources.
+// projects and facts, at /record), Stories (stories.contract), Skills (skills.contract), Profile, Direction, Details
+// and Sources.
 // Each screen is drawn only with the shared pieces of look.contract. The data and the actions are the root's
 // (app.contract); a form keeps its drafts itself.
-use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, experienceLook from "./look.contract"
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, experienceLook from "./look.contract"
 use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activity.contract"
-use Telling, TellLine from "./telling.contract"
+use Telling, TellLine, StoryStart, StoryLine from "./telling.contract"
 
 // The record as one tree (lib/tree.ts, GET /tree): Role → Project → Fact, side projects beside the roles, and
 // "General" for facts that belong to no role. Each item carries its reference number. A fact's story and evidence
@@ -39,10 +40,10 @@ shape TreeProject
   start: string
   end: string
   lives: string
-  situation: string
-  did: string
+  context: string
+  action: string
   result: string
-  learned: string
+  learning: string
   // A kept suggestion's result, waiting for the owner to say whether it is the project's Result ("" for none): the
   // fact's words, its reference, and the suggestion it came from.
   suggestedResult: string
@@ -114,6 +115,8 @@ shape FactFull
   metric: string
   skills: string
   evidence: string
+  // For a fact written from a told story: the passages of the owner's own answers it quotes.
+  said: string[]
 
 // A place a fact or a project can go, as the choosers list it.
 shape Home
@@ -255,7 +258,7 @@ fn newestHome(t: Tree): string = match first(t.roles.filter(r => r.start != ""))
 fn newestRole(t: Tree, filter: string): string = rolesOf(t, filter).length > 0 ? `role:${filter}` : filter == "side" ? "side" : match first(t.roles.filter(r => r.start != "")) { case some(r) => `role:${r.id}`, case none => "new" }
 
 
-// Record's second line. `at` is the screen shown: bank | profile | direction | details | sources.
+// Record's second line. `at` is the screen shown: bank | stories | skills | profile | direction | details | sources.
 component RecordNav
   props
     at: string
@@ -263,6 +266,7 @@ component RecordNav
   view
     SubLine(label="Record")
       SubLink(label="Experience", current=(at == "bank"), press=go("bank"), testId="sub-experience")
+      SubLink(label="Stories", current=(at == "stories"), press=go("stories"), testId="sub-stories")
       SubLink(label="Skills", current=(at == "skills"), press=go("skills"), testId="sub-skills")
       SubLink(label="Profile", current=(at == "profile"), press=go("profile"), testId="sub-profile")
       SubLink(label="Direction", current=(at == "direction"), press=go("direction"), testId="sub-direction")
@@ -321,7 +325,6 @@ component ExperienceScreen
     filterProjects: action
     sortFacts: action
     retry: action
-    addSource: action
     home: action
     close: action
     openAdd: action
@@ -346,8 +349,11 @@ component ExperienceScreen
     keepEdited: action
     rejectProposal: action
     decideResult: action
-    // Telling the open role or project (telling.contract).
+    // Telling a story (telling.contract): a sitting on the open project, a new story under the open job, and the open
+    // project's story written again.
     tell: action
+    story: action
+    again: action
     toggleQuestions: action
     showDerived: action
     clearDerived: action
@@ -355,7 +361,7 @@ component ExperienceScreen
   derive q = s.q.trim().toLowerCase()
   derive under = not s.beside
   derive hitRoles = q == "" ? [] : tree.roles.filter(r => `${r.title} ${r.company} ${r.location}`.toLowerCase().includes(q)).map(r => r.id)
-  derive hitProjects = q == "" ? [] : tree.projects.filter(p => `${p.title} ${p.lives} ${p.situation} ${p.did} ${p.result} ${p.learned}`.toLowerCase().includes(q)).map(p => p.id)
+  derive hitProjects = q == "" ? [] : tree.projects.filter(p => `${p.title} ${p.lives} ${p.context} ${p.action} ${p.result} ${p.learning}`.toLowerCase().includes(q)).map(p => p.id)
   derive hitFacts = q == "" ? [] : tree.facts.filter(f => `${f.text} ${f.metric}`.toLowerCase().includes(q)).map(f => f.id)
   // The item just added stays on screen, with the items above it, whatever the search or the view would hide.
   derive justChain = s.just == "" ? [] : [s.just].concat(chainOf(tree, s.just))
@@ -381,17 +387,17 @@ component ExperienceScreen
     // On a wide window the opened item has a column of its own beside the list.
     Beside(beside=s.beside, testId=(s.beside ? "bank-beside" : "bank-frame"))
       BesideList(beside=s.beside, scrollId=scrollId, testId="bank")
-        ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, addSource=addSource, toggleQuestions=toggleQuestions, clearDerived=clearDerived)
+        ExpHead(tree=tree, s=s, failed=failed, error=error, empty=empty, nothing=nothing, search=search, setView=setView, retry=retry, openAdd=openAdd, toggleQuestions=toggleQuestions, clearDerived=clearDerived)
         if tree.loaded
           HowYouWork(lines=tree.derived, filter=s.derivedFilter, lastRejected=s.lastRejected, show=showDerived, clear=clearDerived, judge=judgeLine)
         if tree.loaded
-          ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
+          ExpBody(tree=tree, s=s, fact=fact, overlaps=overlaps, shownRoles=shownRoles, shownProjects=shownProjects, shownFacts=shownFacts, sides=sides, unplaced=unplaced, general=general, listed=listed, factOrder=factOrder, expanded=expanded, filterProjects=filterProjects, sortFacts=sortFacts, home=home, close=close, openAdd=openAdd, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell, story=story, again=again)
       if s.beside
         BesidePane(label="The opened item", testId="bank-pane")
           if s.open == ""
             QuietLine(text="Open a role, a project or a fact on the left. It opens here, and the list stays.", testId="pane-none")
           else
-            ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
+            ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell, story=story, again=again)
 
 // A fact's value for the Facts view's sort: an empty value sorts after the rest.
 fn sortValue(t: Tree, f: TreeFact, key: string): string = key == "fact" ? f.text.toLowerCase() : key == "number" ? (f.metric == "" ? "~" : f.metric.toLowerCase()) : key == "role" ? (factRole(t, f) == "" ? "~" : factRole(t, f).toLowerCase()) : key == "project" ? factGroup(t, f).toLowerCase() : f.ref
@@ -411,7 +417,7 @@ component ExpHead
     search: action
     setView: action
     retry: action
-    addSource: action
+    openAdd: action
     toggleQuestions: action
     clearDerived: action
   view
@@ -431,8 +437,10 @@ component ExpHead
     else
       Section(testId="bank-find")
         if empty
-          Line(text="Nothing in your record yet. Add a resume, a LinkedIn export or a repository, and what is found in it appears here. Or add a role or a side project by hand.", testId="bank-empty-text")
-          MainAction(label="Add a source", press=addSource, disabled=false, keys="", testId="bank-add")
+          Line(text="Your record starts with a job.", testId="bank-empty-text")
+          Line(text="Under each job you tell one story at a time, and the studio writes the record from what you say.", testId="bank-empty-more")
+          if s.adding != "roles"
+            MainAction(label="Add a job", press=openAdd("roles"), disabled=false, keys="", testId="bank-add")
         else
           InlineField(label="Read as")
             Choices(label="Read as")
@@ -540,8 +548,11 @@ component ExpBody
     keepEdited: action
     rejectProposal: action
     decideResult: action
-    // Telling the open role or project (telling.contract).
+    // Telling a story (telling.contract): a sitting on the open project, a new story under the open job, and the open
+    // project's story written again.
     tell: action
+    story: action
+    again: action
   derive under = not s.beside
   derive sections = s.view == "projects" ? [projectsSection(tree, listed, shownFacts, expanded, s)] : s.view == "facts" ? [factsSection(tree, factOrder, s)] : rolesSections(tree, shownRoles, overlaps, shownProjects, shownFacts, sides, unplaced, general, expanded, s)
   view
@@ -602,7 +613,7 @@ component ExpBody
                   OverlapLine(other=o, otherName=roleOfName(tree, o), home=home, testId=`${row.testId}-overlap-${o}`)
               if under and s.open == row.key
                 UnderRow(level=row.level, label="The opened item", testId="under")
-                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell)
+                  ItemPane(tree=tree, s=s, fact=fact, overlaps=overlaps, close=close, home=home, openAdd=openAdd, closeAdd=closeAdd, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=remove, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, tell=tell, story=story, again=again)
 
 // What the Experience screen is showing and doing, as the root holds it. view: roles | projects | facts. open: the
 // item open, as a key ("role:4", "day:4", "project:12", "fact:142"; "" for none). just: the item just added or moved,
@@ -645,10 +656,14 @@ shape ExpState
   proposeError: string
   work: WorkItem[]
   proposals: Proposals
-  // Telling the open role or project (telling.contract): where it stands, a refused start, and a start in flight.
+  // Telling (telling.contract): where the open project's telling stands, a refused start and a start in flight; a
+  // refused new story under the open job and a story being named; a refused request to write the story again.
   telling: Telling
   tellError: string
   tellBusy: bool
+  storyError: string
+  storyBusy: bool
+  againError: string
 
 // An opened item's head: its reference, its name, when and what it holds, and the way to close it. Under its own
 // row (`full` false, a narrow window) the row already says all that, so only Close is drawn.
@@ -736,8 +751,11 @@ component ItemPane
     keepEdited: action
     rejectProposal: action
     decideResult: action
-    // Telling the open role or project (telling.contract).
+    // Telling a story (telling.contract): a sitting on the open project, a new story under the open job, and the open
+    // project's story written again.
     tell: action
+    story: action
+    again: action
   derive kind = keyKind(s.open)
   derive id = keyId(s.open)
   derive chain = crumbChain(tree, s.open).filter(k => s.view == "roles" or (s.view == "projects" and keyKind(k) == "project"))
@@ -771,7 +789,7 @@ component ItemPane
               FieldRow(label="Location", value=r.location, wide=s.wide, testId="role-location")
             if r.reach != ""
               FieldRow(label="Reached users", value=reachLabel(r.reach), wide=s.wide, testId="role-reach")
-            TellLine(telling=s.telling, kind="role", id=r.id, error=s.tellError, busy=s.tellBusy, tell=tell)
+            StoryStart(roleId=r.id, open=(s.adding == `story:${r.id}`), error=s.storyError, busy=s.storyBusy, start=openAdd, save=story, cancel=closeAdd)
             if s.deleting == s.open
               DeleteAsk(question=`Delete ${r.ref}, its ${projectCount(projectsOf(tree, r.id).filter(p => not p.carried).length)} and ${factCount(tree.facts.filter(f => f.roleId == r.id and (f.projectId == "" or projectsOf(tree, r.id).filter(p => p.id == f.projectId and not p.carried).length > 0)).length)}? A repository filed under it stays, not placed. This cannot be undone.`, label=`Delete ${r.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
             else
@@ -819,23 +837,24 @@ component ItemPane
             column gap=look().rowGap testId="parts"
               if p.lives != ""
                 Labelled(label="Where it lives", value=p.lives, testId="part-lives")
+              // The four CARL parts, in their order (DESIGN.md section 8).
+              if p.context != ""
+                Labelled(label="Context", value=p.context, testId="part-context")
+              else
+                Action(label="Add the context", press=startEdit(s.open), disabled=false, keys="", testId="part-context-add")
+              if p.action != ""
+                Labelled(label="Action", value=p.action, testId="part-action")
+              else
+                Action(label="Add the action", press=startEdit(s.open), disabled=false, keys="", testId="part-action-add")
               if p.result != ""
                 Labelled(label="Result", value=p.result, testId="part-result")
               else
                 Action(label="Add the result", press=startEdit(s.open), disabled=false, keys="", testId="part-result-add")
-              if p.situation != ""
-                Labelled(label="Situation", value=p.situation, testId="part-situation")
+              if p.learning != ""
+                Labelled(label="Learning", value=p.learning, testId="part-learning")
               else
-                Action(label="Add the situation", press=startEdit(s.open), disabled=false, keys="", testId="part-situation-add")
-              if p.did != ""
-                Labelled(label="What I did", value=p.did, testId="part-did")
-              else
-                Action(label="Add what you did", press=startEdit(s.open), disabled=false, keys="", testId="part-did-add")
-              if p.learned != ""
-                Labelled(label="What I learned", value=p.learned, testId="part-learned")
-              else
-                Action(label="Add what you learned", press=startEdit(s.open), disabled=false, keys="", testId="part-learned-add")
-            TellLine(telling=s.telling, kind="project", id=p.id, error=s.tellError, busy=s.tellBusy, tell=tell)
+                Action(label="Add the learning", press=startEdit(s.open), disabled=false, keys="", testId="part-learning-add")
+            TellLine(telling=s.telling, id=p.id, error=s.tellError, busy=s.tellBusy, tell=tell)
             if s.deleting == s.open
               DeleteAsk(question=`Delete ${p.ref}? ${factsInProject(tree, p.id).length == 0 ? "It holds no fact." : `Its ${factCount(factsInProject(tree, p.id).length)} ${factsInProject(tree, p.id).length == 1 ? "stays" : "stay"} in ${p.place == "role" ? `Day to day at ${companyOf(tree, p.roleId)}` : "General"}.`}`, label=`Delete ${p.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
             else
@@ -843,6 +862,7 @@ component ItemPane
                 Action(label=(p.place == "unplaced" ? "Place it" : p.place == "side" ? "Edit the side project" : "Edit the project"), press=startEdit(s.open), disabled=false, keys="", testId="pane-edit")
                 DangerAction(label=(p.place == "side" ? "Delete side project" : "Delete project"), press=askDelete(s.open), disabled=false, testId="pane-delete")
           FactRows(tree=tree, facts=factsInProject(tree, p.id), group=s.open, ctx=`in-project:${p.id}`, addLabel="Add a fact", s=s, showAll=showAll, openAdd=openAdd, closeAdd=closeAdd, addFact=addFact)
+          StoryLine(telling=s.telling, id=p.id, work=s.work, error=s.againError, busy=s.storyBusy, again=again)
         if tree.projects.filter(x => x.id == id).length == 0
           QuietLine(text="This project is no longer in your record.", testId="pane-gone")
       else if kind == "fact"
@@ -854,6 +874,9 @@ component ItemPane
             else
               if fact.detail != ""
                 Labelled(label="Story", value=fact.detail, testId="fact-detail-text")
+              // The owner's own words this fact was written from: its evidence, not a mark of where it came from.
+              for q, i in fact.said key=q
+                Labelled(label=(i == 0 ? "You said" : "And"), value=`“${q}”`, testId=`fact-said-${i}`)
               Labelled(label="Category", value=kindLabel(f.kind), testId="fact-kind")
               if fact.skills != ""
                 Labelled(label="Skills", value=fact.skills, testId="fact-skills")
@@ -968,9 +991,9 @@ component AddProjectForm
   state newRole = ""
   state dates = ""
   state result = ""
-  state situation = ""
-  state did = ""
-  state learned = ""
+  state context = ""
+  state act = ""
+  state learning = ""
   state lives = ""
   state more = false
   action editTitle(v: string)
@@ -983,18 +1006,18 @@ component AddProjectForm
     dates = v
   action editResult(v: string)
     result = v
-  action editSituation(v: string)
-    situation = v
-  action editDid(v: string)
-    did = v
-  action editLearned(v: string)
-    learned = v
+  action editContext(v: string)
+    context = v
+  action editAction(v: string)
+    act = v
+  action editLearning(v: string)
+    learning = v
   action editLives(v: string)
     lives = v
   action showMore
     more = true
   action submit
-    save(title, where, newRole, dates, result, situation, did, learned, lives)
+    save(title, where, newRole, dates, result, context, act, learning, lives)
   view
     InPlaceForm(label=`Add a ${noun}`, testId="new-project-form")
       FieldLabel(label=(side ? "Side project" : "Project"))
@@ -1011,20 +1034,21 @@ component AddProjectForm
             input value=newRole input=editNewRole submit=submit placeholder="Head of Platform at Fernway" aria-label="The new role: title at employer" autocomplete="off" testId="new-role"
       FieldLabel(label="When (optional)")
         input value=dates input=editWhen submit=submit placeholder="2023–2024" aria-label="When (optional)" autocomplete="off" testId="new-when"
-      FieldLabel(label="Result: what came of it (optional)")
-        textarea value=result input=editResult aria-label="Result: what came of it (optional)" rows=2 testId="new-result"
       if more
         if side
           FieldLabel(label="Where it lives (optional)")
             input value=lives input=editLives submit=submit placeholder="A code repository" aria-label="Where it lives (optional)" autocomplete="off" testId="new-lives"
-        FieldLabel(label="Situation (optional)")
-          textarea value=situation input=editSituation aria-label="Situation (optional)" rows=2 testId="new-situation"
-        FieldLabel(label="What I did (optional)")
-          textarea value=did input=editDid aria-label="What I did (optional)" rows=2 testId="new-did"
-        FieldLabel(label="What I learned (optional)")
-          textarea value=learned input=editLearned aria-label="What I learned (optional)" rows=2 testId="new-learned"
+        FieldLabel(label="Context (optional)")
+          textarea value=context input=editContext aria-label="Context (optional)" rows=2 testId="new-context"
+        FieldLabel(label="Action (optional)")
+          textarea value=act input=editAction aria-label="Action (optional)" rows=2 testId="new-action"
+      FieldLabel(label="Result: what came of it (optional)")
+        textarea value=result input=editResult aria-label="Result: what came of it (optional)" rows=2 testId="new-result"
+      if more
+        FieldLabel(label="Learning (optional)")
+          textarea value=learning input=editLearning aria-label="Learning (optional)" rows=2 testId="new-learning"
       else
-        Action(label=(side ? "More: Where it lives, Situation, What I did, What I learned" : "More: Situation, What I did, What I learned"), press=showMore, disabled=false, keys="", testId="new-more")
+        Action(label=(side ? "More: Where it lives, Context, Action, Learning" : "More: Context, Action, Learning"), press=showMore, disabled=false, keys="", testId="new-more")
       if error != ""
         FailLine(text=error, testId="new-error")
       Actions(testId="new-actions")
@@ -1161,9 +1185,9 @@ component EditProjectForm
   state dates = projectWhenTyped(project)
   state lives = project.lives
   state result = project.result
-  state situation = project.situation
-  state did = project.did
-  state learned = project.learned
+  state context = project.context
+  state act = project.action
+  state learning = project.learning
   state place = placeOf(project)
   action editTitle(v: string)
     title = v
@@ -1173,16 +1197,16 @@ component EditProjectForm
     lives = v
   action editResult(v: string)
     result = v
-  action editSituation(v: string)
-    situation = v
-  action editDid(v: string)
-    did = v
-  action editLearned(v: string)
-    learned = v
+  action editContext(v: string)
+    context = v
+  action editAction(v: string)
+    act = v
+  action editLearning(v: string)
+    learning = v
   action pickPlace(v: string)
     place = v
   action submit
-    save(project.id, [title != project.title ? "title" : "", dates != projectWhenTyped(project) ? "when" : "", lives != project.lives ? "lives" : "", result != project.result ? "result" : "", situation != project.situation ? "situation" : "", did != project.did ? "did" : "", learned != project.learned ? "learned" : "", project.carried and place != placeOf(project) ? "place" : ""].filter(k => k != ""), title, dates, lives, result, situation, did, learned, project.carried ? place : "")
+    save(project.id, [title != project.title ? "title" : "", dates != projectWhenTyped(project) ? "when" : "", lives != project.lives ? "lives" : "", result != project.result ? "result" : "", context != project.context ? "context" : "", act != project.action ? "action" : "", learning != project.learning ? "learning" : "", project.carried and place != placeOf(project) ? "place" : ""].filter(k => k != ""), title, dates, lives, result, context, act, learning, project.carried ? place : "")
   view
     InPlaceForm(label=`Edit the ${noun}`, testId="edit-project-form")
       FieldLabel(label=(project.place == "role" ? "Project" : "Side project"))
@@ -1200,14 +1224,14 @@ component EditProjectForm
       if project.place != "role"
         FieldLabel(label="Where it lives (optional)")
           input value=lives input=editLives submit=submit placeholder="A code repository" aria-label="Where it lives (optional)" autocomplete="off" testId="edit-lives"
+      FieldLabel(label="Context (optional)")
+        textarea value=context input=editContext aria-label="Context (optional)" rows=2 testId="edit-context"
+      FieldLabel(label="Action (optional)")
+        textarea value=act input=editAction aria-label="Action (optional)" rows=2 testId="edit-action"
       FieldLabel(label="Result (optional)")
         textarea value=result input=editResult aria-label="Result (optional)" rows=2 testId="edit-result"
-      FieldLabel(label="Situation (optional)")
-        textarea value=situation input=editSituation aria-label="Situation (optional)" rows=2 testId="edit-situation"
-      FieldLabel(label="What I did (optional)")
-        textarea value=did input=editDid aria-label="What I did (optional)" rows=2 testId="edit-did"
-      FieldLabel(label="What I learned (optional)")
-        textarea value=learned input=editLearned aria-label="What I learned (optional)" rows=2 testId="edit-learned"
+      FieldLabel(label="Learning (optional)")
+        textarea value=learning input=editLearning aria-label="Learning (optional)" rows=2 testId="edit-learning"
       if error != ""
         FailLine(text=error, testId="edit-error")
       Actions(testId="edit-actions")
@@ -1324,7 +1348,6 @@ component ProfileScreen
     asking: bool
     write: action
     ask: action
-    add: action
     retry: action
     // How much slow work is ahead of the profile while it waits ("2 ahead"), and how long writing it usually takes,
     // from the activity list (-1 when not known).
@@ -1352,8 +1375,8 @@ component ProfileScreen
           WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. ${usually}`, testId="profile-writing")
       else if profile.body == "" and profile.facts == 0
         Section(testId="profile-empty")
-          Line(text="Your profile is written from the facts in your record. Add a source to start.", testId="profile-empty-text")
-          MainAction(label="Add a source", press=add, disabled=false, keys="", testId="profile-add")
+          Line(text="Your profile is written from the facts in your record. Tell a story from one of your jobs to start.", testId="profile-empty-text")
+          GoTo(label="Go to Experience", href=path("bank"), testId="profile-add")
       else if profile.body == ""
         Section(testId="profile-empty")
           if profile.status == "failed"

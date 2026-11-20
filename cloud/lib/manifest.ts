@@ -21,6 +21,11 @@ export type DbStats = {
   roles: number;
   facts: number;
   jobs: number;
+  /**
+   * When the owner last started a new record (lib/reset.ts, the record_resets table), in milliseconds since 1970.
+   * Absent when the database holds no such mark. A newer mark lets one smaller backup through the shrink guard.
+   */
+  resetAt?: number;
 };
 
 export type Manifest = {
@@ -63,10 +68,11 @@ export function parseManifest(value: unknown): Manifest | null {
   if (!count(m.createdAt) || !count(m.size) || typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) return null;
   const db = m.db as Partial<DbStats> | undefined;
   if (!db || !count(db.bytes) || !count(db.roles) || !count(db.facts) || !count(db.jobs)) return null;
+  if (db.resetAt !== undefined && !count(db.resetAt)) return null;
   if (!count(m.files) || (m.from !== 'keeper' && m.from !== 'seed')) return null;
   return {
     format: FORMAT, key: m.key, createdAt: m.createdAt!, size: m.size!, sha256: m.sha256,
-    db: { bytes: db.bytes!, roles: db.roles!, facts: db.facts!, jobs: db.jobs! }, files: m.files!, from: m.from,
+    db: { bytes: db.bytes!, roles: db.roles!, facts: db.facts!, jobs: db.jobs!, ...(db.resetAt ? { resetAt: db.resetAt } : {}) }, files: m.files!, from: m.from,
   };
 }
 
@@ -102,9 +108,18 @@ export function toPrune(backups: { key: string; createdAt: number }[], now: numb
 /**
  * Whether a new backup may replace the one the pointer names. A database under half the size of the last one, or
  * with no roles or no facts where the last one had some, looks like a wrong or empty database: refused unless the
- * owner allows it (EGG_ALLOW_SHRINK=1).
+ * owner allows it (EGG_ALLOW_SHRINK=1), or unless the owner started a new record since the last backup.
+ *
+ * Starting a new record (lib/reset.ts) writes a mark into the database itself: a number that is greater than every
+ * mark before it. The mark lets a smaller database through once, while it is greater than the mark the last accepted
+ * backup recorded. Every manifest records the mark of the database it holds, so the backup the mark lets through
+ * spends it, and a later shrink is refused as before. A backup restored holds the mark its manifest records, so no
+ * restore can make a mark fresh again. Only the times of marks are compared, never a mark with a clock: a backup that
+ * copied the database just before the reset committed holds the old mark, and the next backup is still let through.
+ * `honourReset` is false for the owner's seed tool (cloud/tools/seed.ts): a database emptied on a development machine
+ * must never replace the studio's backup by its mark alone.
  */
-export function shrinkCheck(last: DbStats | null, next: DbStats, allow: boolean): { ok: true; warning?: string } | { ok: false; reason: string } {
+export function shrinkCheck(last: DbStats | null, next: DbStats, allow: boolean, honourReset = true): { ok: true; warning?: string } | { ok: false; reason: string } {
   if (!last) return { ok: true };
   const problems: string[] = [];
   if (next.bytes * 2 < last.bytes) problems.push(`the database is ${next.bytes} bytes; the last backup's was ${last.bytes}`);
@@ -112,5 +127,13 @@ export function shrinkCheck(last: DbStats | null, next: DbStats, allow: boolean)
   if (last.facts > 0 && next.facts === 0) problems.push(`it has no facts; the last backup had ${last.facts}`);
   if (problems.length === 0) return { ok: true };
   const reason = `the new backup looks much smaller than the last one: ${problems.join('; ')}`;
-  return allow ? { ok: true, warning: `${reason} (allowed by EGG_ALLOW_SHRINK=1)` } : { ok: false, reason };
+  if (allow) return { ok: true, warning: `${reason} (allowed by EGG_ALLOW_SHRINK=1)` };
+  if (honourReset && freshReset(last, next)) return { ok: true, warning: `${reason} (allowed once: the owner started a new record at ${new Date(next.resetAt!).toISOString()})` };
+  return { ok: false, reason };
+}
+
+/** Whether the new database carries a mark of a new record greater than the one the last accepted backup recorded. */
+export function freshReset(last: DbStats | null, next: DbStats): boolean {
+  const at = next.resetAt ?? 0;
+  return at > 0 && at > (last?.resetAt ?? 0);
 }

@@ -223,6 +223,17 @@ describe('the API, forwarded to the container', () => {
     expect(s.calls.map((c) => c.method)).toEqual(['GET', 'DELETE']);
   });
 
+  test('starting a new record: only the studio page may ask, and the server gets the JSON type and no Origin', async () => {
+    // The server (lib/reset.ts, sameSite) takes the request only as JSON, and refuses an Origin of another host. The
+    // page's Origin is this Worker's, never the container's host, so the Worker checks it here and does not pass it on.
+    const { env, w, studio: s } = setup();
+    expect((await w.fetch(post('/api/record/reset', { confirm: 'start a new record' }, { origin: 'https://example.com' }), env)).status).toBe(403);
+    expect((await w.fetch(post('/api/record/reset', { confirm: 'start a new record' }, { origin: null }), env)).status).toBe(403);
+    expect(s.calls).toEqual([]);
+    expect((await w.fetch(post('/api/record/reset', { confirm: 'start a new record' }), env)).status).toBe(200);
+    expect(s.calls.map((c) => [c.url, c.headers.get('content-type'), c.headers.get('origin')])).toEqual([['http://studio/record/reset', 'application/json', null]]);
+  });
+
   test('/api alone is the server root; /apix is not the API', async () => {
     const { env, w, studio: s } = setup();
     await w.fetch(get('/api'), env);

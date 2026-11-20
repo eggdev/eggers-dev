@@ -9,9 +9,11 @@
 //   skills are not confirmed. After that review only skills marked confident appear, and a skill the bank
 //   gains later raises a question (lib/raised.ts). Marking a few skills is not a review: the person says
 //   when the list is reviewed, and it must then hold at least one skill they are confident in.
-import { db } from './db.ts';
+import { db, type RoleRow } from './db.ts';
+import { employers, groupOf } from './entries.ts';
 import { onAnswer, raise, type Raised } from './raised.ts';
-import { parseResume } from './resume.ts';
+import { lf, parseResume } from './resume.ts';
+import { carlOn } from './carl.ts';
 
 db.run(`CREATE TABLE IF NOT EXISTS skills (
   key TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'tool', mark TEXT NOT NULL DEFAULT '',
@@ -163,6 +165,50 @@ export function withSkills(resume: string, posting: string, pages: number): stri
   // With no skill that may be shown, the section the writer made is taken out: nothing in it was confirmed.
   lines.splice(at, end - at, ...(skills.length ? ['## Skills', '', skills.join(', '), ...(end < lines.length ? [''] : [])] : []));
   return lines.join('\n').trimEnd();
+}
+
+// Rule 14: each Experience entry ends with one line "Technologies: A, B, C", written here from the skills list, never by a
+// model, on a resume a model wrote. It names only the skills that the facts of the entry's employer name (its roles, the
+// rows filed under it, and the facts filed in their projects), and only those that may be on a resume now (allowed, as
+// for the Skills line, so a skill marked not confident never appears), the posting's terms first, at most TECH_CAP. An
+// entry with no bullet, or whose facts name no such skill, gets no line. Any Technologies line already in an entry (the
+// model's, or an earlier one) is taken out first, so the line is always code's, and a second pass changes nothing.
+// `write` false only takes the lines out (EGG_CARL=off).
+export const TECH_CAP = 10;
+export function withTechnologies(resume: string, posting: string, roles: RoleRow[], write = true): string {
+  const text = lf(resume), lines = text.split('\n'), parsed = parseResume(text, roles.map((r) => r.company)), groups = employers(roles);
+  const facts = db.query("SELECT role_id, skills FROM facts WHERE role_id IS NOT NULL AND skills != ''").all() as { role_id: number; skills: string }[];
+  const list = allSkills(), bullets = new Set(parsed.outline.filter((o) => o.kind === 'bullet').map((o) => o.line));
+  const drop = new Set<number>(), after = new Map<number, string>();
+  for (const e of [...parsed.experience, ...parsed.projects, ...parsed.elsewhere]) {
+    // A Technologies line goes with the blank line above it, which code wrote with it.
+    for (const i of e.at.technologies) { drop.add(i); if (i > 0 && lines[i - 1].trim() === '') drop.add(i - 1); }
+    if (!write || e.section !== 'experience') continue;
+    const last = Math.max(-1, ...e.at.lines.filter((i) => bullets.has(i)));
+    const g = groupOf(e.title, e.company, [...e.ranges, ...e.previously.flatMap((p) => p.ranges)], groups).group;
+    if (last < 0 || !g) continue;
+    const ids = new Set([...g.rows, ...g.children].map((r) => r.id));
+    const named = new Set(facts.filter((f) => ids.has(f.role_id)).flatMap((f) => f.skills.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)));
+    const items = resumeSkills(posting, 2, [], list.filter((x) => named.has(x.key))).slice(0, TECH_CAP);
+    if (items.length) after.set(last, `Technologies: ${items.join(', ')}`);
+  }
+  if (drop.size === 0 && after.size === 0) return resume;
+  return lines.flatMap((l, i) => [...(drop.has(i) ? [] : [l]), ...(after.has(i) ? ['', after.get(i)!] : [])]).join('\n');
+}
+// The lines of a resume a model wrote that code writes from the skills list: the Skills line, and with CARL each
+// entry's Technologies line. With EGG_CARL=off a Technologies line an earlier pass wrote is taken out. Used wherever the
+// Skills line was written alone before, and never on a resume the owner edited by hand (its callers hold to that).
+export function withSkillLines(resume: string, posting: string, pages: number, roles = db.query('SELECT * FROM roles').all() as RoleRow[]): string {
+  return withTechnologies(withSkills(resume, posting, pages), posting, roles, carlOn());
+}
+
+// What is wrong with an entry's Technologies line as it stands (rule 14), for the flags on a job (lib/checks.ts): the
+// items that may not be on a resume now (allowed, as for the Skills line) or that no fact of the entry's rows names.
+export function technologyProblems(listed: string[], roleIds: Set<number>): string[] {
+  const byKey = new Map((db.query('SELECT * FROM skills').all() as Skill[]).map((s) => [s.key, s])), isReviewed = reviewed();
+  const named = new Set((db.query("SELECT role_id, skills FROM facts WHERE role_id IS NOT NULL AND skills != ''").all() as { role_id: number; skills: string }[])
+    .filter((f) => roleIds.has(f.role_id)).flatMap((f) => f.skills.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  return listed.filter((x) => { const k = x.trim().toLowerCase(), s = byKey.get(k); return !s || !allowed(s, isReviewed) || !named.has(k); });
 }
 
 // What is wrong with a resume's Skills section as it stands, in plain words: for the flags on a job (lib/checks.ts).

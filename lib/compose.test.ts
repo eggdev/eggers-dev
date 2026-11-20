@@ -134,7 +134,7 @@ test('the writer is given the posting map, the top three, the metrics inventory 
   expect(quill.roles.map((r: { key: string }) => r.key)).toEqual(['role:2', 'role:4']);
   // The old contradictions are gone from the instructions.
   for (const gone of ['"## Projects"', 'Summary, Experience, Projects', 'past-tense verb for what the person did', 'Summary or in the first bullets', 'with no bullets', 'heading and dates alone', 'Leaving a number out is always allowed', 'Summary is two sentences']) lacks(gone);
-  has('Under the current role (its dates end in "Present") every bullet opens with a present-tense verb');
+  has('Under the current role (its dates end in "Present") the verb is in the present tense');
   has('At most three sentences and about 50 words');
   has('No other section, and no Projects section.');
 });
@@ -348,17 +348,17 @@ test('a review whose rewrite names a job the bank does not have keeps the resume
 });
 
 // ---------- Stage 3: projects, the new fact fields and the kept lines of "How you work" ----------
-// Role 1's dispatch console in a project of its own: a situation and a result, no "what I did", and what was learned.
+// Role 1's dispatch console in a project of its own: a context, a result and a learning, and no action.
 // Role 2's quoting API in a project with only a name. One more project with no fact. Everything is invented.
-const project = (roleId: number, title: string, parts: { situation?: string; did?: string; result?: string; learned?: string; lives?: string } = {}) =>
-  (db.query('INSERT INTO projects (role_id, title, situation, did, result, learned, lives, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1) RETURNING id')
-    .get(roleId, title, parts.situation ?? '', parts.did ?? '', parts.result ?? '', parts.learned ?? '', parts.lives ?? '') as { id: number }).id;
+const project = (roleId: number, title: string, parts: { context?: string; action?: string; result?: string; learning?: string; lives?: string } = {}) =>
+  (db.query('INSERT INTO projects (role_id, title, context, action, result, learning, lives, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1) RETURNING id')
+    .get(roleId, title, parts.context ?? '', parts.action ?? '', parts.result ?? '', parts.learning ?? '', parts.lives ?? '') as { id: number }).id;
 const fileIn = (factId: number, projectId: number) => db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(projectId, factId);
 const idOf = (text: string) => (db.query('SELECT id FROM facts WHERE text = ?').get(text) as { id: number }).id;
 function withProjects() {
-  const console = project(1, 'Dispatch console', { situation: 'Schedulers planned 35 depots on paper.', result: 'One console for every depot.', learned: 'I learned to ship in 3 week steps.', lives: 'console.example' });
+  const console = project(1, 'Dispatch console', { context: 'Schedulers planned 35 depots on paper.', result: 'One console for every depot.', learning: 'I learned to ship in 4 week steps.', lives: 'console.example' });
   const quoting = project(2, 'Quoting API');
-  project(1, 'Nothing filed yet', { situation: 'A plan with 9 parts.' });
+  project(1, 'Nothing filed yet', { context: 'A plan with 9 parts.' });
   fileIn(idOf('Built the dispatch console that schedulers use every day.'), console);
   fileIn(idOf('Rebuilt the quoting API.'), quoting);
   db.query("UPDATE facts SET baseline = '9 hours', team = 'about 4 people', own_part = 'I wrote the scheduler.' WHERE id = ?").run(idOf('Cut the nightly billing run.'));
@@ -368,13 +368,13 @@ function withProjects() {
 const writePrompt = () => calls.find((c) => kind(c) === 'write')!.prompt;
 const bankOf = (prompt: string) => JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19, prompt.indexOf('\n\nThe posting has already been read')));
 
-test('a project of a role reaches the writer with its facts and only the parts that are set; no fact is sent twice; learned never', async () => {
+test('a project of a role reaches the writer with its facts and only the CARL parts that are set; no fact is sent twice', async () => {
   const { console, quoting } = withProjects();
   model();
   await compose(POSTING, 2, TERMS, REQS);
   const prompt = writePrompt(), bank = bankOf(prompt);
   const harbor = bank.entries.find((e: { heading: string }) => e.heading.includes('Harborlight')).roles[0];
-  expect(harbor.projects).toEqual([{ key: `project:${console}`, name: 'Dispatch console', context: { situation: 'Schedulers planned [number] depots on paper.', result: 'One console for every depot.' },
+  expect(harbor.projects).toEqual([{ key: `project:${console}`, name: 'Dispatch console', parts: { context: 'Schedulers planned [number] depots on paper.', result: 'One console for every depot.', learning: 'I learned to ship in [number] week steps.' },
     facts: [{ key: `fact:${idOf('Built the dispatch console that schedulers use every day.')}`, kind: 'accomplishment', text: 'Built the dispatch console that schedulers use every day.', detail: '', metric: '640 users across 12 depots', skills: 'TypeScript, PostgreSQL' }] }]);
   // Its fact left the role's own list; the fields a fact gained are sent when set, and "There was none" is not a value.
   expect(harbor.facts.map((f: { text: string }) => f.text)).toEqual(['Cut the nightly billing run.', 'Wrote the test suite for the console.']);
@@ -384,11 +384,11 @@ test('a project of a role reaches the writer with its facts and only the parts t
   const quill = bank.entries.find((e: { heading: string }) => e.heading.includes('Quillfeather')).roles[0];
   expect(quill.projects).toEqual([{ key: `project:${quoting}`, name: 'Quoting API', facts: [expect.objectContaining({ text: 'Rebuilt the quoting API.' })] }]);
   expect(quill.facts.map((f: { text: string }) => f.text)).toEqual(['Ran weekly code review sessions.']);
-  // Every fact once in the whole bank; the project with no fact, what was learned and where it lives are not sent.
+  // Every fact once in the whole bank; the project with no fact and where a project lives are not sent.
   const keys = JSON.stringify(bank).match(/"key":"fact:\d+"/g)!;
   expect(new Set(keys).size).toBe(keys.length);
   expect(keys.length).toBe((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n);
-  for (const gone of ['Nothing filed yet', 'A plan with 9 parts', 'I learned to ship', 'console.example', 'There was none']) expect([gone, prompt.includes(gone)]).toEqual([gone, false]);
+  for (const gone of ['Nothing filed yet', 'A plan with 9 parts', 'console.example', 'There was none']) expect([gone, prompt.includes(gone)]).toEqual([gone, false]);
   // The writer is told what context is, and that titles, employers and dates never come from a project.
   expect(prompt).toContain(CONTEXT);
 });
@@ -438,7 +438,7 @@ test('a number whose value stands in a project\'s background and in no fact of t
   const flagged = (text: string) => codeFlags(text, 2).filter((f) => ['context-number', 'kept-line', 'number-mark'].includes(f.kind));
   // From the facts: 640 users (a metric), 9 hours (a baseline), 4 people (the team): nothing flagged.
   expect(flagged(resume('Engineer who builds dispatch software.', ['Build the dispatch console for 640 users across 12 depots.', 'Cut the nightly billing run from 9 hours to 40 minutes with a team of about 4 people.']))).toEqual([]);
-  // 35 stands only in the project's situation.
+  // 35 stands only in the project's context.
   const depots = flagged(resume('Engineer who builds dispatch software.', ['Build the dispatch console that replaced paper planning in 35 depots.']));
   expect(depots.map((f) => [f.kind, f.severity, f.items])).toEqual([['context-number', 'high', ['35']]]);
   expect(depots[0].text).toBe('“Build the dispatch console that replaced paper planning in 35 depots.” uses 35, which your record has only in a project’s background, not in a fact. Take it out, or use a number a fact states.');
@@ -489,7 +489,7 @@ test('every fact the bank sent before is sent, once, however roles, projects and
   const same = (step: string) => { const now = keysNow(); expect([step, new Set(now).size === now.length, now]).toEqual([step, true, keysBefore()]); };
   same('a plain role');
   const role = (addRole({ title: 'Platform Contractor', company: 'Fernway', start: '2015-01', end: '2015-12' }) as { id: number }).id;
-  const p = (addProject({ title: 'Fernway migration', roleId: role, when: '2015', situation: 'A move of 40 services.' }) as { id: number }).id;
+  const p = (addProject({ title: 'Fernway migration', roleId: role, when: '2015', context: 'A move of 40 services.' }) as { id: number }).id;
   addFact({ projectId: String(p), text: 'Moved Fernway to the new cloud.', metric: '40 services' });
   addFact({ roleId: role, text: 'Ran Fernway on-call.' });
   same('a role with a project');
@@ -515,7 +515,7 @@ test('every fact the bank sent before is sent, once, however roles, projects and
 
 test('a line of How you work about what was learned never reaches the resume writer', async () => {
   for (let i = 0; i < 4; i++) {
-    const p = project(1, `Project ${i}`, { learned: 'I learned to ship small changes often.' });
+    const p = project(1, `Project ${i}`, { learning: 'I learned to ship small changes often.' });
     fileIn(fact(1, `Shipped invented change ${i}.`), p);
   }
   const learned = derivedNow().find((l) => l.key.startsWith('learned:'))!;
@@ -523,7 +523,9 @@ test('a line of How you work about what was learned never reaches the resume wri
   expect(keptLines().map((l) => l.key)).toContain(learned.key);
   model();
   await compose(POSTING, 2, TERMS, REQS);
-  expect(writePrompt()).not.toContain('ship small changes');
+  // Each project's own learning reaches the writer with CARL; the kept line counted across them does not.
+  expect(writePrompt()).toContain('I learned to ship small changes often.');
+  expect(writePrompt()).not.toContain(learned.text);
 });
 
 test('a requirement backed by a project weighs as its role does, and the fit of an unchanged record is unchanged', () => {
@@ -583,24 +585,24 @@ test('a project written as a heading of its own is named as a project, sent back
 // ---------- Numbers no fact holds are left out of what the writer is given ----------
 
 test('a number no fact of the project holds is sent as [number]; one it holds stays; the bullet that uses a fact\'s value is quiet', async () => {
-  const console = project(1, 'Dispatch console', { situation: 'Schedulers planned 35 depots on paper.', result: 'The console reached 640 users in 12 depots.' });
+  const console = project(1, 'Dispatch console', { context: 'Schedulers planned 35 depots on paper.', result: 'The console reached 640 users in 12 depots.' });
   fileIn(idOf('Built the dispatch console that schedulers use every day.'), console);
   fact(1, 'Cut support calls.', '35% fewer calls');
   model();
   await compose(POSTING, 2, TERMS, REQS);
   const prompt = writePrompt(), harbor = bankOf(prompt).entries.find((e: { heading: string }) => e.heading.includes('Harborlight')).roles[0];
-  expect(harbor.projects[0].context).toEqual({ situation: 'Schedulers planned [number] depots on paper.', result: 'The console reached 640 users in 12 depots.' });
+  expect(harbor.projects[0].parts).toEqual({ context: 'Schedulers planned [number] depots on paper.', result: 'The console reached 640 users in 12 depots.' });
   expect(prompt).not.toContain('35 depots');
   expect(prompt).toContain('"[number]" stands where a number was left out because no fact holds it. Never print "[number]", and never put a number of your own in its place.');
   // 35 stands in a fact of the employer ("35% fewer calls"), so a bullet with it is not flagged: the writer never saw "35 depots".
   const page = `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Rolled the console out to 35 depots.\n`;
   expect(codeFlags(page, 2).filter((f) => f.kind === 'context-number')).toEqual([]);
   // The stored text is as the person wrote it.
-  expect(db.query('SELECT situation FROM projects WHERE id = ?').get(console)).toEqual({ situation: 'Schedulers planned 35 depots on paper.' });
+  expect(db.query('SELECT context FROM projects WHERE id = ?').get(console)).toEqual({ context: 'Schedulers planned 35 depots on paper.' });
 });
 
 test('true numbers written another way are quiet; a number from another employer\'s project is caught', () => {
-  const quoting = project(2, 'Quoting', { situation: 'Quotes went to 35 depots by fax, in 3 parts.' });
+  const quoting = project(2, 'Quoting', { context: 'Quotes went to 35 depots by fax, in 3 parts.' });
   fileIn(idOf('Rebuilt the quoting API.'), quoting);
   fact(2, 'Led 3 junior engineers through the rewrite.');
   fact(1, 'Managed a team of 5 engineers.');
@@ -633,14 +635,14 @@ test('a resume that prints [number] is sent back to the writer and put right', a
 });
 
 test('a number with no noun, "go 9 weeks" and "35/45" are taken out of what the writer is sent, and copies of them are caught', async () => {
-  const hosting = project(1, 'Hosting', { situation: '20% of drivers quit each year. Releases would go 9 weeks apart. We reached 35/45 depots.', did: 'Took 12 of the depots live.' });
+  const hosting = project(1, 'Hosting', { context: '20% of drivers quit each year. Releases would go 9 weeks apart. We reached 35/45 depots.', action: 'Took 12 of the depots live.' });
   fileIn(fact(1, 'Cut hosting costs by 20%.', '20% lower hosting costs'), hosting);
   fileIn(fact(1, 'Brought 12 depots onto the console.', 'team of 12'), hosting);
   let prompt = '';
   fakeAsk((c) => { prompt = c.prompt; return { title: 'Staff Engineer', company: 'Nimbus Yard', place: '', verdict: 'v', strengths: [], risks: [], gaps: [], knockouts: [], checks: [], terms: [], requirements: [] }; });
   await assess(POSTING);
-  const context = (JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0]).context;
-  expect(context).toEqual({ situation: '[number] of drivers quit each year. Releases would go [number] weeks apart. We reached [number]/[number] depots.', what_i_did: 'Took [number] of the depots live.' });
+  const context = (JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0]).parts;
+  expect(context).toEqual({ context: '[number] of drivers quit each year. Releases would go [number] weeks apart. We reached [number]/[number] depots.', action: 'Took [number] of the depots live.' });
   for (const hidden of ['20% of drivers', 'go 9 weeks', '35/45', '12 of the depots']) expect([hidden, prompt.includes(hidden)]).toEqual([hidden, false]);
   const page = (b: string) => `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- ${b}\n`;
   const flagged = (b: string) => codeFlags(page(b), 2).filter((f) => f.kind === 'context-number').map((f) => f.items);
@@ -652,25 +654,25 @@ test('a number with no noun, "go 9 weeks" and "35/45" are taken out of what the 
 
 test('a project\'s parts are refused past 4,000 characters, in words, and never cut', () => {
   const long = 'x'.repeat(4001);
-  for (const part of ['situation', 'did', 'result', 'learned']) {
+  for (const part of ['context', 'action', 'result', 'learning']) {
     const made = addProject({ title: `Long ${part}`, roleId: 1, [part]: long });
     expect([part, made.ok]).toEqual([part, false]);
     expect((made as { error: string }).error).toMatch(/at most 4,000 characters/);
   }
-  const p = (addProject({ title: 'Short parts', roleId: 1, situation: 'x'.repeat(4000) }) as { id: number }).id;
+  const p = (addProject({ title: 'Short parts', roleId: 1, context: 'x'.repeat(4000) }) as { id: number }).id;
   const edit = patchProject(p, { result: long });
   expect(edit.ok).toBe(false);
-  expect(db.query('SELECT situation, result FROM projects WHERE id = ?').get(p)).toEqual({ situation: 'x'.repeat(4000), result: '' });
+  expect(db.query('SELECT context, result FROM projects WHERE id = ?').get(p)).toEqual({ context: 'x'.repeat(4000), result: '' });
 });
 
 test('a number that ends a clause in the background is not sent because a fact ends on the same number', async () => {
-  const p = project(1, 'Hosting', { situation: 'Attrition fell 20%. Depots by city: Dallas 12, Austin 9, Denver 14.' });
+  const p = project(1, 'Hosting', { context: 'Attrition fell 20%. Depots by city: Dallas 12, Austin 9, Denver 14.' });
   fileIn(fact(1, 'Cut hosting costs by 20%.'), p);
   let prompt = '';
   fakeAsk((c) => { prompt = c.prompt; return { title: 'Staff Engineer', company: 'Nimbus Yard', place: '', verdict: 'v', strengths: [], risks: [], gaps: [], knockouts: [], checks: [], terms: [], requirements: [] }; });
   await assess(POSTING);
-  const context = JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0].context;
-  expect(context).toEqual({ situation: 'Attrition fell [number]. Depots by city: Dallas [number], Austin [number], Denver [number].' });
+  const context = JSON.parse(prompt.slice(prompt.indexOf('The bank, as JSON:\n') + 19)).entries[0].roles[0].projects[0].parts;
+  expect(context).toEqual({ context: 'Attrition fell [number]. Depots by city: Dallas [number], Austin [number], Denver [number].' });
   for (const hidden of ['fell 20%', 'Denver 14', 'Austin 9']) expect([hidden, prompt.includes(hidden)]).toEqual([hidden, false]);
   // 14 stands in the background and in no fact of Harborlight: a bullet with it is caught.
   const page = `# Avery Lindqvist\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Opened 14 depots in Denver.\n`;

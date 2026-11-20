@@ -157,6 +157,8 @@ function rowsOf(markdown: string, r: Resume, rec: Rec): Built[] {
     about.forEach((x, k) => { const code = rowRef(x, rec); if (code) b.refs.push({ id: `r${k}`, code, kind: 'role', fact: '', gone: false }); });
     kind.set(e.at.heading, b);
     if (e.at.dates >= 0) set(e.at.dates, { kind: 'dates', text: plain(lines[e.at.dates]) });
+    // The Technologies line is a plain line of its entry, with or without a bullet's mark: no bullet, no link (rule 14).
+    for (const i of e.at.technologies) set(i, { kind: 'plain', text: plain(lines[i].trim().replace(/^[-*•]\s+/, '')) });
   }
   let seenName = false, contactDone = false;
   return lines.map((l, i) => {
@@ -242,6 +244,9 @@ function flagWords(f: Flag, at: { item?: string; facts?: number[] }): string {
     case 'link-mark': return 'A stray mark is printed in this line. Edit the line to take it out, or write the resume again.';
     case 'context-number': return items.length ? `${andList(items)} ${items.length === 1 ? 'is' : 'are'} in your record only in a project’s background, not in a fact.` : 'A number here is in your record only in a project’s background, not in a fact.';
     case 'kept-line': return 'This line repeats a line of How you work. Those lines are not facts.';
+    case 'context-words': return `The opening context uses ${andList(items.map((w) => `“${w}”`))}, which none of the facts this line uses holds, nor the context of their project.`;
+    case 'learning-elsewhere': return 'This line uses the words of what you learned on a project whose facts it does not use.';
+    case 'technologies-other': return `This job’s Technologies line names ${andList(items)}, which no fact of this job names, or which you are not confident in.`;
     case 'zero-bullets': return 'This job has no bullets under it. Give it one, or name it on the Earlier experience line.';
     case 'old-role': {
       const m = /ended (\d+) years ago and has (\d+) bullets/.exec(f.text);

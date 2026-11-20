@@ -1,7 +1,8 @@
 // The same fact often arrives from several sources: a resume bullet, the LinkedIn line for it, the
 // repository that shows it. This finds those within one role and folds each set into one fact that
 // keeps the most specific wording, every detail and all the evidence. A fact the person edited is
-// never reworded: it is the one kept, and its duplicates are dropped.
+// never reworded: it is the one kept, and its duplicates are dropped. A fact told by the person (lib/derive.ts) is
+// left out: only deriving its project again changes it.
 import { db, foldFacts } from './db.ts';
 import { ask } from './llm.ts';
 
@@ -51,7 +52,7 @@ ${JSON.stringify(facts.map((f) => ({ id: f.id, kind: f.kind, text: f.text, detai
 
 // Folds duplicates in every role, four roles at a time. Returns how many facts were folded away.
 export async function dedupe(): Promise<number> {
-  const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills, evidence, status FROM facts ORDER BY id').all() as Row[];
+  const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills, evidence, status FROM facts WHERE told = 0 ORDER BY id').all() as Row[];
   const names = new Map((db.query('SELECT id, company, title FROM roles').all() as { id: number; company: string; title: string }[]).map((r) => [r.id, r.title ? `${r.title}, ${r.company}` : r.company]));
   const groups = new Map<number | null, Row[]>();
   for (const f of facts) groups.set(f.role_id, [...(groups.get(f.role_id) ?? []), f]);

@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const PURE = ['ats', 'capture', 'entries', 'github', 'links', 'llm', 'metrics', 'numbers', 'paths', 'pdf', 'place', 'public', 'resume', 'rules', 'skim', 'timeline', 'tree', 'writing'];
+const PURE = ['ats', 'capture', 'carl', 'entries', 'github', 'links', 'llm', 'metrics', 'numbers', 'paths', 'pdf', 'place', 'public', 'resume', 'rules', 'skim', 'timeline', 'tree', 'writing'];
 const dirs: string[] = [];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 

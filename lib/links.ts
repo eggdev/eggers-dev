@@ -31,6 +31,7 @@ export type Links = { v: 1; lines: LinkLine[] };
 // A line's keys as takeLinks read them, before code puts the headings and the Skills line right.
 export type Cite = { where: Where; text: string; facts: number[]; refused: string[] };
 // A line of the resume that can carry a link: the Summary (one, whatever its lines) or a bullet of an Experience entry.
+// An entry's Technologies line is neither (lib/resume.ts): code writes it from the skills list, and it cites nothing.
 // `n` is the entry's place among the Experience entries (-1 for the Summary).
 export type Place = { where: Where; entry: string; text: string; line: number; n: number };
 

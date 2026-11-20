@@ -131,7 +131,7 @@ test('the first start of the tree gives each project-like row one project, and c
 }, 60_000);
 
 // Stage 3: projects, the new fact fields and the kept lines reach the resume writer. A database as stage 2 left it
-// (a project of a role with a name, a situation and what was learned but no fact, a source mark, a kept verdict, an
+// (a project of a role with a name, a context and a learning but no fact, a source mark, a kept verdict, an
 // open suggestion, a baseline of "There was none") keeps the signature the old rule gives, so nothing is queued.
 const stage2File = join(dir, 'stage2.db');
 const STAGE2_CHILD = `
@@ -140,7 +140,7 @@ await import('${lib}/projects.ts');
 const { dueIn } = await import('${lib}/activity.ts');
 await import('${lib}/record.ts'); await import('${lib}/jobs.ts');
 if (!db.query("SELECT id FROM projects WHERE title = 'Planned work'").get()) {
-  db.run("INSERT INTO projects (role_id, title, situation, learned, lives, created_at) VALUES (1, 'Planned work', 'A plan in 3 parts.', 'Patience.', 'example.org', 1)");
+  db.run("INSERT INTO projects (role_id, title, context, learning, lives, created_at) VALUES (1, 'Planned work', 'A plan in 3 parts.', 'Patience.', 'example.org', 1)");
   db.run(\`UPDATE roles SET official = '{"title":"hr"}' WHERE id = 1\`);
   db.run("INSERT INTO derived_lines (key, verdict, text, judged_at) VALUES ('led', 'kept', 'A line.', 1)");
   db.run("INSERT INTO project_proposals (role_id, title, status, created_at) VALUES (1, 'A suggestion', 'open', 1)");
@@ -286,4 +286,52 @@ test.skipIf(!R7_HAS)('rule 7: an old database keeps every resume, its flags and 
   // An idle start (no flags taken) writes what a start of the code before rule 7 writes.
   const idleOld = await r7Open(join(oldLib, 'lib'), oldFile, false), idleNew = await r7Open(lib, newFile, false);
   expect(idleNew.started).toBe(idleOld.started);
+}, 120_000);
+
+// CARL, 2026-11-19: the project parts situation, did and learned are named context, action and learning. A database the
+// last version left, with a project of a role in its old columns and a fact filed in it, opens with today's code twice
+// and then by two processes at once: every value is under its new name, unchanged, the old names are gone, and a second
+// start changes nothing. With EGG_CARL=off the bank's signature is what it was, so the rename alone writes no resume
+// again. (With CARL on, a project's learning reaches the writer and so counts: lib/signature.test.ts.)
+const CARL_BEFORE = '79a5988';
+const CARL_CHILD = (root: string, seed: boolean) => `
+const { db, bankSignature } = await import('${root}/db.ts');
+await import('${root}/projects.ts');
+if (${seed}) {
+  db.run("INSERT INTO roles (id, company, title, start, standing) VALUES (1, 'Harborlight Systems', 'Director of Engineering', '2021-03', 'employer')");
+  db.run("INSERT INTO facts (id, role_id, kind, text, metric, created_at) VALUES (1, 1, 'accomplishment', 'Built the dispatch console.', '640 users', 1)");
+  db.run("INSERT INTO projects (role_id, title, situation, did, result, learned, lives, created_at) VALUES (1, 'Dispatch console', 'Schedulers planned 35 depots on paper.', 'I wrote the scheduler.', 'One console for every depot.', 'Ship in small steps.', 'console.example', 1)");
+  db.run('UPDATE facts SET project_id = 1 WHERE id = 1');
+}
+const cols = db.query('PRAGMA table_info(projects)').all().map((c) => c.name);
+console.log(JSON.stringify({ sig: bankSignature(), cols, row: db.query('SELECT * FROM projects WHERE id = 1').get() }));
+`;
+const CARL_HAS = Bun.spawnSync(['git', 'cat-file', '-e', `${CARL_BEFORE}^{commit}`], { cwd: join(lib, '..') }).exitCode === 0;
+if (!CARL_HAS) console.log(`migration: the CARL rename test is skipped, because commit ${CARL_BEFORE} is not in this clone (a shallow checkout).`);
+const carlOpen = async (root: string, at: string, seed = false) => {
+  const p = Bun.spawn(['bun', '-e', CARL_CHILD(root, seed)], { env: { ...process.env, DB: at, NODE_ENV: 'test', EGG_CARL: 'off' }, stdout: 'pipe', stderr: 'pipe' });
+  const [exit, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  if (exit !== 0) throw new Error(err.slice(-1500));
+  return JSON.parse(out.trim().split('\n').pop()!);
+};
+
+test.skipIf(!CARL_HAS)('CARL: the old project columns come through under their new names, with every value as it was, and the rename moves no signature', async () => {
+  const oldLib = join(dir, 'carl-old');
+  expect(Bun.spawnSync(['sh', '-c', `mkdir -p "${oldLib}" && git archive ${CARL_BEFORE} lib | tar -x -C "${oldLib}"`], { cwd: join(lib, '..') }).exitCode).toBe(0);
+  symlinkSync(join(lib, '..', 'node_modules'), join(oldLib, 'node_modules'));
+  const at = join(dir, 'carl.db');
+  const was = await carlOpen(join(oldLib, 'lib'), at, true);
+  expect(was.cols).toEqual(expect.arrayContaining(['situation', 'did', 'learned']));
+  const { situation, did, learned, ...rest } = was.row;
+  // The columns deriving a told story and the spoken story added since (lib/db.ts) come with their defaults.
+  const renamed = { ...rest, context: situation, action: did, learning: learned, derive_status: '', derive_note: '', derived: '', told_at: 0, spoken: '', spoken_wrote: '', spoken_replace: 0, spoken_status: '', spoken_note: '' };
+  const first = await carlOpen(lib, at), second = await carlOpen(lib, at);
+  const together = await Promise.all([carlOpen(lib, at), carlOpen(lib, at)]);
+  for (const got of [first, second, ...together]) {
+    expect(got.row).toEqual(renamed);
+    expect(got.cols).toEqual(expect.arrayContaining(['context', 'action', 'result', 'learning']));
+    for (const gone of ['situation', 'did', 'learned']) expect(got.cols).not.toContain(gone);
+    expect(got.sig).toBe(was.sig);
+  }
+  expect(second.cols).toEqual(first.cols);
 }, 120_000);

@@ -8,6 +8,7 @@
 // resume was checked", never as a second headline number.
 use Page, WidePage, Section, WideSection, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Prose, Indented, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, OutLink, Record, RecordHead, RecordList, Labelled, FieldLabel, InlineField, SearchField, Choices, ChoiceWord, CheckLine, WorkLine, Actions, WithNote, Main, Note, Ref, RefTap, NoteLine, RoleHead, DatedLine, FactCard, Struck, StruckPart, Choose, Chosen, statusWord, joinDot, look, lookGutter, lookTight, lookMeasure, lookMargin, lookText, lookLeading, resumeLook, resumeGutter, resumeWidth from "./look.contract"
 use WorkItem, workPlace, workUsual, workStage, workStatus, inHand, usualWords, durationWords from "./activity.contract"
+use JobQuestions, AskedState, AskedSection from "./stories.contract"
 
 // A job in the list: its fit is 0 to 100 once read, -1 before.
 shape JobRow
@@ -176,7 +177,7 @@ shape ResumeRef
   gone: bool
 
 // One line of the resume: kind name | contact | section | role | dates | para | bullet | item | plain. space: the room
-// above it, in rows (the app works it out from the kinds before it).
+// above it, in rows (the app works it out from the kinds before it). An entry's Technologies line is plain.
 shape ResumeRow
   id: string
   kind: string
@@ -479,6 +480,17 @@ component JobScreen
     saveContact: action
     editResume: action
     setLength: action
+    // The questions asked at this job's interviews (stories.contract), shown once its outcome is past "applied".
+    asked: JobQuestions
+    askedState: AskedState
+    openAsked: action
+    closeAsked: action
+    addAsked: action
+    chooseStory: action
+    markNoStory: action
+    askAskedDelete: action
+    keepAsked: action
+    removeAsked: action
   state note = job.outcomeNote
   state who = job.contact
   derive read = job.status == "done" or job.verdict != ""
@@ -638,6 +650,8 @@ component JobScreen
         if saveError != ""
           FailLine(text=`That change wasn’t saved. ${saveError}`, testId="job-save-error")
         QuietLine(text=(job.sent != "" ? `Sent ${job.sent}. Your record of what became of it, and anyone who could vouch for you. New jobs are scored with the outcomes in view.` : "Your record of what became of it, and anyone who could vouch for you. New jobs are scored with the outcomes in view."), testId="job-happened-hint")
+      if job.outcome == "interviewed" or job.outcome == "rejected" or job.outcome == "offer"
+        AskedSection(asked=asked, jobId=job.id, a=askedState, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, choose=chooseStory, noStory=markNoStory, askDelete=askAskedDelete, keep=keepAsked, remove=removeAsked)
       if read
         Section(testId="job-doors")
           SectionHead(text="Reach out", testId="job-doors-head")

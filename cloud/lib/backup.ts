@@ -18,6 +18,8 @@ export type PrepareOpts = {
   from: Manifest['from'];
   /** The database stats of the backup the pointer names now, for the shrink guard; null when there is none. */
   last: DbStats | null;
+  /** Whether a mark of a new record may let a smaller database through (manifest.ts, shrinkCheck). False for the seed tool. */
+  honourReset?: boolean;
   allowShrink: boolean;
   now: number;
 };
@@ -34,7 +36,7 @@ export async function prepareBackup(o: PrepareOpts): Promise<PrepareResult> {
     const check = checkDatabase(copy);
     if (!check.ok) return { kind: 'refused', reason: `the database copy fails its check (${check.reason}); nothing was uploaded` };
     const db = statsOf(copy);
-    const guard = shrinkCheck(o.last, db, o.allowShrink);
+    const guard = shrinkCheck(o.last, db, o.allowShrink, o.honourReset ?? true);
     if (!guard.ok) return { kind: 'refused', reason: `${guard.reason}. Nothing was uploaded. Set EGG_ALLOW_SHRINK=1 if this is intended` };
     const key = backupKey(o.now);
     const file = join(o.work, 'backup.tar.gz');

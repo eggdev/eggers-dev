@@ -14,9 +14,9 @@ import { KEPT_LINES, LEARNED, NUMBER_MARK } from './writing.ts';
 
 const CONSOLE = 'Built the dispatch console that schedulers use every day.', QUOTING = 'Rebuilt the quoting API.';
 const idOf = (text: string) => (db.query('SELECT id FROM facts WHERE text = ?').get(text) as { id: number }).id;
-const project = (roleId: number, title: string, parts: { situation?: string; result?: string; learned?: string }) =>
-  (db.query('INSERT INTO projects (role_id, title, situation, result, learned, created_at) VALUES (?, ?, ?, ?, ?, 1) RETURNING id')
-    .get(roleId, title, parts.situation ?? '', parts.result ?? '', parts.learned ?? '') as { id: number }).id;
+const project = (roleId: number, title: string, parts: { context?: string; result?: string; learning?: string }) =>
+  (db.query('INSERT INTO projects (role_id, title, context, result, learning, created_at) VALUES (?, ?, ?, ?, ?, 1) RETURNING id')
+    .get(roleId, title, parts.context ?? '', parts.result ?? '', parts.learning ?? '') as { id: number }).id;
 function job(best: string[], strengths = ['Built a dispatch console used every day.']): JobRow & { contact: string } {
   const analysis = { verdict: 'A fair fit.', strengths, requirements: best.map((b, i) => ({ text: `Requirement ${i}`, need: 'must', coverage: 'strong', evidence: '', best: b })) };
   return db.query("INSERT INTO jobs (posting, title, company, status, analysis, created_at, contact) VALUES ('Staff Engineer at Nimbus Yard. Build dispatch software.', 'Staff Engineer', 'Nimbus Yard', 'done', ?, 1, '') RETURNING *")
@@ -26,8 +26,8 @@ const door = (message: string) => ({ to: 'The hiring manager', find: 'Search for
 
 beforeEach(() => {
   seed();
-  const consoleProject = project(1, 'Dispatch console', { situation: 'Schedulers planned 35 depots on paper.', result: 'One console for every depot.', learned: 'I learned to ship in 3 week steps.' });
-  const quoting = project(2, 'Quoting API', { learned: 'I learned to read flame graphs.' });
+  const consoleProject = project(1, 'Dispatch console', { context: 'Schedulers planned 35 depots on paper.', result: 'One console for every depot.', learning: 'I learned to ship in 3 week steps.' });
+  const quoting = project(2, 'Quoting API', { learning: 'I learned to read flame graphs.' });
   db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(consoleProject, idOf(CONSOLE));
   db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(quoting, idOf(QUOTING));
   fact(1, 'Managed a team of 5 engineers.');
@@ -82,7 +82,7 @@ test('only the facts, the profile, the posting and the person\'s note may hold a
   expect(await draft(j, '.')).toEqual({ doors: [], left: 1 });
   // A number inside a name is no count: a draft about S3 is kept even with a 3 in the background.
   fact(1, 'Moved file storage.', '', 'S3');
-  db.run("UPDATE projects SET situation = 'Schedulers planned 3 regions on paper.' WHERE title = 'Dispatch console'");
+  db.run("UPDATE projects SET context = 'Schedulers planned 3 regions on paper.' WHERE title = 'Dispatch console'");
   const s3 = door('I moved our file storage to S3. Could we talk? Avery');
   fakeAsk(() => ({ doors: [s3] }));
   expect(await draft(j, '.')).toEqual({ doors: [s3], left: 0 });

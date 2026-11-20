@@ -1,6 +1,6 @@
 // A resume's Markdown read into a structure, once, for every check that needs to know what is where:
 // the name, the contact line, the summary, each experience entry (title, company, date ranges, labels,
-// place, context lines, bullets), the one-line "Earlier experience" section, skills and education.
+// place, context lines, bullets, its Technologies line), the one-line "Earlier experience" section, skills and education.
 // It never throws: a hand-edited resume is read as far as it can be, and whatever could not be placed is
 // kept in `unplaced`. This file opens no database and asks no model.
 //
@@ -19,16 +19,19 @@
 //   Previously Senior Engineer, Jan 2019 – Feb 2021   an earlier title at the same employer
 //   A context line.                                   a plain line that is neither of the above
 //   - bullets
+//   Technologies: Go, Kafka                           the technologies of the entry, written by code (lib/skills.ts)
 //   ## Earlier experience
 //   Title, Company (2012 – 2014); Title, Company (2010 – 2012)
 //   ## Skills
 //   ## Education
 
 export type Range = { start: string; end: string; text: string }; // "YYYY-MM" or "YYYY"; an end of "" is the present
+// technologies: the items of the entry's "Technologies:" line (RESUME-RULES.md, rule 14). That line is no bullet, no
+// context line and no note, wherever in the entry it stands, and with or without a bullet's mark.
 export type Entry = { section: string; heading: string; title: string; company: string; ranges: Range[]; labels: string[]; place: string;
-  previously: { title: string; ranges: Range[] }[]; notes: string[]; bullets: string[]; current: boolean;
-  // Line numbers in the Markdown, for a repair that rewrites only the lines it must (lib/entries.ts).
-  at: { heading: number; dates: number; previously: number[]; lines: number[] } };
+  previously: { title: string; ranges: Range[] }[]; notes: string[]; bullets: string[]; technologies: string[]; current: boolean;
+  // Line numbers in the Markdown, for a repair that rewrites only the lines it must (lib/entries.ts, lib/skills.ts).
+  at: { heading: number; dates: number; previously: number[]; technologies: number[]; lines: number[] } };
 export type Earlier = { text: string; title: string; company: string; ranges: Range[] };
 export type Outline = { kind: 'name' | 'header' | 'summary' | 'heading' | 'bullet'; text: string; line: number };
 export type Resume = { name: string; contact: string; summary: string; sections: string[]; experience: Entry[]; projects: Entry[]; elsewhere: Entry[];
@@ -40,6 +43,8 @@ export const lf = (text: string) => text.replace(/\r\n?/g, '\n');
 
 export const STANDARD = ['Summary', 'Experience', 'Earlier experience', 'Skills', 'Education'];
 // What may follow the dates on the line under a role's heading, besides the place.
+// An entry's Technologies line, as code writes it ("Technologies: Go, Kafka") and as a hand edit may leave it.
+export const TECHNOLOGIES = /^technologies:\s*(.*)$/i;
 export const LABELS = /^(?:contract|contractor|part-time|part time|freelance|temporary|internship|consulting|volunteer|own company|personal project)$/i;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -148,13 +153,15 @@ export function parseResume(markdown: string, companies: string[] = []): Resume 
       // In Education a heading is a degree, and in Skills it names a group: neither is a job.
       const head = section === 'education' || section === 'skills' || bullet !== undefined ? undefined : h ? h[2] : boldHeading(i);
       if (head !== undefined) {
-        entry = { section, heading: clean(head), ...splitHeading(head, companies), ranges: [], labels: [], place: '', previously: [], notes: [], bullets: [], current: false, at: { heading: i, dates: -1, previously: [], lines: [i] } };
+        entry = { section, heading: clean(head), ...splitHeading(head, companies), ranges: [], labels: [], place: '', previously: [], notes: [], bullets: [], technologies: [], current: false, at: { heading: i, dates: -1, previously: [], technologies: [], lines: [i] } };
         (section === 'experience' ? out.experience : section === 'projects' ? out.projects : out.elsewhere).push(entry);
         out.outline.push({ kind: 'heading', text: entry.heading, line: i });
         return;
       }
       if (entry) {
         entry.at.lines.push(i);
+        const tech = TECHNOLOGIES.exec(clean(bullet ?? text));
+        if (tech) { entry.technologies.push(...tech[1].split(/\s*[,;·|•]\s*/).map((x) => x.replace(/\.$/, '').trim()).filter(Boolean)); entry.at.technologies.push(i); return; }
         if (bullet !== undefined) { entry.bullets.push(clean(bullet)); out.outline.push({ kind: 'bullet', text: clean(bullet), line: i }); return; }
         const before = PREVIOUSLY.exec(clean(text));
         if (before && rangesIn(before[1]).length > 0) {

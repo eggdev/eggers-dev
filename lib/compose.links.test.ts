@@ -187,7 +187,7 @@ test('a cited fact edited or deleted later is said at the next reflag, and never
 });
 
 test('on a linked line the number check reads the cited facts, not the whole employer; an unlinked resume is checked as before', () => {
-  db.run("INSERT INTO projects (role_id, title, situation, created_at) VALUES (1, 'Console', 'It served 640 users.', 1)");
+  db.run("INSERT INTO projects (role_id, title, context, created_at) VALUES (1, 'Console', 'It served 640 users.', 1)");
   const md = '# Avery Lindqvist\nline\n\n## Summary\nEngineer.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Cut the nightly billing run for 640 users.';
   const links: Links = { v: 1, lines: [{ where: 'summary', entry: '', text: 'Engineer.', facts: [1], edited: 0 }, { where: 'bullet', entry: 'harborlight systems', text: 'Cut the nightly billing run for 640 users.', facts: [2], edited: 0 }] };
   const kinds = (fs: Flag[]) => fs.filter((f) => ['context-number', 'link-number'].includes(f.kind)).map((f) => f.kind);

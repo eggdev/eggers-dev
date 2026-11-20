@@ -17,8 +17,9 @@ await import('./person.ts'); await import('./talk.ts'); await import('./directio
 // Empties every table a test writes to.
 export function reset(): void {
   for (const t of ['facts', 'roles', 'projects', 'sources', 'jobs', 'answered', 'deleted_facts', 'raised_questions', 'skills', 'linkedin_positions', 'talk', 'queue_snoozes', 'id_floor', 'derived_lines', 'project_proposals', 'skills_due_jobs', 'resume_versions', 'resume_suggestions']) db.run(`DELETE FROM ${t}`);
-  // Tables of modules a test may not have imported (lib/standing.ts, lib/origins.ts, lib/repoactivity.ts, lib/sittings.ts).
-  for (const t of ['project_standing', 'fact_standing', 'fact_origins', 'repo_activity', 'capture_sittings', 'capture_turns']) {
+  // Tables of modules a test may not have imported (lib/standing.ts, lib/origins.ts, lib/repoactivity.ts, lib/sittings.ts,
+  // lib/stories.ts).
+  for (const t of ['project_standing', 'fact_standing', 'fact_origins', 'repo_activity', 'capture_sittings', 'capture_turns', 'story_practice', 'interview_questions']) {
     if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t)) db.run(`DELETE FROM ${t}`);
   }
   db.run('UPDATE skills_review SET reviewed_at = 0 WHERE id = 1');

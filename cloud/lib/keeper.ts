@@ -156,7 +156,8 @@ export class Keeper {
     const job = this.chain.then(async () => {
       if (!this.tracker || (this.phase !== 'running' && this.phase !== 'stopping')) return { ok: false, reason: 'the app is not running, so there is nothing to back up' };
       this.tracker.observe(this.sig(), this.now());
-      if (!this.tracker.unsaved && !force) return { ok: true, reason: 'nothing changed since the last backup' };
+      // Nothing changed since a backup that was refused: the data as it stands is in no backup, so that is said again.
+      if (!this.tracker.unsaved && !force) return this.lastBackupError ? { ok: false, reason: `nothing changed since the last backup was refused: ${this.lastBackupError}` } : { ok: true, reason: 'nothing changed since the last backup' };
       const before = this.sig();
       const at = this.now();
       try {

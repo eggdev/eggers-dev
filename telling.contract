@@ -1,27 +1,36 @@
-// Telling a role or a project (DESIGN.md section 11; lib/capture.ts, lib/sittings.ts). An interview about one role or
-// one project, one question at a time. The interviewer says only fixed words: no model is asked and no slow work is
-// made, so the next line comes back with the answer, and nothing waits or spins. The owner's answer is sent and kept
-// exactly as typed: never trimmed.
+// Telling a story (DESIGN.md section 11; lib/capture.ts, lib/sittings.ts, lib/derive.ts). A story is a project: a
+// named piece of work under a job, or a side project. The owner tells it in an interview, one question at a time, and
+// the studio writes its four parts and its facts from the answers afterwards. The interviewer says only fixed words: no
+// model is asked while the owner talks and no slow work is made, so the next line comes back with the answer, and
+// nothing waits or spins. The owner's answer is sent and kept exactly as typed: never trimmed.
 //
-// Experience shows one plain action on an open role or project (`TellLine`): "Tell this role" or "Tell this project"
-// when nothing is told yet, "Carry on telling it" while a sitting is open or some questions remain, and "Told on <date>"
-// with a way to read it once all 15 are answered or closed. The sitting is its own screen (`TellScreen`, /record/tell/:id,
-// so a reload lands on it): the conversation, one field and Send, "I don't know" and "Stop for now"; once it has ended,
-// the closing line and what the owner said under each question, each answer with Delete, which asks first.
-use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, GoTo, Actions, look, lookText, lookLeading, lookTight from "./look.contract"
+// On an open job in Experience, "Tell a story from this job" opens a one-field form in place (`StoryStart`): the piece
+// of work's name, Add and Cancel. Add makes the project and starts its first sitting. An open project shows one plain
+// action (`TellLine`): "Tell this project" when nothing is told yet, "Carry on telling it" while a sitting is open or
+// some questions remain, and "Told on <date>" with a way to read it once all 14 are answered or closed. Under its facts
+// one quiet line (`StoryLine`) says when the story was written from what was told, or that it is being written. The
+// sitting is its own screen (`TellScreen`, /record/tell/:id, so a reload lands on it): the conversation, one field and
+// Send, "I don't know" and "Stop for now"; once it has ended, the closing line and what the owner said under each
+// question, each answer with Delete, which asks first.
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Action, MainAction, DangerAction, GoTo, Actions, InPlaceForm, FieldLabel, WorkLine, statusWord, look, lookText, lookLeading, lookTight from "./look.contract"
+use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activity.contract"
 
-// Where the telling of one role or project stands (GET /roles/:id/sitting, /projects/:id/sitting). kind and id: the
-// role or project it is about. sitting: the open sitting, else the latest ("" for none). settled: the questions answered
-// or closed, of total. lastOn: when any of its sittings was last touched, in words ("19 Nov 2026").
+// Where the telling of one project stands (GET /projects/:id/sitting). sitting: the open sitting, else the latest (""
+// for none). settled: the questions answered or closed, of total. lastOn: when any of its sittings was last touched,
+// in words ("19 Nov 2026"). said: it holds an answer that is not only "I don't know". deriveStatus: '' | queued | running | done | failed, and deriveNote, what was left out or
+// why it failed. toldOn: the day of the latest answer the story was written from ("" before it was written).
 shape Telling
   loaded: bool
-  kind: string
-  id: string
+  project: string
   open: bool
   sitting: string
   settled: number
   total: number
   lastOn: string
+  said: bool
+  deriveStatus: string
+  deriveNote: string
+  toldOn: string
 
 // One turn of a sitting, in order. mine: the owner's answer; else the interviewer's line. step: opening | reminder |
 // question | follow-up | closing | answer. shown: the words as the screen draws them (app.ts, `drawn`; see OwnWords).
@@ -43,26 +52,26 @@ shape SaidAnswer
   followUp: string
   more: number
 
-// A question of the list with the owner's answers to it, from every sitting about the same role or project.
+// A question of the list with the owner's answers to it, from every sitting about the same project.
 shape SaidGroup
   key: string
   question: string
   answers: SaidAnswer[]
 
-// One sitting (GET /sittings/:id). kind and subject: the role or project it is about, and name, what it is called.
-// due: a question waits for the owner's answer. position: the waiting question's place in the list (1 to total; 0 when
-// none waits). closing: the closing line, once it has ended. gone: the sitting is no longer in the record. answers: how
-// many answers this sitting holds (what deleting it removes).
+// One sitting (GET /sittings/:id). project: the project it is about, and name, what it is called. due: a question
+// waits for the owner's answer. position: the waiting question's place in the list (1 to total; 0 when none waits), and
+// part: its part of the story in words ("Context"). closing: the closing line, once it has ended. gone: the sitting is
+// no longer in the record. answers: how many answers this sitting holds (what deleting it removes).
 shape Sitting
   loaded: bool
   gone: bool
   id: string
-  kind: string
-  subject: string
+  project: string
   name: string
   open: bool
   due: bool
   position: number
+  part: string
   total: number
   closing: string
   answers: number
@@ -81,32 +90,38 @@ shape TellReply
 
 // Every question answered or closed, with no sitting open.
 fn isTold(t: Telling): bool = not t.open and t.total > 0 and t.settled >= t.total
-// The one action on an open role or project, in words.
-fn tellLabel(t: Telling, kind: string): string = t.open or t.settled > 0 ? "Carry on telling it" : kind == "project" ? "Tell this project" : "Tell this role"
+// The one action on an open project, in words.
+fn tellLabel(t: Telling): string = t.open or t.settled > 0 ? "Carry on telling it" : "Tell this project"
 // The words "I don't know" sends: exactly these, which close the question for good (lib/capture.ts, isDontKnow).
 fn dontKnowText(): string = "I don't know"
 fn saidId(key: string): string = key == "" ? "other" : key
 // What Delete asks, about one answer and about the whole sitting. Neither promises what is asked next.
 fn answerAsk(a: SaidAnswer): string = a.more > 0 ? "Delete this answer and what you added to it? This cannot be undone." : "Delete this answer? This cannot be undone."
 fn sittingAsk(n: number): string = n == 0 ? "Delete this sitting? It holds no answer. This cannot be undone." : `Delete this sitting and the ${n == 1 ? "answer" : `${n} answers`} you gave in it? This cannot be undone.`
-// Where the role or project of a sitting is open in Experience.
-fn subjectHref(kind: string, id: string): string = kind == "project" ? path("project", id) : path("role", id)
+// The action that writes the story from the answers: first, again, or after a failure.
+fn storyAgainLabel(t: Telling, state: string): string = state == "failed" ? "Try again" : t.toldOn != "" ? "Write it again from what you said" : "Write it from what you said"
+// The quiet line under the conversation: the part of the story, and the question's place in the list.
+fn positionLine(s: Sitting): string = `${s.part} · question ${s.position} of ${s.total}`
 
 members App
-  // The role or project open in Experience, if any: where its telling stands, read while it is open.
-  derive tellKind = openKey.startsWith("role:") ? "role" : openKey.startsWith("project:") ? "project" : ""
-  derive tellOf = tellKind == "" ? "" : openKey.slice(tellKind.length + 1)
-  resource telling = loadTelling(tellKind, tellOf) when tellKind != "" as shape Telling else empty()
+  // The project open in Experience, if any: where its telling stands, read while it is open.
+  derive tellOf = openKey.startsWith("project:") ? openKey.slice(8) : ""
+  resource telling = loadTelling(tellOf) when tellOf != "" as shape Telling else empty()
   // The sitting shown (/record/tell/:id), read when it opens and after each answer, stop or delete.
   derive sittingShown = topName == "tell" ? top(nav).params.id : ""
   resource sitting = loadSitting(sittingShown) when sittingShown != "" as shape Sitting else empty()
   // The interviewer turn the screen shows as waiting: the answer is sent for it, and refused if it no longer waits.
   derive tellTurn = sitting.due ? (match sitting.turns.at(-1) { case some(t) => t.id, case none => "" }) : ""
   mutation tellStarted as shape TellReply then afterTellStart
-  mutation tellAnswered as shape TellReply refreshes sitting then afterTellAnswer
-  mutation tellStopped as shape TellReply refreshes sitting
+  // A story named under a job: the project is made and its first sitting starts, so the record is read again too.
+  mutation storyTold as shape TellReply refreshes tree, activity then afterStoryTold
+  // Write it again from what you said: slow work, so the activity list is read again at once.
+  mutation storyAsked as shape TellReply refreshes telling, activity
+  // An answer or a stop can end a sitting, which queues its story to be written.
+  mutation tellAnswered as shape TellReply refreshes sitting, activity then afterTellAnswer
+  mutation tellStopped as shape TellReply refreshes sitting, activity
   mutation tellDeleted as shape TellReply refreshes sitting then afterTellDelete
-  // A whole sitting deleted: it is gone, so the screen goes back to its role or project, which reads its telling again.
+  // A whole sitting deleted: it is gone, so the screen goes back to its project, which reads its telling again.
   mutation sittingDeleted as shape TellReply then afterSittingDelete
   // The answer being written, kept across a reload, and the sitting it is for. What was last sent, so the field is
   // cleared only when the answer sent is still what it holds.
@@ -114,27 +129,52 @@ members App
   state tellDraftFor = "" persist
   derive tellField = tellDraftFor == sittingShown ? tellDraft : ""
   state tellSending = ""
-  // The last thing tried (start | answer | stop | delete), so one refusal is said where it was made; the role or
-  // project a start was asked on; the answer whose deletion is being asked about.
+  // The last thing tried (start | story | again | answer | stop | delete), so one refusal is said where it was made; the
+  // job or project a start was asked on; the answer whose deletion is being asked about.
   state tellAct = ""
   state tellOn = ""
   state tellAsking = ""
-  // Whether the deletion of the whole sitting shown is being asked about, and where Experience shows its role or
-  // project, to go back to once it is deleted.
+  // Whether the deletion of the whole sitting shown is being asked about, and where Experience shows its project, to go
+  // back to once it is deleted.
   state sittingAsked = false
   state sittingBack = ""
   derive sittingDeleteOk = match sittingDeleted { case some(r) => r.ok, case none => false }
   derive tellStartError = tellAct != "start" or pending(tellStarted) ? "" : match tellStarted { case some(r) => r.error, case none => "" }
+  derive storyError = tellAct != "story" or pending(storyTold) ? "" : match storyTold { case some(r) => r.error, case none => "" }
+  derive againError = tellAct != "again" or pending(storyAsked) ? "" : match storyAsked { case some(r) => r.error, case none => "" }
   derive tellAnswerOk = match tellAnswered { case some(r) => r.ok, case none => false }
   derive tellAnswerEnded = match tellAnswered { case some(r) => r.ended, case none => false }
   derive tellDeleteOk = match tellDeleted { case some(r) => r.ok, case none => false }
   derive tellError = tellAct == "answer" and not pending(tellAnswered) ? (match tellAnswered { case some(r) => r.error, case none => "" }) : tellAct == "stop" and not pending(tellStopped) ? (match tellStopped { case some(r) => r.error, case none => "" }) : tellAct == "delete" and not pending(tellDeleted) ? (match tellDeleted { case some(r) => r.error, case none => "" }) : tellAct == "delete-sitting" and not pending(sittingDeleted) ? (match sittingDeleted { case some(r) => r.error, case none => "" }) : ""
 
-  // From Experience: start a sitting, or go back to the one open, and open it.
-  action tellIt(kind: string, id: string)
+  // From Experience: start a sitting on a project, or go back to the one open, and open it.
+  action tellIt(id: string)
     tellAct = "start"
-    tellOn = `${kind}:${id}`
-    send tellStarted = startTelling(kind, id)
+    tellOn = `project:${id}`
+    send tellStarted = startTelling(id)
+  // From a job in Experience: a new story, named, and its first sitting.
+  action tellStory(roleId: string, title: string)
+    if not pending(storyTold)
+      tellAct = "story"
+      tellOn = `role:${roleId}`
+      send storyTold = tellStory(roleId, title.trim())
+  action afterStoryTold
+    match storyTold
+      case some(r)
+        if r.ok
+          adding = ""
+          tellDraft = ""
+          tellDraftFor = r.sitting
+          tellAct = ""
+          tellAsking = ""
+          sittingAsked = false
+          nav = push(nav, path("tell", r.sitting))
+      case none
+        tellAct = tellAct
+  action writeStoryAgain(id: string)
+    tellAct = "again"
+    tellOn = `project:${id}`
+    send storyAsked = deriveStory(id)
   action afterTellStart
     match tellStarted
       case some(r)
@@ -199,7 +239,7 @@ members App
     if not pending(sittingDeleted)
       tellAct = "delete-sitting"
       send sittingDeleted = deleteSitting(sittingShown)
-  // Back to the role or project in place of the deleted sitting, so Back never returns to it.
+  // Back to the project in place of the deleted sitting, so Back never returns to it.
   action afterSittingDelete
     if sittingDeleteOk
       sittingAsked = false
@@ -208,25 +248,85 @@ members App
   action pullSitting
     refresh sitting
 
-// The one action on an open role or project in Experience. Drawn once where it stands is known for this item.
+// The one action on an open project in Experience. Drawn once where it stands is known for this project.
 component TellLine
   props
     telling: Telling
-    kind: string
     id: string
     error: string
     busy: bool
     tell: action
   view
-    if telling.loaded and telling.kind == kind and telling.id == id
+    if telling.loaded and telling.project == id
       column gap=lookTight() align-items="start" testId="tell"
         if isTold(telling)
           Line(text=`Told on ${telling.lastOn}`, testId="tell-told")
           GoTo(label="Read it", href=path("tell", telling.sitting), testId="tell-read")
         else
-          Action(label=tellLabel(telling, kind), press=tell(kind, id), disabled=busy, keys="", testId="tell-start")
+          Action(label=tellLabel(telling), press=tell(id), disabled=busy, keys="", testId="tell-start")
         if error != ""
           FailLine(text=error, testId="tell-start-error")
+
+// On an open job: "Tell a story from this job", which opens a one-field form in place. The form keeps its draft itself;
+// Add makes the project and opens its first sitting, and a refusal is said under the field with the draft kept.
+component StoryStart
+  props
+    roleId: string
+    open: bool
+    error: string
+    busy: bool
+    start: action
+    save: action
+    cancel: action
+  state title = ""
+  action editTitle(v: string)
+    title = v
+  action submit
+    save(roleId, title)
+  view
+    if open
+      InPlaceForm(label="Tell a story from this job", testId="story-form")
+        FieldLabel(label="Name the piece of work in a few words.")
+          input value=title input=editTitle submit=submit placeholder="Merged three deploy systems into one" aria-label="Name the piece of work in a few words." autocomplete="off" autofocus=true aria-invalid=(error != "") testId="story-title"
+        if error != ""
+          FailLine(text=error, testId="story-error")
+        Actions(testId="story-actions")
+          MainAction(label="Add", press=submit, disabled=busy, keys="", testId="story-add")
+          Action(label="Cancel", press=cancel, disabled=false, keys="", testId="story-cancel")
+    else
+      Action(label="Tell a story from this job", press=start(`story:${roleId}`), disabled=false, keys="", testId="story-start")
+
+// Under an open project's facts: one quiet line once its story was written from what was told, with the way to read the
+// answers; while it waits or is being written, one line in the Activity style, with no spinner; a failure says why.
+// Whenever something was said and no writing waits or runs, the story can be written (again) from it.
+component StoryLine
+  props
+    telling: Telling
+    id: string
+    work: WorkItem[]
+    error: string
+    busy: bool
+    again: action
+  derive state = workStatus(work, "derive-story", id, telling.deriveStatus)
+  view
+    if telling.loaded and telling.project == id and telling.sitting != ""
+      column gap=lookTight() align-items="start" testId="story"
+        if inHand(state)
+          WorkLine(word=statusWord("work", state), place=workPlace(work, "derive-story", id), text=`Writing the story from what you said. Usually ${usualWords(workUsual(work, "derive-story", id))}.`, testId="story-work")
+        else
+          if state == "failed"
+            FailLine(text=`The story couldn’t be written. ${telling.deriveNote}`, testId="story-failed")
+          else if telling.toldOn != ""
+            QuietLine(text=`Written from what you told on ${telling.toldOn}.`, testId="story-written")
+            if telling.deriveNote != ""
+              QuietLine(text=telling.deriveNote, testId="story-note")
+          Actions(testId="story-actions")
+            if telling.toldOn != ""
+              GoTo(label="Read what you said", href=path("tell", telling.sitting), testId="story-read")
+            if telling.said
+              Action(label=storyAgainLabel(telling, state), press=again(id), disabled=busy, keys="", testId="story-again")
+        if error != ""
+          FailLine(text=error, testId="story-again-error")
 
 // One sitting. While it is open: the conversation in order (the interviewer's lines in the light weight, the owner's
 // answers in the heavy weight and stepped in, kept as typed), one quiet line with the question's place, the field and
@@ -270,7 +370,7 @@ component TellScreen
             QuietLine(text="Loading…", testId="tell-loading")
       else
         Section(testId="tell-top")
-          GoTo(label="Back to Experience", href=subjectHref(sitting.kind, sitting.subject), testId="tell-back")
+          GoTo(label="Back to Experience", href=path("project", sitting.project), testId="tell-back")
           Title(text=sitting.name, testId="tell-title")
         if sitting.open
           Section(testId="tell-talk")
@@ -282,11 +382,12 @@ component TellScreen
                 Line(text=t.text, testId=`tell-turn-${i}`)
           Section(testId="tell-answer-row")
             if sitting.position > 0
-              QuietLine(text=`Question ${sitting.position} of ${sitting.total}`, testId="tell-position")
+              QuietLine(text=positionLine(sitting), testId="tell-position")
             if error != ""
               FailLine(text=error, testId="tell-error")
             // Read-only while an answer is on its way, so words typed meanwhile never join the text already sent.
-            textarea id="tell-answer" value=draft input=edit readonly=sending rows=4 field-sizing="content" max-height=320 aria-label="Your answer" placeholder="Your answer, in your own words" testId="tell-answer"
+            // About six lines to start, for talking at length; it grows with the text up to most of the window.
+            textarea id="tell-answer" value=draft input=edit readonly=sending field-sizing="content" min-height="10em" max-height="70vh" aria-label="Your answer" placeholder="Your answer, in your own words" testId="tell-answer"
             Actions(testId="tell-actions")
               MainAction(label="Send", press=send, disabled=sending, keys="", testId="tell-send")
               Action(label="I don’t know", press=dontKnow, disabled=sending, keys="", testId="tell-dont-know")
@@ -323,8 +424,8 @@ component TellScreen
                   DangerAction(label="Delete the sitting", press=removeSitting, disabled=removingSitting, testId="tell-delete-sitting-yes")
                   Action(label="Keep it", press=keepSitting, disabled=false, keys="", testId="tell-delete-sitting-no")
             else
-              DangerAction(label="Delete this sitting", press=askSitting(subjectHref(sitting.kind, sitting.subject)), disabled=removingSitting, testId="tell-delete-sitting")
-            GoTo(label="Back to Experience", href=subjectHref(sitting.kind, sitting.subject), testId="tell-back-end")
+              DangerAction(label="Delete this sitting", press=askSitting(path("project", sitting.project)), disabled=removingSitting, testId="tell-delete-sitting")
+            GoTo(label="Back to Experience", href=path("project", sitting.project), testId="tell-back-end")
 
 // The owner's own words on this screen: every line break kept, and every space the browser would otherwise fold away
 // (a space at a line's start, the second and later spaces of a run, a tab) already drawn by app.ts as a no-break space

@@ -3,11 +3,17 @@
 // resume (lib/council.ts, lib/skim.ts), so they all hold the same line.
 //
 // WRITING and SIGNAL are for everything. METRICS, BULLETS, SUMMARY and ENTRIES are for a resume only: they
-// state the owner's resume rules (RESUME-RULES.md, rules 2, 3, 4, 5, 6, 8, 9 and 11) as instructions. Where
+// state the owner's resume rules (RESUME-RULES.md, rules 2, 3, 4, 5, 6, 8, 9, 11, 13 and 14) as instructions. Where
 // one of those rules is also checked in code, the last section of RESUME-RULES.md says where.
 //
 // The banned words come from the one list that code also checks (lib/rules.ts). WRITING names the words it named before
 // that list existed; lib/rules.ts says why the newer ones are not named here yet.
+//
+// Since 2026-11-19 a bullet follows CARL: Context, Action, Result, Learning (RESUME-RULES.md, rule 13), and each entry
+// ends with a Technologies line that code writes (rule 14). EGG_CARL=off gives back the bullet rules, the project parts
+// sent to the writer, the length limits and the resume as they were before (carlText, and lib/jobs.ts): the way back
+// needs no deploy. lib/prompts.carl.test.ts compares on with off.
+import { carlOn } from './carl.ts';
 import { PROMPT_BANNED_WORDS } from './rules.ts';
 
 export const WRITING = `Wording:
@@ -35,18 +41,24 @@ export const METRICS = `Keeping the best metrics:
 - For every role you give bullets to, each of that role's inventory metrics appears in that role's bullets. Leave one out only when a more relevant inventory metric for this posting takes its place in the same role. Never leave one out only to save words: cut a bullet with no result first.
 - A number that is not in the inventory is not protected. The rules above on incidental numbers decide whether it is shown.`;
 
-// How a resume's bullets are built and ordered (rules 1, 2 and 11). The rule-based score (lib/ats.ts) checks
-// the opening verb and its tense, a duty opening, length, and a verb repeated three times running.
+// How a resume's bullets are built and ordered (rules 1, 2, 11 and 13). The rule-based score (lib/ats.ts) checks
+// the action verb and its tense (after an opening context clause), a duty opening, a context clause past ten words,
+// length, and a verb repeated three times running.
 export const BULLETS = `Bullets:
-- Tense follows the role. Under the current role (its dates end in "Present") every bullet opens with a present-tense verb ("Build", "Lead", "Run"). Under a past role every bullet opens with a past-tense verb ("Built", "Led", "Cut"). Never open with "Technical lead for", "Served as", "Responsible for", "Worked on" or "Worked with": say what is or was done.
+- A bullet is one sentence of up to four parts, in this order: Context, Action, Result, Learning. Only the action is always there.
+- Context: an opening clause of at most ten words that states the setting, scope or challenge, ending with a comma. Write one only where the project's "context", the fact's "detail" or the fact's "baseline" says it. Where the bank has none, the bullet opens with the action verb. Within a role, no two bullets in a row open with the same context word ("Facing", "With").
+- Action: the verb, and what was done, with the tool or method where the bank names one. Tense follows the role, and holds for this verb wherever it stands. Under the current role (its dates end in "Present") the verb is in the present tense ("Build", "Lead", "Run"). Under a past role it is in the past tense ("Built", "Led", "Cut"). Never write "Technical lead for", "Served as", "Responsible for", "Worked on" or "Worked with": say what is or was done.
+- Result: the measured outcome, each number exactly as the bank has it. A bullet with no result must still say what the thing was and who used it.
+- Learning: a short closing clause, on one bullet per role at most, and only where the project's "learning" says it, in the person's own words made shorter. It is never a benefit the bank does not state, and never a statement about the employer this resume is for.
+- The form, with words and numbers that are an example only and never facts about this person: "Facing a 20% order backlog across three regional warehouses, redesigned picking workflows and introduced daily shift huddles, cutting fulfillment times by 18% in two months."
 - Every bullet is a whole statement: a verb, what it acted on, and for whom or with what result. No fragments and no bare lists ("Python, Django, REST APIs").
-- One claim per bullet. A bullet that joins two pieces of work with "and" is two bullets, or the weaker one is cut.
-- Within a role, no three bullets in a row open with the same verb.
-- Order inside a bullet: what was done, with what tool or method where the bank names one, then its result where the bank has one worth showing. A bullet with no result must still say what the thing was and who used it.
+- One piece of work per bullet. The steps of one piece of work may share a bullet. Two pieces of work joined with "and" are two bullets, or the weaker one is cut.
+- Within a role, no three bullets in a row open with the same action verb.
 - Order of the bullets: within each role, sort them by how well they answer this posting, never by the order of the bank. The first bullet of each recent role is that role's strongest match to the posting.
 - When the posting is for an individual-contributor role, hands-on building comes before adjacent work (training, coaching, administration, process) inside every role.
 - The posting's keywords go inside the bullets whose work used them, so each stands beside its evidence. Never add them as a list, and never use one the bank does not support.
 - A bullet that only names a stack ("Built backend APIs in Python with Django REST Framework") is never shown.
+- Each entry ends with one line "Technologies: …", which code writes after you from the person's own skills list. Do not write one.
 - No "I", "my" or "we" anywhere: a resume leaves the subject out ("Built", not "I built").
 - An abbreviation the posting spells out is written both ways the first time ("Model Context Protocol (MCP)"), so a search for either finds it.
 - Every statement about a role matches the bank's facts for that role exactly: who was led, what the product was, what the person owned. Do not merge two roles' work into one line.`;
@@ -82,8 +94,10 @@ export const NUMBER_MARK = '"[number]" stands where a number was left out becaus
 // What a project of a role is to the writer (stage 3 of the record as a tree): context for its facts, never evidence.
 // It goes with the bank wherever a model is given it (the writer, the council's readers and reviser, the skim's fix), and
 // only when the bank has a project of a role, a fact's details or a kept line to explain (lib/jobs.ts, contextRules).
+// With CARL a bullet may print words of its project's Context and Learning (rule 13).
 export const CONTEXT = `Projects and the details of a fact:
-- Some facts of a role are grouped in its "projects". A project's "name" groups its facts, and its "context" (the situation before, what the person did, the result, in the person's own words) explains them. Neither is evidence. Print nothing from a project's name or context unless one of the project's facts says it too, and never take a title, an employer or a date from a project: those come only from the entry and its roles. A project is never a heading or a sub-heading of its own, and never has dates of its own: its facts are bullets of its role.
+- Some facts of a role are grouped in its "projects". A project's "name" groups its facts. Its "parts" hold the person's own words in up to four parts: "context" (the setting, scope or challenge), "action" (the steps the person took), "result" (the measured outcome) and "learning" (what the person learned, or how it applies to the next role). None of them is evidence.
+- A bullet that draws on a fact of a project may print words from that project's "context" part in its opening context clause, and words from its "learning" part in its closing learning clause. Print nothing else from a project's name or parts unless one of the project's facts says it too. Never take a title, an employer or a date from a project: those come only from the entry and its roles. A project is never a heading or a sub-heading of its own, and never has dates of its own: its facts are bullets of its role.
 - A number is printed only when it stands in a fact: in its text, detail or metric, or in its "baseline" (the person's own answer about the number before), its "team" (how many worked on it) or its "own_part" (what the person did themselves). "own_part" also says how much of the work to claim: never claim more of it than that.
 - ${NUMBER_MARK}`;
 
@@ -102,5 +116,36 @@ export const LINKS = `Where each line comes from:
 // The kept lines of "How you work" (lib/derived.ts), when they are given to a writer: they help choose, and are never printed.
 export const KEPT_LINES = 'Counted from the record and confirmed by the person. Not facts: never print one, never quote its numbers; use them only to choose which facts lead.';
 
-// What the person says they learned, given to the message drafts only (lib/outreach.ts), never to the resume writer.
+// What the person says they learned, as the message drafts are given it (lib/outreach.ts). The resume writer is given a
+// project's learning in the bank, with CONTEXT, and only with CARL on.
 export const LEARNED = 'What the person says they learned, in their own words, and the background of each project whose facts carry this application. They may be said in the person’s voice ("I learned…"). They are not results, and no number from them is used unless one of the project’s facts has it.';
+
+// With EGG_CARL=off: the bullet rules and the project rules as they were before CARL, word for word.
+const BEFORE_CARL = {
+  BULLETS: `Bullets:
+- Tense follows the role. Under the current role (its dates end in "Present") every bullet opens with a present-tense verb ("Build", "Lead", "Run"). Under a past role every bullet opens with a past-tense verb ("Built", "Led", "Cut"). Never open with "Technical lead for", "Served as", "Responsible for", "Worked on" or "Worked with": say what is or was done.
+- Every bullet is a whole statement: a verb, what it acted on, and for whom or with what result. No fragments and no bare lists ("Python, Django, REST APIs").
+- One claim per bullet. A bullet that joins two pieces of work with "and" is two bullets, or the weaker one is cut.
+- Within a role, no three bullets in a row open with the same verb.
+- Order inside a bullet: what was done, with what tool or method where the bank names one, then its result where the bank has one worth showing. A bullet with no result must still say what the thing was and who used it.
+- Order of the bullets: within each role, sort them by how well they answer this posting, never by the order of the bank. The first bullet of each recent role is that role's strongest match to the posting.
+- When the posting is for an individual-contributor role, hands-on building comes before adjacent work (training, coaching, administration, process) inside every role.
+- The posting's keywords go inside the bullets whose work used them, so each stands beside its evidence. Never add them as a list, and never use one the bank does not support.
+- A bullet that only names a stack ("Built backend APIs in Python with Django REST Framework") is never shown.
+- No "I", "my" or "we" anywhere: a resume leaves the subject out ("Built", not "I built").
+- An abbreviation the posting spells out is written both ways the first time ("Model Context Protocol (MCP)"), so a search for either finds it.
+- Every statement about a role matches the bank's facts for that role exactly: who was led, what the product was, what the person owned. Do not merge two roles' work into one line.`,
+  CONTEXT: `Projects and the details of a fact:
+- Some facts of a role are grouped in its "projects". A project's "name" groups its facts, and its "context" (the situation before, what the person did, the result, in the person's own words) explains them. Neither is evidence. Print nothing from a project's name or context unless one of the project's facts says it too, and never take a title, an employer or a date from a project: those come only from the entry and its roles. A project is never a heading or a sub-heading of its own, and never has dates of its own: its facts are bullets of its role.
+- A number is printed only when it stands in a fact: in its text, detail or metric, or in its "baseline" (the person's own answer about the number before), its "team" (how many worked on it) or its "own_part" (what the person did themselves). "own_part" also says how much of the work to claim: never claim more of it than that.
+- ${NUMBER_MARK}`,
+};
+// WRITING as the three that write and review a resume are given it with CARL: a closing Learning clause is not a benefit
+// clause, and a bullet's context, action and result are one statement. Every other writer keeps WRITING as it is.
+const BENEFIT_LINE = WRITING.split('\n').find((l) => l.startsWith('- No clause tacked on the end'))!;
+const IDEA_LINE = WRITING.split('\n').find((l) => l.startsWith('- One idea per sentence.'))!;
+export const WRITING_CARL = WRITING
+  .replace(BENEFIT_LINE, `${BENEFIT_LINE} A closing Learning clause that follows the Learning rule of "Bullets" is not such a clause: it states what the person learned, from the project's "learning", and claims no benefit.`)
+  .replace(IDEA_LINE, `${IDEA_LINE} A bullet's opening context clause, its action and its result are one statement.`);
+// The rules to send to a resume's writer and reviewers: CARL's, or with EGG_CARL=off the ones before it.
+export const carlText = () => (carlOn() ? { BULLETS, CONTEXT, WRITING: WRITING_CARL } : { ...BEFORE_CARL, WRITING });

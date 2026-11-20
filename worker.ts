@@ -19,6 +19,8 @@ import { write } from './lib/profile.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
 import { draft, storeDrafts } from './lib/outreach.ts';
 import { runQueued } from './lib/propose.ts';
+import { runQueued as deriveQueued } from './lib/derive.ts';
+import { runSpoken } from './lib/spoken.ts';
 // The log of slow work follows the status columns by itself; the worker adds only where a piece has got to.
 import { setStage } from './lib/activity.ts';
 
@@ -183,6 +185,16 @@ void (async () => {
 db.run("UPDATE roles SET propose_status = 'queued', propose_note = '' WHERE propose_status = 'running'");
 void (async () => {
   for (;;) if (!(await runQueued(inData('inbox')))) await Bun.sleep(1000);
+})();
+// A told story is written beside everything else too: one request each, once a sitting about it ends (lib/derive.ts).
+db.run("UPDATE projects SET derive_status = 'queued', derive_note = '' WHERE derive_status = 'running'");
+void (async () => {
+  for (;;) if (!(await deriveQueued(inData('inbox')))) await Bun.sleep(1000);
+})();
+// A spoken story is written beside everything else too: one request each, when the owner asks for it (lib/spoken.ts).
+db.run("UPDATE projects SET spoken_status = 'queued', spoken_note = '' WHERE spoken_status = 'running'");
+void (async () => {
+  for (;;) if (!(await runSpoken(inData('inbox')))) await Bun.sleep(1000);
 })();
 // Outreach drafts are written beside everything else too: they are short, and asked for while the person is looking at the job.
 db.run("UPDATE jobs SET outreach_status = 'queued' WHERE outreach_status = 'running'");

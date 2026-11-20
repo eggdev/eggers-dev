@@ -201,12 +201,22 @@ test('the name and contact parts are not read only when they equal what the reco
 // ---------- Limits ----------
 
 test('line-length: a line of exactly the limit passes, one word more breaks; the limit is a parameter', () => {
-  expect(LIMITS.lineWords).toBe(28);
+  // A CARL bullet: 30 words on one page, 34 on two; with no page count, 34.
+  expect([LIMITS.lineWords, LIMITS.onePageLineWords]).toEqual([34, 30]);
   const bullet = (n: number) => `# Avery Lindqvist\n\n## Experience\n### Staff Engineer, Quillfeather Labs\nJan 2019 – Feb 2021\n- Rebuilt ${words(n - 1)}\n`;
-  expect(result(check('resume', bullet(28)), 'line-length')).toEqual({ rule: 'line-length', state: 'pass' });
-  expect(hitsOf(check('resume', bullet(29)), 'line-length')).toEqual([{ line: 6, quote: `- Rebuilt ${words(28)}`, words: 29, limit: 28 }]);
+  expect(result(check('resume', bullet(34)), 'line-length')).toEqual({ rule: 'line-length', state: 'pass' });
+  expect(hitsOf(check('resume', bullet(35)), 'line-length')).toEqual([{ line: 6, quote: `- Rebuilt ${words(34)}`, words: 35, limit: 34 }]);
+  expect(result(check('resume', bullet(30), { pages: 1 }), 'line-length')?.state).toBe('pass');
+  expect(hitsOf(check('resume', bullet(31), { pages: 1 }), 'line-length').map((h) => h.limit)).toEqual([30]);
   expect(result(check('resume', bullet(6), { limits: { lineWords: 6 } }), 'line-length')?.state).toBe('pass');
   expect(result(check('resume', bullet(7), { limits: { lineWords: 6 } }), 'line-length')?.state).toBe('break');
+  // With EGG_CARL=off the limit is 28 on any length, as before CARL.
+  process.env.EGG_CARL = 'off';
+  try {
+    expect(LIMITS.lineWords).toBe(28);
+    expect(result(check('resume', bullet(28), { pages: 1 }), 'line-length')?.state).toBe('pass');
+    expect(hitsOf(check('resume', bullet(29), { pages: 2 }), 'line-length').map((h) => h.limit)).toEqual([28]);
+  } finally { delete process.env.EGG_CARL; }
 });
 
 test('the Summary is measured as a whole: 60 words and 3 sentences, as lib/checks.ts holds it', () => {

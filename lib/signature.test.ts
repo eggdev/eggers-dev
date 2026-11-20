@@ -32,7 +32,7 @@ test('with no project of a role filled or filed and no new fact field, the signa
   // Stage 2 shaped: a project of a role with a name and no fact, a repository's project, what was learned and where a
   // project lives, a role's source marks, a verdict on a line, suggestions open and rejected, a note on a role.
   const empty = project(1, 'Nothing filed yet');
-  db.query("UPDATE projects SET situation = 'A plan.', learned = 'Patience.', lives = 'example.org' WHERE id = ?").run(empty);
+  db.query("UPDATE projects SET context = 'A plan.', learning = 'Patience.', lives = 'example.org' WHERE id = ?").run(empty);
   db.run("INSERT INTO roles (id, company, title, part_of) VALUES (9, 'harborlight/dispatch', '', 1)");
   project(null, '', 9);
   db.run(`UPDATE roles SET official = '{"title":"hr"}', note = 'Hands-on lead.' WHERE id = 1`);
@@ -53,8 +53,10 @@ test('it changes when a fact is filed in or taken out of a project of a role, an
   changes('a second fact filed there', () => db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(p, idOf(BILLING)));
   changes('one taken out again', () => db.query('UPDATE facts SET project_id = NULL WHERE id = ?').run(idOf(BILLING)));
   changes('the project’s name', () => db.query("UPDATE projects SET title = 'One console' WHERE id = ?").run(p));
-  changes('its situation', () => db.query("UPDATE projects SET situation = 'Schedulers planned on paper.' WHERE id = ?").run(p));
-  changes('what I did', () => db.query("UPDATE projects SET did = 'I wrote it alone.' WHERE id = ?").run(p));
+  changes('its context', () => db.query("UPDATE projects SET context = 'Schedulers planned on paper.' WHERE id = ?").run(p));
+  changes('its action', () => db.query("UPDATE projects SET action = 'I wrote it alone.' WHERE id = ?").run(p));
+  // With CARL the writer is given a project's learning, so it counts.
+  changes('its learning', () => db.query("UPDATE projects SET learning = 'To ship weekly.' WHERE id = ?").run(p));
   changes('its result', () => db.query("UPDATE projects SET result = 'Every depot on one screen.' WHERE id = ?").run(p));
   changes('a fact’s baseline', () => db.query("UPDATE facts SET baseline = '9 hours' WHERE id = ?").run(idOf(BILLING)));
   changes('its team', () => db.query("UPDATE facts SET team = 'about 4 people' WHERE id = ?").run(idOf(BILLING)));
@@ -63,12 +65,12 @@ test('it changes when a fact is filed in or taken out of a project of a role, an
   changes('the last fact taken out', () => db.query('UPDATE facts SET project_id = NULL WHERE id = ?').run(idOf(CONSOLE)));
 });
 
-test('it does not change for what was learned, where a project lives, source marks, a verdict, or a suggestion not kept', () => {
+test('it does not change for where a project lives, source marks, a verdict, or a suggestion not kept', () => {
   const p = project(1, 'Dispatch console');
   db.query('UPDATE facts SET project_id = ? WHERE id = ?').run(p, idOf(CONSOLE));
   fact(1, 'Managed a team of 5 engineers.');
   const sig = bankSignature();
-  db.query("UPDATE projects SET learned = 'To ship weekly.', lives = 'console.example' WHERE id = ?").run(p);
+  db.query("UPDATE projects SET lives = 'console.example' WHERE id = ?").run(p);
   db.run(`UPDATE roles SET official = '{"title":"hr","start":"memory"}' WHERE id = 1`);
   expect(judge(derivedNow(), 'led', 'kept', 1)).toBe('');
   db.run("INSERT INTO project_proposals (role_id, title, fact_ids, status, created_at) VALUES (1, 'Open one', '[]', 'open', 1), (1, 'Rejected one', '[]', 'rejected', 1)");

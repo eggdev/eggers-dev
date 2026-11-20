@@ -11,7 +11,7 @@ import { type Door } from './lib/outreach.ts';
 import { hub } from './lib/github.ts';
 import { fetchBoard, parseBoard, salaryIn, type CompanyRow, type LeadRow } from './lib/discover.ts';
 import { INBOX } from './lib/ingest.ts';
-import { CHANGED_WHILE_EDITING, fitOf, publish, refreshDueSkills, saveOwnerEdit, refreshOneSkillsLine, reflag, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
+import { CHANGED_WHILE_EDITING, fitOf, publish, refreshDueSkills, reprintSent, saveOwnerEdit, refreshOneSkillsLine, reflag, reflagOpen, saveResume, skillsChanged, skillsDue, skillsLineOf, SKILLS_QUIET_MS, termsOf, weigh, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
 import { answer, inputsOf, openRaised, raisedByKey } from './lib/raised.ts';
@@ -30,8 +30,13 @@ import { syncProjects } from './lib/projects.ts';
 import { addFact, addProject, addRole, deleteProject, deleteRole, derivedNow, fullFact, patchFact, patchProject, patchRole, readTree, removeFact, type Done } from './lib/record.ts';
 import { askFor, checkProposals, decideResult, keepProposal, proposalsOf, rejectProposal, requestFor, storeProposals, type Decided } from './lib/propose.ts';
 import { judge } from './lib/derived.ts';
-import { isQuestionKey, QUESTIONS, questionText } from './lib/capture.ts';
-import { advance, answerTurn, deleteOwnerTurn, deleteSitting, questionStatus, sitting, sittingsOf, startSitting, turnsOf, type SaidTurn, type Subject } from './lib/sittings.ts';
+import { isQuestionKey, PART_NAMES, question, QUESTIONS } from './lib/capture.ts';
+import { resetRecord, sameSite } from './lib/reset.ts';
+import { advance, answerTurn, deleteOwnerTurn, deleteSitting, hasSaid, projectTitle, questionStatus, sitting, sittingsOf, startSitting, storyRefused, toldAbout, turnsOf, type SaidTurn } from './lib/sittings.ts';
+import { askDerive, checkDerived, writeDerived, type Raw } from './lib/derive.ts';
+import { askSpoken, runSpoken, saveSpoken } from './lib/spoken.ts';
+import { addPractice, addQuestion, deletePractice, deleteQuestion, jobQuestions, settleQuestion, storiesList, storyView } from './lib/stories.ts';
+import { fakeAsk } from './lib/llm.ts';
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE' };
 const send = (body: unknown, status = 200) => Response.json(body, { status, headers: CORS });
@@ -187,7 +192,7 @@ function writeResumeAgain(id: number) {
 }
 function writeProfileAgain() {
   const facts = (db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n;
-  if (facts === 0) return send({ error: 'Your record is empty. Add a source first.' }, 409);
+  if (facts === 0) return send({ error: 'Your record is empty. Tell a story first.' }, 409);
   db.run("UPDATE profile SET status = 'queued', note = '' WHERE id = 1 AND status != 'running'");
   return send({ ok: true });
 }
@@ -210,52 +215,46 @@ const AGAIN: Partial<Record<Kind, (subject: number) => Response>> = {
   'read-source': readSourceAgain, 'read-posting': readJobAgain, 'write-resume': writeResumeAgain, 'write-profile': () => writeProfileAgain(),
   'draft-messages': draftMessagesAgain, 'check-watchlist': () => checkWatchlistAgain(),
   'propose-projects': (role) => { const refused = askFor(role); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
+  'derive-story': (project) => { const refused = askDerive(project); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
+  'write-spoken': (project) => { const refused = askSpoken(project); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
 };
 
-// Telling a role or a project (lib/capture.ts, lib/sittings.ts): an interview about one role or one project, one
-// question at a time, in fixed words. No model is asked and no worker job is made, so each answer is answered at once.
-// The owner's answer is stored exactly as sent: it is never trimmed and never given curly quotes (`str`, `curly`).
-type Kinded = 'role' | 'project';
-const GONE: Record<Kinded, string> = { role: 'That role is no longer in your record.', project: 'That project is no longer in your record.' };
+// Telling a story (lib/capture.ts, lib/sittings.ts): an interview about one project, one question at a time, in fixed
+// words. No model is asked here and no worker job is made, so each answer is answered at once; a sitting that ends with
+// something said queues the project for deriving (lib/derive.ts), which the worker runs. The owner's answer is stored
+// exactly as sent: it is never trimmed and never given curly quotes (`str`, `curly`).
+const GONE_PROJECT = 'That project is no longer in your record.';
 const NO_SITTING = 'That interview is no longer in your record.';
 // The time a sitting's turns are stored at. A test server can fix it (POST /test/clock), so a screen test can say the
 // date "Told on" shows; 0 is the real clock.
 let stubNow = 0;
 const tellNow = () => (stubNow > 0 ? stubNow : Date.now());
 const idOf = (v: string) => (/^\d+$/.test(v) ? Number(v) : null);
-// The role or project a path names, or null when it is not in the record.
-function subjectAt(kind: Kinded, raw: string): Subject | null {
+// The project a path names, or null when it is not in the record.
+function projectAt(raw: string): number | null {
   const id = idOf(raw);
-  if (id === null) return null;
-  return db.query(`SELECT 1 FROM ${kind === 'role' ? 'roles' : 'projects'} WHERE id = ?`).get(id) === null ? null : { kind, id };
+  return id === null || db.query('SELECT 1 FROM projects WHERE id = ?').get(id) === null ? null : id;
 }
-// The name the screen gives a role ("Title, Employer", or the employer) or a project (its title; for a project that
-// is a roles row, that row's name, as lib/tree.ts shows it).
-function subjectName(s: Subject): string {
-  if (s.kind === 'role') {
-    const r = db.query('SELECT title, company FROM roles WHERE id = ?').get(s.id) as { title: string; company: string } | null;
-    return r ? (r.title ? `${r.title}, ${r.company}` : r.company) : '';
-  }
-  const p = db.query('SELECT p.title, r.company FROM projects p LEFT JOIN roles r ON r.id = p.via_role WHERE p.id = ?').get(s.id) as { title: string; company: string | null } | null;
-  return p ? p.company ?? p.title : '';
-}
-// Where the telling of a role or project stands: whether a sitting is open, the sitting to go to (the open one, else
-// the latest), how many of the questions are answered or closed, and when any of its sittings was last touched.
-function tellingOf(s: Subject) {
-  const all = sittingsOf(s), status = questionStatus(s);
+// Where the telling of a project stands: whether a sitting is open, the sitting to go to (the open one, else the
+// latest), how many of the questions are answered or closed, and when any of its sittings was last touched; and where
+// its deriving stands: whether anything was said to write from, the status and note, and the day of the latest answer it
+// was written from ('' before).
+function tellingOf(project: number) {
+  const all = sittingsOf(project), status = questionStatus(project);
   const open = all.find((x) => x.state === 'open'), latest = open ?? all.at(-1);
   const lastAt = Math.max(0, ...all.flatMap((x) => [x.startedAt, x.endedAt, ...turnsOf(x.id).map((t) => t.at)]));
   const answered = status.filter((q) => q.state === 'answered').length, closed = status.filter((q) => q.state === 'closed').length;
-  return { kind: s.kind, id: String(s.id), open: open !== undefined, sitting: latest ? String(latest.id) : '', answered, closed, settled: answered + closed,
-    total: QUESTIONS.length, lastAt, lastOn: day(lastAt) };
+  const d = db.query('SELECT derive_status, derive_note, told_at FROM projects WHERE id = ?').get(project) as { derive_status: string; derive_note: string; told_at: number };
+  return { project: String(project), open: open !== undefined, sitting: latest ? String(latest.id) : '', answered, closed, settled: answered + closed,
+    total: QUESTIONS.length, lastAt, lastOn: day(lastAt), said: hasSaid(project), deriveStatus: d.derive_status, deriveNote: d.derive_note, toldOn: day(d.told_at) };
 }
 const saidOf = (t: SaidTurn) => ({ id: String(t.id), step: t.step, text: t.text });
-// The owner's answers about one role or project, from every sitting about it, under each question in the list's order;
-// the answers to one question in the order they were given. An answer to a follow-up carries the follow-up's words.
+// The owner's answers about one project, from every sitting about it, under each question in the list's order; the
+// answers to one question in the order they were given. An answer to a follow-up carries the follow-up's words.
 // Answers filed under a question no longer in the list come last. sitting: the sitting each answer is in.
-function saidAbout(s: Subject) {
+function saidAbout(project: number) {
   const answers: { key: string; sitting: string; id: string; text: string; followUp: string }[] = [];
-  for (const x of sittingsOf(s)) {
+  for (const x of sittingsOf(project)) {
     const turns = turnsOf(x.id);
     turns.forEach((t, i) => {
       if (t.who !== 'owner') return;
@@ -263,7 +262,7 @@ function saidAbout(s: Subject) {
       answers.push({ key: t.question, sitting: String(x.id), id: String(t.id), text: t.text, followUp: before?.who === 'interviewer' && before.step === 'follow-up' ? before.text : '' });
     });
   }
-  const groups = QUESTIONS.map((q) => ({ key: q.key as string, question: questionText(q.key, s.kind), answers: answers.filter((a) => a.key === q.key) }));
+  const groups = QUESTIONS.map((q) => ({ key: q.key as string, question: q.text as string, answers: answers.filter((a) => a.key === q.key) }));
   const others = answers.filter((a) => !isQuestionKey(a.key));
   return [...groups, { key: '', question: 'A question no longer asked', answers: others }].filter((g) => g.answers.length > 0)
     .map((g) => ({ key: g.key, question: g.question, answers: g.answers.map((a) => ({ id: a.id, sitting: a.sitting, text: a.text, followUp: a.followUp,
@@ -271,38 +270,34 @@ function saidAbout(s: Subject) {
       more: a.followUp !== '' ? 0 : g.answers.filter((x) => x.sitting === a.sitting && x.followUp !== '').length })) }));
 }
 // One sitting as its screen shows it: its turns in order, whether an answer is due, the place in the list of the
-// question waiting (1 to 15; 0 when none waits), the closing line once it has ended, and everything said about its role
-// or project.
+// question waiting (1 to 14; 0 when none waits) and its CARL part in words, the closing line once it has ended, and
+// everything said about its project.
 function sittingView(id: number) {
   const s = sitting(id);
   if (!s) return null;
   const turns = turnsOf(id), last = turns.at(-1);
   const due = s.state === 'open' && last !== undefined && last.who === 'interviewer' && (last.step === 'question' || last.step === 'follow-up');
   const closing = s.state === 'ended' ? [...turns].reverse().find((t) => t.who === 'interviewer' && t.step === 'closing')?.text ?? '' : '';
-  return { id: String(s.id), kind: s.subject.kind, subject: String(s.subject.id), name: subjectName(s.subject), open: s.state === 'open', due,
-    position: due && last ? QUESTIONS.findIndex((q) => q.key === last.question) + 1 : 0, total: QUESTIONS.length, closing,
+  const waiting = due && last && isQuestionKey(last.question) ? last.question : null;
+  return { id: String(s.id), project: String(s.project), name: projectTitle(s.project), open: s.state === 'open', due,
+    position: waiting ? QUESTIONS.findIndex((q) => q.key === waiting) + 1 : 0, part: waiting ? PART_NAMES[question(waiting).part] : '', total: QUESTIONS.length, closing,
     turns: turns.map((t) => ({ id: String(t.id), mine: t.who === 'owner', step: t.who === 'owner' ? 'answer' : t.step, text: t.text })),
     // How many answers this sitting holds: what deleting it removes.
     answers: turns.filter((t) => t.who === 'owner').length,
-    said: saidAbout(s.subject) };
+    said: saidAbout(s.project) };
 }
-// GET: where the telling of a role or project stands. POST: starts a sitting about it, or gives back the one open, and
-// lets the interviewer speak until a question waits: the opening, a reminder of the work picked in an earlier sitting,
-// and the first question not yet answered or closed. A refusal (every question already answered, a role sitting on a
-// row that is a project) is said in the module's words.
-const tellRoutes = (kind: Kinded) => ({
-  OPTIONS: preflight,
-  GET: (req: Request & { params: { id: string } }) => { const s = subjectAt(kind, req.params.id); return s ? send(tellingOf(s)) : send({ error: GONE[kind] }, 404); },
-  POST: (req: Request & { params: { id: string } }) => {
-    const s = subjectAt(kind, req.params.id);
-    if (!s) return send({ error: GONE[kind] }, 404);
-    const now = tellNow(), started = startSitting(s, now);
-    if (!started.ok) return send({ error: started.error }, 409);
-    const moved = advance(started.id, now);
-    if (!moved.ok) return send({ error: moved.error }, 409);
-    return send({ ok: true, sitting: String(started.id), resumed: started.resumed, said: moved.said.map(saidOf), now: moved.now }, started.resumed ? 200 : 201);
-  },
-});
+// Starts a sitting about a project, or gives back the one open, and lets the interviewer speak until a question waits:
+// the opening, a reminder of the piece of work in a later sitting, and the first question not yet answered or closed.
+// A refusal (every question already answered) is said in the module's words.
+function tellAbout(project: number, made = false) {
+  const now = tellNow(), started = startSitting(project, now);
+  if (!started.ok) return send({ error: started.error }, 409);
+  const moved = advance(started.id, now);
+  if (!moved.ok) return send({ error: moved.error }, 409);
+  return send({ ok: true, project: String(project), sitting: String(started.id), resumed: started.resumed, said: moved.said.map(saidOf), now: moved.now }, made || !started.resumed ? 201 : 200);
+}
+// What the one-field form asks for, and says when it is sent empty.
+const NAME_STORY = 'Name the piece of work in a few words.';
 
 // Where it listens: HOST and PORT when set; else the app's API_BASE_URL when that is this machine
 // (a test run on a spare port while a dev server holds the usual one); else LOCAL.
@@ -313,6 +308,9 @@ const hostname = process.env.HOST ?? here.hostname, port = Number(process.env.PO
 // PORT=0 asks the system for a free port (the tests do, so two runs never meet on one); the line below says which.
 const served = Bun.serve({ hostname, port, routes: {
   '/health': () => new Response('ok'),
+  // The deployed studio's Worker answers /_studio/... itself (studio/worker/studio.ts); here there is no studio. Said as
+  // a 404 the page can read (with CORS), so the screens know for sure that they run on a development machine.
+  '/_studio/*': { OPTIONS: preflight, GET: () => send({ error: 'There is no studio here.' }, 404), POST: () => send({ error: 'There is no studio here.' }, 404) },
   '/bank': { OPTIONS: preflight, GET: () => send(bank()) },
   // The record as one tree (lib/record.ts): roles, projects and facts with their references, and no story or evidence.
   '/tree': { OPTIONS: preflight, GET: () => send(readTree()) },
@@ -594,7 +592,12 @@ const served = Bun.serve({ hostname, port, routes: {
       // A job whose stored data cannot be read is served as before, and said once in the log.
       try { if (await refreshOneSkillsLine(id, async () => {})) j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string }; }
       catch (e) { console.log(`skills: the Skills line of job ${id} could not be written before its PDF: ${(e as Error).message}`); }
-      if (!j.pdf || !existsSync(j.pdf)) { await publish(id); j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string }; }
+      // A sent resume is printed again from its stored text alone (lib/jobs.ts, reprintSent); an unsent one is published.
+      if (!j.pdf || !existsSync(j.pdf)) {
+        const sent = (db.query('SELECT outcome FROM jobs WHERE id = ?').get(id) as { outcome: string }).outcome !== '';
+        try { await (sent ? reprintSent(id) : publish(id)); } catch (e) { console.log(`the PDF of job ${id} could not be printed: ${(e as Error).message}`); }
+        j = db.query('SELECT pdf, resume FROM jobs WHERE id = ?').get(id) as { pdf: string; resume: string };
+      }
       if (!j.pdf || !existsSync(j.pdf)) return send({ error: 'The PDF couldn’t be printed on the server.' }, 500);
       // Sent as a file to save, not a page to view: a phone's browser then puts it in Downloads under its own name,
       // ready to attach to an application. The name is given twice so one with accents still arrives whole.
@@ -787,9 +790,105 @@ const served = Bun.serve({ hostname, port, routes: {
     // ?facts=keep (the default) keeps its facts, back in Day to day (or General); ?facts=delete deletes them too.
     DELETE: (req) => { const d = deleteProject(Number(req.params.id), new URL(req.url).searchParams.get('facts') === 'delete' ? 'delete' : 'keep'); if (d.ok && d.wrote) follow(); return done(d); },
   },
-  // Telling a role or a project (above, tellRoutes), and its sittings. Nothing here makes a fact or asks a model.
-  '/roles/:id/sitting': tellRoutes('role'),
-  '/projects/:id/sitting': tellRoutes('project'),
+  // Telling a story (above), and its sittings. Nothing here makes a fact or asks a model.
+  // GET: where the telling of a project stands. POST: starts a sitting about it, or gives back the one open.
+  '/projects/:id/sitting': {
+    OPTIONS: preflight,
+    GET: (req) => { const p = projectAt(req.params.id); return p === null ? send({ error: GONE_PROJECT }, 404) : send(tellingOf(p)); },
+    POST: (req) => { const p = projectAt(req.params.id); return p === null ? send({ error: GONE_PROJECT }, 404) : tellAbout(p); },
+  },
+  // A new story under a job ({title}): the project is made in the role, as Add a project makes it, and its first sitting
+  // starts at once.
+  '/roles/:id/stories': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const role = idOf(req.params.id);
+      if (role === null || db.query('SELECT 1 FROM roles WHERE id = ?').get(role) === null) return send({ error: 'That job is no longer in your record.' }, 404);
+      const refused = storyRefused(role);
+      if (refused) return send({ error: refused }, 409);
+      if (str(b.title) === '') return send({ error: NAME_STORY }, 400);
+      const made = addProject({ title: str(b.title), roleId: role });
+      if (!made.ok) return done(made);
+      // The record's questions are taken once the sitting is there, so the new story is not asked about while it is told.
+      const started = tellAbout(made.id, true);
+      follow();
+      return started;
+    },
+  },
+  // Write it again from what you said: the project is queued for deriving (lib/derive.ts). It takes no body.
+  '/projects/:id/derive': {
+    OPTIONS: preflight,
+    POST: (req) => { const p = idOf(req.params.id); const refused = p === null ? GONE_PROJECT : askDerive(p); return refused ? send({ error: refused }, 409) : send({ ok: true }); },
+  },
+  // The spoken story (lib/spoken.ts). POST ({replace}): asked to be written; with replace, a text the owner changed
+  // becomes the writer's again so it can be replaced. PATCH ({text}): the owner's own text ('' clears it).
+  '/projects/:id/spoken': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const p = projectAt(req.params.id);
+      if (p === null) return send({ error: GONE_PROJECT }, 404);
+      const refused = askSpoken(p, (await objectBody(req))?.replace === true);
+      return refused ? send({ error: refused }, 409) : send({ ok: true });
+    },
+    PATCH: async (req) => {
+      const p = projectAt(req.params.id);
+      if (p === null) return send({ error: GONE_PROJECT }, 404);
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      if (typeof b.text !== 'string') return send({ error: 'Send the spoken story as text.' }, 400);
+      const refused = saveSpoken(p, b.text);
+      return refused ? send({ error: refused }, 409) : send({ ok: true });
+    },
+  },
+  // One practice of a story, today ({seconds}: the time it took when it was timed, else none).
+  '/projects/:id/practices': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const p = projectAt(req.params.id);
+      if (p === null) return send({ error: GONE_PROJECT }, 404);
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = addPractice(p, b.seconds ?? null, tellNow());
+      return refused ? send({ error: refused }, 400) : send({ ok: true }, 201);
+    },
+  },
+  '/practices/:id': {
+    OPTIONS: preflight,
+    DELETE: (req) => { const id = idOf(req.params.id); return id !== null && deletePractice(id) ? send({ ok: true }) : send({ error: 'That practice is no longer in your record.' }, 404); },
+  },
+  // The Stories screen (lib/stories.ts): the list, and one story made for reading aloud.
+  '/stories': { OPTIONS: preflight, GET: () => send(storiesList()) },
+  '/stories/:id': {
+    OPTIONS: preflight,
+    GET: (req) => { const p = projectAt(req.params.id), v = p === null ? null : storyView(p); return v ? send(v) : send({ error: GONE_PROJECT }, 404); },
+  },
+  // The questions asked in real interviews. POST {text, jobId}: one more ("" or none for no job). PATCH: the story that
+  // answers it ({projectId}, "" for none) or whether none is needed ({noStory}).
+  '/interview-questions': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const r = addQuestion(b.text, b.jobId, tellNow());
+      return r.ok ? send({ ok: true, id: String(r.id) }, 201) : send({ error: r.error }, r.status);
+    },
+  },
+  '/interview-questions/:id': {
+    OPTIONS: preflight,
+    PATCH: async (req) => {
+      const id = idOf(req.params.id), b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const refused = id === null ? 'That question is no longer in your list.' : settleQuestion(id, 'projectId' in b ? { project: b.projectId } : { noStory: b.noStory });
+      return refused ? send({ error: refused }, refused.endsWith('no longer in your list.') || refused.endsWith('no longer in your record.') ? 404 : 400) : send({ ok: true });
+    },
+    DELETE: (req) => { const id = idOf(req.params.id); return id !== null && deleteQuestion(id) ? send({ ok: true }) : send({ error: 'That question is no longer in your list.' }, 404); },
+  },
+  '/jobs/:id/questions': {
+    OPTIONS: preflight,
+    GET: (req) => { const id = idOf(req.params.id); return id !== null && db.query('SELECT 1 FROM jobs WHERE id = ?').get(id) ? send(jobQuestions(id)) : send({ error: 'That job was deleted.' }, 404); },
+  },
   '/sittings/:id': {
     OPTIONS: preflight,
     GET: (req) => { const id = idOf(req.params.id), v = id === null ? null : sittingView(id); return v ? send(v) : send({ error: NO_SITTING }, 404); },
@@ -940,6 +1039,27 @@ const served = Bun.serve({ hostname, port, routes: {
     const r = requestFor(roleId);
     return send({ ok: true, stored: storeProposals(roleId, checkProposals({ projects: b.projects }, r.facts, [...r.projects, ...r.rejected]), Date.now()) });
   } } } : {}),
+  // A test server only: writes the project of a sitting as the worker would after its model request ({sitting, result},
+  // the model's answer), through the same checks and the same write, with no model; its status moves as the worker
+  // moves it.
+  ...(STUB ? { '/test/derive': { OPTIONS: preflight, POST: async (req: Request) => {
+    const b = await objectBody(req), project = sitting(Number(b?.sitting))?.project;
+    if (!b || project === undefined) return send({ error: 'No such sitting.' }, 404);
+    db.query("UPDATE projects SET derive_status = 'running', derive_note = '' WHERE id = ?").run(project);
+    const told = toldAbout(project), note = writeDerived(project, checkDerived(b.result as Raw, told), Math.max(0, ...told.map((t) => t.at)), Date.now()) ?? '';
+    db.query("UPDATE projects SET derive_status = 'done', derive_note = ? WHERE id = ?").run(note, project);
+    return send({ ok: true, note });
+  } } } : {}),
+  // A test server only: writes a project's spoken story as the worker would ({project, text}, the model's answer),
+  // through the worker's own step and checks, with the text standing in for the model.
+  ...(STUB ? { '/test/spoken': { OPTIONS: preflight, POST: async (req: Request) => {
+    const b = await objectBody(req), project = projectAt(String(b?.project ?? ''));
+    if (!b || project === null || typeof b.text !== 'string') return send({ error: 'Send {project, text}.' }, 400);
+    db.query("UPDATE projects SET spoken_status = 'queued', spoken_note = '' WHERE id = ?").run(project);
+    fakeAsk(() => ({ spoken: b.text }));
+    try { await runSpoken('.', project); } finally { fakeAsk(); }
+    return send({ ok: true, ...(db.query('SELECT spoken_status AS status, spoken_note AS note FROM projects WHERE id = ?').get(project) as object) });
+  } } } : {}),
   // A test server only: the worker's pass over due Skills lines, as if the quiet were over, with no printing.
   ...(STUB ? { '/test/skills-due': { OPTIONS: preflight, POST: async () => send({ ok: true, written: await refreshDueSkills(Date.now() + SKILLS_QUIET_MS, async () => {}) }) } } : {}),
   // A test server only: moves a piece of work as the worker would ({kind, id, to, note, stage, resume}), with no model.
@@ -964,6 +1084,31 @@ const served = Bun.serve({ hostname, port, routes: {
     const b = await req.json().catch(() => ({}));
     const refused = stubStep(str(b.kind) as Kind, Number(b.id), str(b.to), str(b.note), str(b.stage), typeof b.resume === 'string' ? b.resume : '');
     return refused ? send({ error: refused }, 400) : send({ ok: true });
+  } } } : {}),
+  // Starts a new record (lib/reset.ts): {confirm: "start a new record"}. What was deleted and kept, as counts; refused
+  // in words (400 for the wrong phrase, 409 while work waits or runs).
+  '/record/reset': {
+    OPTIONS: preflight,
+    POST: async (req) => {
+      const foreign = sameSite(req.headers, req.url);
+      if (foreign) return send({ error: foreign }, 403);
+      const b = await objectBody(req);
+      if (!b) return send({ error: NOT_OBJECT }, 400);
+      const r = resetRecord(b.confirm, Date.now());
+      if (!r.ok) return send({ error: r.error }, r.status);
+      return send({ ok: true, ...r.reset });
+    },
+  },
+  // A test server only: every piece of work that waits or runs is set aside as failed, as if the worker had tried it,
+  // so a test can start a new record after earlier tests left work waiting with no worker to take it.
+  ...(STUB ? { '/test/idle': { OPTIONS: preflight, POST: () => {
+    db.transaction(() => {
+      for (const [table, column, note] of [['sources', 'status', 'note'], ['profile', 'status', 'note'], ['jobs', 'status', 'note'], ['jobs', 'resume_status', 'resume_note'],
+        ['jobs', 'outreach_status', 'outreach_note'], ['talk', 'status', 'note'], ['discovery', 'status', 'note'], ['roles', 'propose_status', 'propose_note'], ['projects', 'derive_status', 'derive_note'], ['projects', 'spoken_status', 'spoken_note']]) {
+        db.run(`UPDATE ${table} SET ${column} = 'failed', ${note} = 'Set aside by a test.' WHERE ${column} IN ('queued', 'running')`);
+      }
+    }).immediate();
+    return send({ ok: true });
   } } } : {}),
   '/facts': {
     OPTIONS: preflight,

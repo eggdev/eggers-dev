@@ -72,7 +72,7 @@ test('a Skills-line refresh makes a letter, and keeps its guard: an edited or ch
   const id = job(RESUME, 0, 'done');
   const row = () => db.query('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow;
   expect(rewriteSkillsLine(row())).toBe(true);
-  expect(rows(id)).toEqual([['A', 'written', 'As it stood before versions were kept.'], ['B', 'skills', 'The Skills line was written again from your reviewed list.']]);
+  expect(rows(id)).toEqual([['A', 'written', 'As it stood before versions were kept.'], ['B', 'skills', 'The Skills and Technologies lines were written again from your reviewed list.']]);
   expect(db.query('SELECT pdf FROM jobs WHERE id = ?').get(id)).toEqual({ pdf: '' });
   // The guard: a row read before an edit is not written over the edit.
   const other = job(RESUME, 0, 'done'), stale = db.query('SELECT * FROM jobs WHERE id = ?').get(other) as JobRow;

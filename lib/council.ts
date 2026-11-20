@@ -10,7 +10,8 @@ import { bullets, REQUIRED } from './ats.ts';
 import { ASKED } from './db.ts';
 import { stripLinks } from './links.ts';
 import { ask } from './llm.ts';
-import { BULLETS, ENTRIES, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
+import { carlOn } from './carl.ts';
+import { carlText, ENTRIES, METRICS, SIGNAL, SUMMARY } from './writing.ts';
 
 // score is -1 when the reader gave none. scores holds every round's, in order.
 export type Seat = { seat: string; model: string; score: number; note: string; scores: number[] };
@@ -32,10 +33,12 @@ const NAMES: Record<string, string> = { opus: 'Claude Opus', sonnet: 'Claude Son
 const named = (model: string) => NAMES[model] ?? (model.startsWith('gpt:') ? `GPT (${model.slice(4)})` : model);
 
 // Each seat's model: EGG_COUNCIL_RECRUITER, EGG_COUNCIL_MANAGER and EGG_COUNCIL_EDITOR change them.
-const SEATS: { seat: string; model: () => string; brief: string }[] = [
+// `carl`: what a seat is told beside its brief with CARL on (RESUME-RULES.md, rule 13).
+const SEATS: { seat: string; model: () => string; brief: string; carl?: string }[] = [
   { seat: 'Recruiter', model: () => process.env.EGG_COUNCIL_RECRUITER ?? 'haiku', brief: `You are a recruiter screening applications for this posting. You give a resume a few seconds first: name, current title, most recent employer and dates, then the top third of the page. Judge whether the match to this posting is obvious at that glance, whether the posting's own terms are where you would search for them, and whether anything is confusing, missing or out of order. Flag any line you would have to read twice.` },
   { seat: 'Hiring manager', model: () => process.env.EGG_COUNCIL_MANAGER ?? 'gpt', brief: `You are the engineering manager hiring for this posting. You read every bullet and ask "so what?". Judge whether each line shows real evidence of doing this job well. Flag every number that is unimpressive, trivial or odd for someone at this level (a count of tests, savings of a few hundred dollars, a launch date, a handful of anything), every bullet that is implementation trivia with no outcome, every claim you cannot picture or that means nothing to someone outside the company, and every line that makes the person look more junior than the rest of the page.` },
-  { seat: 'Editor', model: () => process.env.EGG_COUNCIL_EDITOR ?? 'opus', brief: `You are an editor who removes anything that reads as filler or as machine-written. Judge the wording line by line against the rules below. Flag vague or abstract lines, buzzwords, unsupported benefit clauses, internal names left unexplained, repeated openings, and bullets that say two things at once.` },
+  { seat: 'Editor', model: () => process.env.EGG_COUNCIL_EDITOR ?? 'opus', brief: `You are an editor who removes anything that reads as filler or as machine-written. Judge the wording line by line against the rules below. Flag vague or abstract lines, buzzwords, unsupported benefit clauses, internal names left unexplained, repeated openings, and bullets that say two things at once.`,
+    carl: `A bullet's opening context clause, its action and its result are one statement, not two things. A short closing Learning clause that states what the person learned, and claims no benefit, is not a benefit clause.` },
 ];
 
 const READING = { type: 'object', additionalProperties: false, required: ['score', 'note', 'problems'], properties: {
@@ -44,7 +47,7 @@ const READING = { type: 'object', additionalProperties: false, required: ['score
 const REVISED = { type: 'object', additionalProperties: false, required: ['resume', 'changes', 'questions'], properties: { resume: { type: 'string' }, changes: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } } } };
 
 const read = (seat: (typeof SEATS)[number], resume: string, posting: string, cwd: string, wishes: string, context: string) => ask<Reading>({ cwd, schema: READING, timeoutMs: 10 * 60_000, model: seat.model(),
-  prompt: `${seat.brief}
+  prompt: `${seat.brief}${carlOn() && seat.carl ? ` ${seat.carl}` : ''}
 
 Score the resume from 1 to 10 for this posting, from your seat:
 - 10: nothing to change.
@@ -64,9 +67,9 @@ Score the page, not the candidate. Whether the person has what the posting asks 
 
 ${SIGNAL}${context ? `\n\n${context}` : ''}
 
-${WRITING}
+${carlText().WRITING}
 
-${BULLETS}
+${carlText().BULLETS}
 
 ${SUMMARY}
 
@@ -103,9 +106,9 @@ ${SIGNAL}${context ? `\n\n${context}` : ''}
 
 ${METRICS}
 
-${WRITING}
+${carlText().WRITING}
 
-${BULLETS}
+${carlText().BULLETS}
 
 ${SUMMARY}
 

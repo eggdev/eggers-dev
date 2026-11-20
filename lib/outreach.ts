@@ -19,23 +19,23 @@ const SCHEMA = { type: 'object', additionalProperties: false, required: ['doors'
 // The projects of roles whose facts carry this application: those holding a fact the posting map names as the
 // strongest evidence for a requirement. For each, its name, its background (the parts that are set), what the person
 // says they learned, and its facts. A project with no background and nothing learned adds nothing, and is left out.
-type Carrying = { name: string; situation?: string; what_i_did?: string; result?: string; learned?: string; facts: string[] };
+type Carrying = { name: string; context?: string; action?: string; result?: string; learning?: string; facts: string[] };
 function carrying(analysis: { requirements?: { best?: string }[] }): Carrying[] {
   const best = new Set((analysis.requirements ?? []).map((r) => /^fact:(\d+)$/.exec(r.best ?? '')).filter((m) => m !== null).map((m) => Number(m![1])));
   const filed = filedInProjects(), ids = [...new Set(filed.filter((f) => best.has(f.id)).map((f) => f.project_id))];
   if (ids.length === 0) return [];
-  const rows = db.query(`SELECT id, title, situation, did, result, learned FROM projects WHERE id IN (${ids.join(',')}) ORDER BY id`).all() as { id: number; title: string; situation: string; did: string; result: string; learned: string }[];
+  const rows = db.query(`SELECT id, title, context, action, result, learning FROM projects WHERE id IN (${ids.join(',')}) ORDER BY id`).all() as { id: number; title: string; context: string; action: string; result: string; learning: string }[];
   const facts = db.query(`SELECT id, text, detail, metric, baseline, team, own_part FROM facts WHERE id IN (${filed.map((f) => f.id).join(',')}) ORDER BY id`).all() as Record<string, string | number>[];
   return rows.map((p) => {
     const mine = facts.filter((f) => filed.some((x) => x.id === f.id && x.project_id === p.id));
     // The background and what was learned go with each number no fact of the project holds strictly taken out (lib/numbers.ts).
     const held = quantities(mine.map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part].join('. ')).join('. '));
     const hide = (v: string) => { const t = saidValue(v); return t === undefined ? undefined : redact(t, held); };
-    return { name: p.title.trim(), situation: hide(p.situation), what_i_did: hide(p.did), result: hide(p.result), learned: hide(p.learned),
+    return { name: p.title.trim(), context: hide(p.context), action: hide(p.action), result: hide(p.result), learning: hide(p.learning),
       facts: mine.map((f) => `${f.text}${f.metric ? ` (${f.metric})` : ''}`) };
-  }).filter((p) => p.situation || p.what_i_did || p.result || p.learned);
+  }).filter((p) => p.context || p.action || p.result || p.learning);
 }
-const carryingBlock = (ps: Carrying[]) => ps.length === 0 ? '' : `\n${LEARNED}\n${ps.map((p) => `- The project “${p.name}”. Its facts: ${p.facts.map((f) => `“${f}”`).join('; ')}.${p.situation ? ` Before: ${p.situation}` : ''}${p.what_i_did ? ` What they did: ${p.what_i_did}` : ''}${p.result ? ` What came of it: ${p.result}` : ''}${p.learned ? ` What they learned: ${p.learned}` : ''}`).join('\n')}\n`;
+const carryingBlock = (ps: Carrying[]) => ps.length === 0 ? '' : `\n${LEARNED}\n${ps.map((p) => `- The project “${p.name}”. Its facts: ${p.facts.map((f) => `“${f}”`).join('; ')}.${p.context ? ` Before: ${p.context}` : ''}${p.action ? ` What they did: ${p.action}` : ''}${p.result ? ` What came of it: ${p.result}` : ''}${p.learning ? ` What they learned: ${p.learning}` : ''}`).join('\n')}\n`;
 
 // The resume's number rule, for the drafts (lib/numbers.ts, unsupported): a number whose value stands in the context as
 // stored (every project's name, background and what was learned) and in no fact, the profile, the posting or the person's
@@ -56,6 +56,8 @@ const clean = (doors: Door[] | undefined) => (doors ?? []).map(tidy).filter((d):
 export type Drafted = { doors: Door[]; left: number };
 
 export async function draft(job: JobRow & { contact: string }, cwd: string): Promise<Drafted> {
+  // An empty record has nothing true to say about the person: no model is asked.
+  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('Your record is empty. Tell a story first.');
   const a = job.analysis ? (JSON.parse(job.analysis) as { strengths?: string[]; verdict?: string; requirements?: { best?: string }[] }) : {};
   const profile = ((db.query('SELECT body FROM profile WHERE id = 1').get() as { body: string } | null)?.body ?? '').slice(0, 6000);
   const projects = carrying(a), kept = keptLines();
@@ -104,7 +106,7 @@ ${profile}
   // draft that still has such a number is left out.
   const facts = (db.query('SELECT text, detail, metric, baseline, team, own_part, skills FROM facts').all() as Record<string, string>[]).map((f) => [f.text, f.detail, f.metric, f.skills, ...Object.values(factDetails(f))].join(' '));
   const allowed = [profile, job.posting, job.contact, ...facts].join(' ');
-  const context = (db.query('SELECT title, situation, did, result, learned FROM projects WHERE via_role IS NULL AND role_id IS NOT NULL').all() as Record<string, string>[]).map((p) => Object.values(p).join(' ')).join(' ');
+  const context = (db.query('SELECT title, context, action, result, learning FROM projects WHERE via_role IS NULL AND role_id IS NOT NULL').all() as Record<string, string>[]).map((p) => Object.values(p).join(' ')).join(' ');
   const versions = versionNames();
   let doors = clean(r.doors).slice(0, 5);
   const problems = doors.map((d, i) => ({ d, i, only: problemsIn(d.message, allowed, context, versions) })).filter((x) => x.only.length > 0 || x.d.message.includes(NUMBER_TOKEN));

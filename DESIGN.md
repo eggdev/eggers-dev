@@ -39,6 +39,13 @@ still open; the lab (`lab/`) exists to choose them.
    what it blocks. An answer is stored and never asked again.
 10. **Machine detail stays out of view.** Backups, sign-ins and program checks are behind one door (System).
     No other screen names a server, a folder, a model or a file.
+    "Start a new record" lives there too, under the backup controls, because it is the one action whose safety
+    rests on a backup: it deletes the career record and what was written from it, and keeps the owner's details,
+    direction, the job tracker and each sent resume. Its red action opens a dialog that lists what goes and what
+    stays, says it cannot be undone, and enables its red button only once the owner types "start a new record". In
+    the deployed studio the screen takes a backup first and goes on only when it succeeded, then backs up the new
+    record at once and says in one line what was deleted, what was kept and whether that backup was taken. On a
+    machine with no studio around it, the section shows on its own and the reset goes on with no backup.
 
 ## 3. Open values (the lab chooses these)
 
@@ -136,7 +143,7 @@ Where each kind of information lives:
 
 - **Role.** A job: employer, title, start, end, employment type and location, as the owner gave them. A role also
   holds how far its work reached users. Stored in `roles`.
-- **Project.** A piece of work with a name, dates and four parts: Result, Situation, What I did, What I learned. A
+- **Project.** A piece of work with a name, dates and four parts: Context, Action, Result, Learning. A
   side project also says where it lives. A project in a role is a row of `projects`. A repository's project group, a
   side project and a repository nobody has placed are rows of `roles` that the resume pipeline already reads, and
   their project points at them (`projects.via_role`).
@@ -158,7 +165,23 @@ The arrangement the owner chose in the lab (`lab/experience.html`, saved as `lab
   "(optional)". A form saves only on Add or Save, and has Cancel. A child is added from inside its parent. A new
   item opens at once and is marked "Just added" until the next action, even when a search or the view would hide it.
 - "Read as" gives three views of the same data: Roles (the tree), Projects and Facts (sorted).
-- An open role shows its six fields as plain values. An open project shows all four parts.
+- An open role shows its six fields as plain values, and "Tell a story from this job" (section 11). An open project
+  shows all four parts, in their order: Context, Action, Result, Learning. A part not yet written is offered as "Add the
+  context" (and so on).
+- An empty record says, in two lines, that it starts with a job and that each job is told one story at a time, with one
+  action, "Add a job", which opens the add-role form. Sources stay on their own screen. Home on an empty record has one
+  item, "Your record is empty. Add your first job, then tell a story from it.", that leads to Experience.
+
+A project is told in the four CARL parts (the owner, 2026-11-19), and a resume's bullets follow the same form
+(RESUME-RULES.md, rule 13):
+
+- **Context**: the setting, scope or challenge, said briefly.
+- **Action**: the specific steps the person took.
+- **Result**: the measured outcome.
+- **Learning**: what the person learned, or how the skill applies to the next role.
+
+The parts were named Situation, What I did, Result and What I learned before. The columns took the new names in a
+start-up step that changes no stored value (`lib/db.ts`).
 - No note line at the top, and no drafts of what the studio could write.
 - The values the screen uses (the first view, facts before "Show all", the step per level, the width for two
   columns) are `experienceLook()` in `look.contract`.
@@ -184,11 +207,12 @@ What makes the studio write unsent resumes again (each changes what a resume is 
 - Changing a role's title, employer, dates, employment type or whether its work reached users.
 - Adding, editing or deleting a fact (its words, story, number or category).
 - Filing a fact in a project of its role, or taking it out (also by Keep on a suggestion).
-- Renaming a project of a role that holds a fact, or changing its Result, Situation or What I did (also by an answer
-  to a question, or by "Use it as the result").
+- Renaming a project of a role that holds a fact, or changing its Context, Action, Result or Learning (also by an
+  answer to a question, or by "Use it as the result"). Learning counts only with CARL on (README, `EGG_CARL`).
 - Giving a fact its number before, its team or the owner's own part.
+- A told story written or written again (section 11), when it changes a part or a fact.
 
-What does not: adding a project to a role while it holds no fact, What I learned, where a side project lives, changing
+What does not: adding a project to a role while it holds no fact, where a side project lives, changing
 a role's location, a verdict on a line of How you work, a suggestion not kept, an
 answer of "There was none" or "I don't know", a skill's mark, the review of the skills list, and a Save that changes
 nothing. A skill's mark and the review write no resume again; once the list is reviewed, each unsent resume's Skills
@@ -198,9 +222,10 @@ rewrite.
 
 How the record is used when a resume or a message is written: a project of a role is context for its facts, never
 evidence. Numbers that no fact holds are left out of what the writer is given, and a number on a resume must stand in a
-fact of that employer. The lines of How you work the owner kept help the writer choose which facts lead, are sent
-without their numbers, and are never printed. A message to someone at a company may also use what the owner says they
-learned on the projects behind the application; a resume never does.
+fact of that employer. A bullet may print words of its project's Context in its opening clause and of its Learning in
+a short closing clause, only when the bullet cites a fact of that project. The lines of How you work the owner kept
+help the writer choose which facts lead, are sent without their numbers, and are never printed. A message to someone at
+a company may also use the Learning of the projects behind the application.
 
 Two known behaviours: a source read again gives its facts new reference numbers; a project deleted that came from a
 repository comes back, empty, when that repository is read again.
@@ -208,12 +233,12 @@ repository comes back, empty, when that repository is read again.
 What stage 2 adds to Experience:
 
 - **Questions for what is missing.** The studio finds what the record lacks and asks about it: where a repository
-  nobody placed belongs, when a role started, what a role with nothing in it held, a project's result (then what the
-  owner did, then the situation), and, for a measured fact an unsent job leans on, the number before and the owner's
+  nobody placed belongs, when a role started, a story from a job that has none yet (which leads to the job), a
+  project's result (then its action, then its context, once a told story is written), and, for a measured fact an unsent job leans on, the number before and the owner's
   own part. Experience says "The studio has N questions about this record" in one line and lists them on request,
   each leading to its item. Home takes at most 7 of them at once, in that order, and at most 3 about numbers before
   and own parts. "I don't know" and "I don't remember" are answers: they are kept, and never asked again. An answer
-  writes the one value it names, and nothing else. What I learned is never asked.
+  writes the one value it names, and nothing else. A project's Learning is never asked.
 - **How you work.** At most 3 lines counted from the record, with no model: the kinds of measured result that are
   most of them, managing or hiring in several roles, a skill that runs through several roles, how many projects have
   a measured result, and a lesson said on several projects. Each line says what it was counted from and shows its
@@ -374,39 +399,144 @@ What was rejected, and why:
   code cannot tell which words carry the meaning.
 - A shorter line made by leaving words out, for the same reason. A bullet over the word limit keeps its flag.
 
-## 11. Telling a role
+## 11. Telling a story
 
-The owner can tell the studio about one role or one project in an interview (`telling.contract`, `lib/capture.ts`,
-`lib/sittings.ts`). Each sitting is about exactly one role or one project.
+The record starts with the owner's jobs. Under each job the owner tells one story at a time: a named piece of work,
+told in an interview, from which the studio writes the project's four parts and its facts (`telling.contract`,
+`lib/capture.ts`, `lib/sittings.ts`, `lib/derive.ts`). A story is a project, so a job holds many. A side project is told
+the same way, from its own pane.
 
-- **Where it starts.** An open role or project in Experience shows one plain action. It says "Tell this role" (or "Tell
-  this project") when nothing is told yet, and "Carry on telling it" while a sitting is open or some questions are
-  still open. When all 15 questions are answered or closed, it says "Told on 19 Nov 2026" with "Read it".
-- **The screen.** A sitting has its own address (`/record/tell/:id`), so a reload lands on it. It shows the conversation
-  in order: the interviewer's lines in the light weight, and the owner's answers in the heavy weight, stepped in, with
-  their spaces and line breaks as typed (a tab is drawn as four spaces). Under it are one quiet line ("Question 4 of
-  15"), one text field, Send (the main action), "I don't know" and "Stop for now". The field is read-only while an
-  answer is on its way. "I don't know" sends exactly those words and closes the question for good. After a sitting
-  ends, the screen shows the closing line and "What you said": every answer about the role or project, from every
-  sitting, under its question in the list's order. Each answer has Delete, and under them the sitting has
-  "Delete this sitting"; both are red and ask first, and neither promises what is asked next.
-- **Deleting.** Delete on an answer deletes the owner's whole reply to that question in that sitting: the answer and
-  every answer to its follow-ups ("Delete this answer and what you added to it?"). Delete on an answer to a follow-up
-  deletes only that answer. "Delete this sitting" deletes only that sitting's answers, and says how many ("Delete this
-  sitting and the 3 answers you gave in it?"); answers from other sittings stay. Then it goes back to Experience. A
-  question left with no answer is asked again in its place in a later sitting.
-- **One answer per question.** Send carries the question it answers. A second send for the same question (a resend, a
-  second tab) is refused with "That question was already answered. Here is where the sitting stands.", and the screen
-  shows the sitting as it is now, with the draft kept. The answer is stored and the next line chosen in one step, so an
-  answer never stands without the sitting moving on.
-- **Fixed words.** The interviewer says only fixed words: the opening, the 15 questions, four follow-ups chosen by
-  rule, a reminder of the piece of work picked in an earlier sitting, and the closing lines. No model is asked and no
-  slow work is made, so the next line comes at once, with no spinner and no Activity row.
-- **The owner's words.** An answer is stored exactly as typed: nothing is trimmed, corrected or given curly quotes. A
-  text that would not read back the same is refused in words, and so is an empty answer or one with no letter or
-  digit in it.
-- **One piece of work per role.** "Pick one piece of work" is asked once for a role or project, and every later
-  question in every sitting about it is about that piece of work.
+- **Where it starts.** An open job in Experience shows "Tell a story from this job". It opens a one-field form in place,
+  "Name the piece of work in a few words.", with Add and Cancel, like the other in-place forms. Add makes the project
+  under the job and starts its first sitting. A story is added only under a real job: a side project, or a repository's
+  project, is told from its own project. An open project shows one plain action: "Tell this project" when nothing
+  is told yet, "Carry on telling it" while a sitting is open or some questions are still open, and "Told on 19 Nov
+  2026" with "Read it" once all 14 questions are answered or closed. A job is no longer told on its own.
+- **The questions.** Fourteen fixed questions, asked one at a time in CARL order, each filling one part. Context: the
+  setting, and what was happening just before. Action: the owner's own part, a normal week, a choice between options,
+  the hardest part, and who they worked with. Result: what changed, a number, date or user that shows it, what anyone
+  said, and the view from a manager's or a teammate's seat. Learning: something that went wrong, and what they
+  learned. Last, "What should I have asked that I didn't?". Four fixed follow-ups come by rule. A later sitting starts
+  with a reminder that quotes the project's name.
+- **The screen.** A sitting has its own address (`/record/tell/:id`), so a reload lands on it. The opening line says, in
+  fixed words, that the answers are kept word for word and that the studio writes the story's four parts and its facts
+  from them afterwards, which the owner can then change. The conversation shows in order: the interviewer's lines in the
+  light weight, the owner's answers in the heavy weight, stepped in, with their spaces and line breaks as typed. Under
+  it are one quiet line that names the part ("Context · question 2 of 14"), one text field, Send (the main action), "I
+  don't know" and "Stop for now". "I don't know" sends exactly those words and closes the question for good. After a
+  sitting ends, the screen shows the closing line and "What you said": every answer about the project, from every
+  sitting, under its question. Each answer has Delete, and the sitting has "Delete this sitting"; both are red and ask
+  first. Delete on an answer takes the answers to its follow-ups with it.
+- **One answer per question.** Send carries the question it answers. A second send for the same question is refused
+  with "That question was already answered. Here is where the sitting stands.", with the draft kept.
+- **The owner's words.** An answer is stored exactly as typed: nothing is trimmed, corrected or given curly quotes.
+- **Deriving.** When a sitting ends, by the last question or by "Stop for now", and it holds an answer that is not
+  "I don't know", the project is queued to be written. "Write it again from what you said" queues it by hand. It is
+  slow work: a row in Activity ("Reading what you said", "Writing the four parts", "Checking it against your words"),
+  with Try again on a failure, and the open screens load again when it ends. The model is given the job, the project's
+  name and every answer about the project, word for word, with its question and its part. It is told that the owner
+  talks freely: asides, jokes and repetition are left out, not every line is reported, and the owner's own plain words
+  are kept rather than polished. It returns the four parts (one to three sentences each, or nothing) and at most eight
+  facts, each with one to three passages copied from the answers.
+- **What code checks.** Nothing the model writes is trusted. A fact is dropped when it quotes no passage of three words
+  or more found, character for character, in the answer it names; when its passages hold none of the words of its own
+  sentence (four letters or more, not a common word) or of its numbers; when its kind is unknown or its sentence empty
+  or too long; when it says what another fact already says; and when it holds a number the owner did not say. That
+  number check is stricter than a resume's: every run of digits (years, dates, durations, versions and digit ordinals
+  such as "1st" too) must stand in the owner's answers about this project as the same number with the same magnitude
+  ("50k", "$2.5M", "3 million") and the same unit sign (%, a currency sign, "x" or "times"), and every number or quantity
+  word (zero to twenty, the tens, hundred, thousand, million and billion and their plurals, dozen, dozens, half, halve,
+  halved, halving, quarter, third, double, doubled, doubling, triple, tripled, tripling, quadruple, quadrupled, twice,
+  couple, and any word ending in "-fold") must stand there as the same word. Ordinal words ("first", "second") are
+  ordinary speech and are not counted. A part with
+  such a number is not written. A skill is kept only when the owner named it, as whole words, in those answers. The
+  line under the facts and the Activity row say how many were left out and why ("1 fact was left out: it held a number
+  you did not say."). Only the prompt, not code, keeps names, employers, tools and outcomes in the parts to what the
+  owner said.
+- **What is never overwritten.** A part is written only while it still holds what deriving last wrote, or is empty and
+  was never written by deriving. A part the owner typed, edited, answered on Home or cleared stays as the owner left
+  it: an empty part that deriving had written was cleared on purpose, and stays empty. The project's name is the
+  owner's and is never replaced. Derived facts are proposed: deriving again replaces them. A fact the owner edited or
+  marked is theirs (confirmed) and stays, and a new fact with its words is left out. A fact the owner deleted stays out.
+  A source reading, the folding of duplicates and the rewording tool never change or delete a told fact; Talk may
+  reword one, which makes it the owner's and drops the passages it quoted.
+- **What the owner sees.** Under a project's facts, one quiet line: "Written from what you told on 16 Nov 2026.", with
+  "Read what you said". While it waits or runs, one line in the Activity style, with no spinner. Whenever the project
+  holds an answer and no writing waits or runs, "Write it from what you said" writes it ("Write it again from what you
+  said" once it has been written). A fact written from a story shows, in its own pane, the passages it quotes under "You said". These
+  are the owner's own words about their own work, its evidence; this is not the mark of where a value came from that
+  section 8 rules out.
+- **Deleting.** Deleting an answer or a sitting deletes the passages facts quote from it, and queues the story to be
+  written again from what is left, so a fact or a part that rested on those words goes unless the rest still holds it.
+  With nothing left, what deriving wrote is cleared and no model is asked.
+- **After it is written.** A part left empty is asked on Home ("What came of …?"), as for any project, except while its
+  story waits to be written or is being written. An answer there is written over the part even if deriving filled it
+  meanwhile, and is the owner's from then on. A job with no story raises one Home item, "Tell a story from <title> at
+  <employer>.", that opens the job.
 
-Left out of this version: facts are not yet made from the answers, so nothing told here reaches the record or a
-resume; and no follow-up is written by a model.
+
+## 12. Stories
+
+The owner gets ready for interviews by telling each piece of work in the CARL form, short enough to say in three and a
+half minutes, and by practising it aloud. Stories keeps every story in one place for that (`stories.contract`,
+`lib/stories.ts`, `lib/spoken.ts`). A story is a project: nothing here is a second copy of the record.
+
+- **Where it is.** Record's second line has "Stories" after Experience. The list is at `/record/stories` and an open story
+  at `/record/stories/:id`, so a reload lands on it. On a window 1040px wide or more (Experience's breakpoint) the list
+  is on the left and the open story on the right. On a narrower window the list is its own screen and a story opens as
+  another, with "Back to stories".
+- **The list.** Every project with a spoken story or at least one of its four parts, grouped under its job (jobs newest
+  first), then side projects, then projects not placed yet. Each row is the story's reference and title, and one quiet
+  line: its spoken time and "Practised 3 times, last on 19 Nov 2026" or "Not practised yet" ("No spoken story yet"
+  in place of the time). A project with nothing to tell is not listed; one quiet line under the list counts them, with
+  a link to Experience.
+- **The spoken story.** One text in the first person, in CARL order, written to be said aloud. It is stored on the
+  project (`projects.spoken`). The owner asks for it with "Write the spoken story" ("Write it again" once written). It is
+  never written on its own. It is refused in plain words when the project has neither an answer from telling nor a
+  part, and while the story is being written from what the owner said ("The story is being written from what you said.
+  Ask again when it is done."), since its parts may still hold a number from an answer deleted since. It is slow work: a row in Activity, kind `write-spoken` ("Reading the story and what you said", "Writing the
+  spoken story", "Checking it against your words"), with Try again on a failure, and the open screens load again when
+  it ends. The model (`EGG_SPOKEN_MODEL`, else `EGG_MODEL`, else `opus`) is given the job, the project's title, the four
+  parts and the facts as they stand, and every answer about the project word for word. It is told the order (the
+  context in two or three sentences, what the owner did and decided at most length, the result, what they learned in
+  one or two sentences), to write plain spoken sentences with no headings, lists or labels, to keep the owner's own
+  vivid phrases and leave out asides, never to invent, round up or infer a number, name, date, tool or outcome, to add
+  no praise, and to stay under 450 words. It is given the wording rules (`WRITING`), with a line that a spoken story may
+  say "I" and "we".
+- **What code checks.** A text is refused whole, never repaired, when it holds a number that does not stand in the
+  same form in the owner's answers about the project or in its parts and facts as they stand (deriving's strict check,
+  section 11, which reads a magnitude such as "50k" or "$2.5M" as part of its number; a number the owner typed into a
+  part is the owner's own), when it is over 520 words, or when a line is a heading, a list item, a quote mark, Markdown
+  bold or italic, a label, a line ending with a colon that no quotation follows, or a few words with no closing mark
+  before a blank line. A refused text is asked for once more in the same run ("Writing it again"), with a paragraph that
+  says what was refused and why. Refused again, it is not stored, and the Activity row says why ("The spoken story was not
+  kept. It held a number you did not say: “80%”.").
+- **What is never overwritten.** The text is written only while it still holds what the writer last wrote
+  (`projects.spoken_wrote`). A text the owner edited, typed or cleared is theirs. "Write it again" then asks first,
+  because the owner's text would be kept and nothing would change: the dialog offers "Replace my edit", which lets the
+  next text that passes the checks replace theirs (`projects.spoken_replace`). A failure or a refused text takes that
+  back, so the owner's text is protected again and Try again asks again. A text the owner saves while it is being
+  written is kept over what the writer then writes.
+- **The open story.** The title, the job in a quiet line, and the spoken text, set to be read aloud: the `text` size,
+  with looser leading and a narrower column than running text (`readingLook()` in `look.contract`), so no third size
+  is needed. Under it, one quiet line with the time: "About 2 min 40 s when spoken." The time is counted in code from
+  the word count at 140 words a minute (`WORDS_PER_MINUTE` in `lib/spoken.ts`), rounded to 10 seconds. Over 3 min 30 s
+  the line says "About 4 min 10 s when spoken. Aim for 3 min 30 s or less." and is drawn heavy, as a serious finding
+  is. Then the actions: "I practised this", "Time it", "Edit" (in place, with Save and Cancel; a save makes it the
+  owner's text) and "Write it again". With no spoken text yet, the four parts come first, then "Write the spoken story".
+- **Practice.** "I practised this" records one practice with today's date. "Time it" counts the seconds up while the
+  owner reads aloud; Stop records the practice with its time, and the time line then ends with "Last timed at 3 min 05
+  s.". The practices are one quiet line; "Show them" lists them, each with Delete, which asks first. Practices are rows
+  of `story_practice` and go with their project.
+- **The four parts.** Under the practices, Context, Action, Result and Learning as the project holds them, read-only,
+  with "Open in Experience".
+- **Questions from real interviews.** After an interview the owner notes the questions they were asked
+  (`interview_questions`). On a job whose outcome is Interviewed, Rejected or Offer, "Questions you were asked" lists
+  them and has "Add a question you were asked", a one-field form in place. Each question shows the story that answers
+  it in a select ("No story yet" until one is chosen), "No story needed", and Delete, which asks first. Stories lists
+  every question, newest first, with its job in a quiet line, and adds a question with no job. An open story lists
+  "Questions this answers". A question with no story and not marked "No story needed" is one Home item, "You were asked
+  “…” and no story answers it yet.", whose action opens the question on Stories.
+- **What stays.** The questions are part of the job tracker's history. Deleting a job keeps its questions with no job;
+  deleting a project keeps its questions with no story; starting a new record keeps them and clears their stories.
+  Practices and spoken stories go with the record.

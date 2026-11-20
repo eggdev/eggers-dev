@@ -10,10 +10,11 @@
 use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Indented, Numbered, Action, MainAction, GoTo, ValueField, lookNarrow from "./look.contract"
 use DigestItem, sentence from "./activity.contract"
 
-// One thing that needs the owner. kind: timeline | linkedin | skill (a question raised from their data), talk
-// (a question open in Talk), quiet (an application with no reply in 14 days). choices are a raised question's;
-// inputs[i] is what choice i needs beside the tap: "month", "line" or "". route is where an item without
-// choices is settled.
+// One thing that needs the owner. kind: timeline | linkedin | skill | record (a question raised from their data), talk
+// (a question open in Talk), quiet (an application with no reply in 14 days), asked (a question from an interview that
+// no story answers), start (the record is empty). choices are
+// a raised question's; inputs[i] is what choice i needs beside the tap: "month", "line" or "". route is where an item
+// without choices is settled.
 shape QueueItem
   key: string
   kind: string
@@ -37,7 +38,7 @@ shape Sent
 
 fn thingsLine(n: number): string = n == 1 ? "1 thing needs you" : `${n} things need you`
 // The words of the button that leads to where an item is settled.
-fn goLabel(i: QueueItem): string = i.kind == "talk" ? "Answer in Talk" : i.kind == "quiet" ? "Open the job" : i.kind == "proposals" ? "See the suggestions" : "Open your record"
+fn goLabel(i: QueueItem): string = i.kind == "talk" ? "Answer in Talk" : i.kind == "asked" ? "Open the question" : i.kind == "quiet" or i.key.startsWith("record:empty:") ? "Open the job" : i.kind == "proposals" ? "See the suggestions" : i.kind == "start" ? "Go to Experience" : "Open your record"
 // What choice n of an item needs beside the tap.
 fn inputOf(i: QueueItem, n: number): string = match i.inputs.at(n) { case some(x) => x, case none => "" }
 fn inputLabel(kind: string): string = kind == "month" ? "A year and a month" : "One line"
