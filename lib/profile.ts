@@ -30,7 +30,7 @@ export const factCount = () => (db.query('SELECT count(*) AS n FROM facts').get(
 
 export async function write(): Promise<{ markdown: string; gaps: string[] }> {
   const b = bank();
-  if (b.count === 0) throw new Error('Your record is empty. Add a source first.');
+  if (b.count === 0) throw new Error('Your record is empty. Tell a story first.');
   return ask({ cwd: process.cwd(), schema: SCHEMA, timeoutMs: 20 * 60_000, model: process.env.EGG_PROFILE_MODEL ?? process.env.EGG_MODEL ?? 'opus',
     prompt: `You are writing one person's professional profile from their knowledge bank. It is the base document their resumes and cover letters are tailored from, and they will also read it to see themselves described well. Write it in the first person, in plain, confident, specific language.
 

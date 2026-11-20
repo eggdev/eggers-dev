@@ -60,7 +60,7 @@ For each project return:
 - "facts": the keys of the facts that belong to it, exactly as given.
 - "result": the key of the one fact among them that states what came of the work, or "" when none does.
 
-Propose no dates, no situation, no description and no result in your own words: the person writes those.
+Propose no dates, no context, no description and no result in your own words: the person writes those.
 ${r.projects.length ? `\nThis job already has these projects; do not propose them again under any wording:\n${r.projects.map((t) => `- ${t}`).join('\n')}\n` : ''}${r.rejected.length ? `\nThe person said these are not projects; do not propose them again under any wording:\n${r.rejected.map((t) => `- ${t}`).join('\n')}\n` : ''}
 The facts, as JSON:
 ${JSON.stringify(r.facts)}`;

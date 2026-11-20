@@ -70,7 +70,7 @@ test('the tree puts each fact in its place: a project of its role, Day to day, a
     row(5, { company: 'avery/sketchbook', start: '2019-02' }),
     row(6, { company: 'Fernway', title: 'Head of Platform', start: '' }),
   ];
-  const p = (id: number, more: Partial<ProjectRow>): ProjectRow => ({ id, role_id: null, via_role: null, title: '', start: '', end: '', lives: '', situation: '', did: '', result: '', learned: '', ...more });
+  const p = (id: number, more: Partial<ProjectRow>): ProjectRow => ({ id, role_id: null, via_role: null, title: '', start: '', end: '', lives: '', context: '', action: '', result: '', learning: '', ...more });
   const projects = [p(1, { via_role: 3 }), p(2, { via_role: 4, lives: 'A code repository' }), p(3, { via_role: 5 }), p(4, { role_id: 1, title: 'Cut cloud spend by a third', start: '2024-01', result: 'Spend fell 31%.' }), p(5, { role_id: 1, title: 'Wrote the levels guide' })];
   const f = (id: number, role_id: number | null, project_id: number | null = null) => ({ id, role_id, project_id, text: `Fact ${id}.`, metric: '', kind: 'accomplishment' });
   const t = tree(rows, projects, [f(1, 1), f(2, 1, 4), f(3, 3), f(4, 4), f(5, 5), f(6, null), f(7, 2, 4), f(8, 99)]);
@@ -88,7 +88,7 @@ test('the tree puts each fact in its place: a project of its role, Day to day, a
 
 test('a carried row that became a role shows as that role, and its old project is not shown', () => {
   const rows = [row(1, { company: 'Tidewater', title: 'Maintainer', standing: 'own', start: '2015-02' })];
-  const t = tree(rows, [{ id: 1, role_id: null, via_role: 1, title: '', start: '', end: '', lives: '', situation: '', did: '', result: '', learned: '' }], [{ id: 1, role_id: 1, project_id: null, text: 'Built it.', metric: '', kind: 'project' }]);
+  const t = tree(rows, [{ id: 1, role_id: null, via_role: 1, title: '', start: '', end: '', lives: '', context: '', action: '', result: '', learning: '' }], [{ id: 1, role_id: 1, project_id: null, text: 'Built it.', metric: '', kind: 'project' }]);
   expect(t.roles.map((r) => r.ref)).toEqual(['R-01']);
   expect(t.projects).toEqual([]);
   expect(t.facts.map((x) => [x.roleId, x.projectId])).toEqual([['1', '']]);

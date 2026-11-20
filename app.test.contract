@@ -2,13 +2,23 @@
 // every test in order: the first finds nothing that needs the person, the second leaves a source and no facts,
 // the third two facts. No worker runs, so a source stays waiting; proposed facts are seeded through the API as
 // the worker would write them. The app opens at Home.
-test "home says in one line that nothing needs you on an empty database"
+test "on an empty database home has one item: start the record with a job, in Experience"
   clock data
   expect state nav.tab == "home"
   expect text "home-title" == "Home"
-  expect text "home-empty" == "Nothing needs you."
-  expect tree missing "home-count"
-  expect tree missing "home-keys"
+  expect tree missing "home-empty"
+  expect text "home-count" == "1 thing needs you"
+  expect text "home-focus-text" == "Your record is empty. Add your first job, then tell a story from it."
+  expect text "home-go" == "Go to Experience"
+  tap "home-go"
+  clock data
+  clock settle
+  clock data
+  expect state nav.tab == "bank"
+  expect text "nav-current" == "Record"
+  expect text "sub-current" == "Experience"
+  expect text "bank-empty-text" == "Your record starts with a job."
+  expect tree has "bank-add"
 
 test "with nothing waiting or running, an open screen asks for nothing again until it is opened again"
   clock data
@@ -39,12 +49,18 @@ test "with nothing waiting or running, an open screen asks for nothing again unt
   expect state jobsError == ""
   expect state activityError == ""
 
-test "a source is added from the empty record, waits to be read, refuses a repeat repository in words, and is deleted after asking"
+test "a source is added from Sources, waits to be read, refuses a repeat repository in words, and is deleted after asking"
   clock data
   tap "nav-record"
   clock settle
   clock data
-  tap "bank-add"
+  // An empty record starts with a job; sources stay on their own screen.
+  expect text "bank-empty-text" == "Your record starts with a job."
+  expect text "bank-add" == "Add a job"
+  tap "sub-sources"
+  clock settle
+  clock data
+  tap "sources-add"
   clock settle
   expect state nav.tab == "bank"
   expect text "sub-current" == "Sources"
@@ -590,7 +606,7 @@ test "system opens from the main line and shows both of its screens: the public 
   clock settle
   expect state nav.tab == "publicPage"
   expect text "sub-current" == "Backups and sign-in"
-  expect text "system-absent" == "This screen works only in the deployed studio."
+  expect text "system-absent" == "Backups and sign-in work only in the deployed studio."
   tap "sub-public"
   clock data
   clock settle
@@ -632,12 +648,18 @@ test "the main line goes to each of the six places and marks the current one"
   expect text "nav-current" == "Home"
   expect tree has "home-title"
 
-test "record's second line goes to each of its five screens and keeps Record marked"
+test "record's second line goes to each of its screens and keeps Record marked"
   clock data
   tap "nav-record"
   clock settle
   expect text "sub-current" == "Experience"
   expect tree has "bank-title"
+  tap "sub-stories"
+  clock data
+  clock settle
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Stories"
+  expect tree has "stories-title"
   tap "sub-profile"
   clock data
   clock settle
@@ -1218,10 +1240,18 @@ test "projects are suggested for a role on request; one is kept, one edited then
   tap "nav-home"
   clock settle
   clock data
-  expect tree has "home-item-proposals:4"
-  tap "nav-record"
+  // Home's item opens the role in Record, with its data.
+  tap "home-item-proposals:4"
+  clock settle
+  expect text "home-go" == "See the suggestions"
+  tap "home-go"
+  clock data
   clock settle
   clock data
+  expect state nav.tab == "bank"
+  expect text "sub-current" == "Experience"
+  expect text "pane-title" == "Head of Platform"
+  expect text "proposal-1-title" == "Platform reviews"
   tap "proposal-1-keep"
   clock data
   clock settle
@@ -1450,8 +1480,9 @@ test "the resume screen shows its head, the facts each line uses in the gutter, 
   clock data
   clock settle
   expect text "note-10-0" == "Failed check 900 is in none of the facts this line uses. F‑0019 says “Cut planning time. (from 3 hours to 20 minutes)”."
-  expect text "note-15-0" == "Question When did you start as Engineer at Ostrander Freight?"
-  expect tree has "note-15-0-go"
+  expect text "note-15-0" == "Question Tell a story from Engineer at Ostrander Freight."
+  expect text "note-15-1" == "Question When did you start as Engineer at Ostrander Freight?"
+  expect tree has "note-15-1-go"
   // Three notes on one line, failed checks first: two, then "1 more note on this line", then all, then "Show fewer".
   // (The number two stands in a project's background an earlier test wrote, and in no fact: a true finding.) The line
   // shows F-0021 in its gutter, so no note says it names no fact.
@@ -1615,43 +1646,53 @@ test "a bullet's new opening and its tense are suggested after a Save; one is ke
   expect text "line-7" == "Lead the weekly incident review."
   expect text "sug-7-text" == "Rejected. Your words stay."
 
-// Telling a role (telling.contract). From here R-07 (Staff Engineer, Brightwater Health) has no sitting yet, so its
-// first is sitting 1, and the turns are numbered from 1 in the order they are said. The interviewer's words are the
-// fixed ones of lib/capture.ts; the answers are in the first person and name no habit, so a follow-up comes only where a
-// test asks for one.
-test "a role is told from Experience: each answer brings the next question at once, and I don't know closes a question for good"
+// Telling a story (telling.contract). From here R-07 (Staff Engineer, Brightwater Health) has no story yet, and no
+// sitting has been held, so its first story's sittings are 1 and 2 and the turns are numbered from 1 in the order they
+// are said. The clock is fixed while the story is told, so the day it was told reads the same on every run. The
+// interviewer's words are the fixed ones of lib/capture.ts; the answers are in the first person and name no habit, so a
+// follow-up comes only where a test asks for one. No worker runs: the stand-in writes the story as the worker would.
+test "a job's story is named in place and told: each answer brings the next question at once with its part, and I don't know closes a question for good"
   size 1280x800
   at "/record/role/7"
+  request POST "/test/clock" {"now": 1794830400000}
   clock data
   clock settle
   clock data
-  expect text "tell-start" == "Tell this role"
-  tap "tell-start"
+  expect tree missing "tell-start"
+  expect text "story-start" == "Tell a story from this job"
+  tap "story-start"
+  clock settle
+  tap "story-add"
+  clock data
+  expect text "story-error" == "Name the piece of work in a few words."
+  tap "story-cancel"
+  clock settle
+  expect tree missing "story-form"
+  tap "story-start"
+  clock settle
+  type "story-title" "The new booking page"
+  tap "story-add"
   clock data
   clock settle
   clock data
   expect state topName == "tell"
-  expect text "tell-title" == "Staff Engineer, Brightwater Health"
-  expect text "tell-turn-0" == "These questions are a fixed list. They come one at a time, about one piece of your work. Your answers are kept exactly as you give them, word for word."
-  expect text "tell-turn-1" == "Tell me about this job and your role in it."
-  expect text "tell-position" == "Question 1 of 15"
-  type "tell-answer" "I ran the support platform for the clinics."
+  expect text "tell-title" == "The new booking page"
+  expect text "tell-turn-0" == "These questions are a fixed list. They come one at a time, about this one piece of work. Your answers are kept word for word. Afterwards the studio writes the story’s four parts and its facts from them, and you can change what it writes."
+  expect text "tell-turn-1" == "Tell me about this project and your part in it."
+  expect text "tell-position" == "Context · question 1 of 14"
+  type "tell-answer" "I built the booking page for the clinics in my first year."
   tap "tell-send"
   clock data
-  expect text "tell-turn-2" == "I ran the support platform for the clinics."
-  expect text "tell-turn-3" == "Pick one piece of work from this job that you remember well."
-  expect text "tell-position" == "Question 2 of 15"
+  expect text "tell-turn-2" == "I built the booking page for the clinics in my first year."
+  expect text "tell-turn-3" == "Take me back to the start. What was happening just before you got involved?"
+  expect text "tell-position" == "Context · question 2 of 14"
   expect text "tell-answer" == ""
-  type "tell-answer" "The new booking page, which I built in my first year."
-  tap "tell-send"
-  clock data
-  expect text "tell-turn-5" == "Take me back to the start. What was happening just before you got involved?"
   expect text "tell-dont-know" == "I don’t know"
   tap "tell-dont-know"
   clock data
-  expect text "tell-turn-6" == "I don't know"
-  expect text "tell-turn-7" == "What did you do yourself on this?"
-  expect text "tell-position" == "Question 4 of 15"
+  expect text "tell-turn-4" == "I don't know"
+  expect text "tell-turn-5" == "What did you do yourself on this?"
+  expect text "tell-position" == "Action · question 3 of 14"
   expect tree missing "tell-error"
   // Closed for good: the next sitting does not ask it again, and goes on from the question after it.
   tap "tell-stop"
@@ -1660,14 +1701,15 @@ test "a role is told from Experience: each answer brings the next question at on
   clock data
   clock settle
   clock data
+  expect text "pane-title" == "The new booking page"
   expect text "tell-start" == "Carry on telling it"
   tap "tell-start"
   clock data
   clock settle
   clock data
-  expect text "tell-turn-1" == "We carry on with the piece of work you picked last time: “The new booking page, which I built in my first year.”"
+  expect text "tell-turn-1" == "We carry on with the piece of work you named: “The new booking page”"
   expect text "tell-turn-2" == "What did you do yourself on this?"
-  expect text "tell-position" == "Question 4 of 15"
+  expect text "tell-position" == "Action · question 3 of 14"
 
 test "a refused send keeps the draft; a question answered elsewhere is refused in words and the sitting shows as it stands; spaces and line breaks show as typed"
   size 1280x800
@@ -1682,21 +1724,21 @@ test "a refused send keeps the draft; a question answered elsewhere is refused i
   tap "tell-send"
   clock data
   expect text "tell-error" == "The answer is empty."
-  // Turn 12 is the question this screen shows; a second tab answers it first.
-  request POST "/sittings/2/answer" {"text": "I wrote the plan.", "turn": "12"}
-  type "tell-answer" "I set up the support rota."
+  // Turn 10 is the question this screen shows; a second tab answers it first.
+  request POST "/sittings/2/answer" {"text": "I wrote the plan.", "turn": "10"}
+  type "tell-answer" "I set up the booking rota."
   tap "tell-send"
   clock data
   expect text "tell-error" == "That question was already answered. Here is where the sitting stands."
-  expect text "tell-answer" == "I set up the support rota."
+  expect text "tell-answer" == "I set up the booking rota."
   expect text "tell-turn-3" == "I wrote the plan."
   expect text "tell-turn-4" == "Picture a normal week in the middle of it. What were you working on?"
-  expect text "tell-position" == "Question 5 of 15"
-  type "tell-answer" "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  expect text "tell-position" == "Action · question 4 of 14"
+  type "tell-answer" "  I set up the booking rota  myself.\n\nI wrote its first runbook."
   tap "tell-send"
   clock data
   expect tree missing "tell-error"
-  expect text "tell-turn-5" == "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  expect text "tell-turn-5" == "  I set up the booking rota  myself.\n\nI wrote its first runbook."
   expect text "tell-turn-6" == "Tell me about a point where you had to choose between options."
   tap "tell-stop"
   clock data
@@ -1705,66 +1747,107 @@ test "a refused send keeps the draft; a question answered elsewhere is refused i
   expect tree missing "tell-position"
   expect text "tell-said-head" == "What you said"
   expect text "tell-q-normal-week" == "Picture a normal week in the middle of it. What were you working on?"
-  expect text "tell-a-normal-week-0" == "  I set up the support rota  myself.\n\nI wrote its first runbook."
+  expect text "tell-a-normal-week-0" == "  I set up the booking rota  myself.\n\nI wrote its first runbook."
   expect text "tell-a-before-0" == "I don't know"
   tap "tell-back-end"
   clock data
   clock settle
   clock data
-  expect text "pane-title" == "Staff Engineer"
+  expect text "pane-title" == "The new booking page"
   expect text "tell-start" == "Carry on telling it"
+  // The sitting ended with something said: the story waits to be written, in one line in the Activity style.
+  expect text "story-work-status" == "Waiting"
+  expect text "story-work" == "Writing the story from what you said. Usually a few minutes."
 
-test "telling it again starts with a reminder of the work picked, in the owner's own words; a follow-up comes by rule"
+test "the story is written from what was said: the stand-in model's parts and fact appear with no navigation, and the fact's pane shows what the owner said"
+  size 1280x800
+  at "/record/tell/2"
+  clock data
+  tap "tell-back-end"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "story-written"
+  // The second fact holds a number the owner never said: it is left out, and the line under the facts says so.
+  request POST "/test/derive" {"sitting": 2, "result": {"context": "", "action": "I built the booking page for the clinics and set up its rota myself.", "result": "", "learning": "", "facts": [{"text": "Built the booking page for the clinics.", "detail": "", "metric": "", "baseline": "", "team": "", "own_part": "", "skills": [], "kind": "accomplishment", "quotes": [{"turn": 3, "quote": "I built the booking page for the clinics"}]}, {"text": "Cut booking time from 9 days to 2.", "detail": "", "metric": "9 days to 2", "baseline": "", "team": "", "own_part": "", "skills": [], "kind": "accomplishment", "quotes": [{"turn": 3, "quote": "built the booking page"}]}]}}
+  // Work waited, so the activity list is asked for within 10 seconds; the story is written, so the project loads again.
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect text "part-action" == "I built the booking page for the clinics and set up its rota myself."
+  expect text "part-context-add" == "Add the context"
+  expect tree missing "story-work"
+  expect text "story-written" == "Written from what you told on 16 Nov 2026."
+  expect text "story-note" == "1 fact was left out: it held a number you did not say."
+  expect text "story-read" == "Read what you said"
+  expect text "story-again" == "Write it again from what you said"
+  tap "Built the booking page for the clinics."
+  clock data
+  clock settle
+  clock data
+  expect text "pane-title" == "Built the booking page for the clinics."
+  expect text "fact-said-0" == "“I built the booking page for the clinics”"
+  request POST "/test/clock" {"now": 0}
+
+test "a second story is told under the same job, and the job holds both"
   size 1280x800
   at "/record/role/7"
   clock data
   clock settle
   clock data
-  tap "tell-start"
+  tap "story-start"
+  clock settle
+  type "story-title" "The clinic rota"
+  tap "story-add"
   clock data
   clock settle
   clock data
-  expect text "tell-turn-1" == "We carry on with the piece of work you picked last time: “The new booking page, which I built in my first year.”"
-  expect text "tell-turn-2" == "Tell me about a point where you had to choose between options."
-  expect text "tell-position" == "Question 6 of 15"
-  type "tell-answer" "We chose the cheaper queue."
+  expect text "tell-title" == "The clinic rota"
+  expect text "tell-turn-1" == "Tell me about this project and your part in it."
+  type "tell-answer" "We moved the clinics to one rota."
   tap "tell-send"
   clock data
-  expect text "tell-turn-4" == "What was your own part in that?"
-  expect text "tell-position" == "Question 6 of 15"
-  type "tell-answer" "I wrote the comparison myself."
+  expect text "tell-turn-3" == "What was your own part in that?"
+  expect text "tell-position" == "Context · question 1 of 14"
+  type "tell-answer" "I wrote the rota rules myself."
   tap "tell-send"
   clock data
-  expect text "tell-turn-6" == "What was the hardest part? Tell me what happened."
-  reload
+  expect text "tell-turn-5" == "Take me back to the start. What was happening just before you got involved?"
+  tap "tell-stop"
+  clock data
+  tap "tell-back-end"
   clock data
   clock settle
-  expect text "tell-turn-6" == "What was the hardest part? Tell me what happened."
+  clock data
+  expect text "pane-title" == "The clinic rota"
+  tap "crumb-role-7"
+  clock settle
+  clock data
+  expect text "pane-title" == "Staff Engineer"
+  tap "The new booking page"
+  clock settle
+  clock data
+  expect text "pane-title" == "The new booking page"
 
 test "after the sitting has ended, one answer is deleted only after asking, with what was added to it, and its question leaves What you said"
   size 390x844
   at "/record/tell/3"
   clock data
-  tap "tell-stop"
-  clock data
-  expect text "tell-a-pick-0" == "The new booking page, which I built in my first year."
-  expect text "tell-a-choice-1-follow" == "What was your own part in that?"
-  tap "tell-a-before-0-delete"
+  expect text "tell-closing" == "We will stop here for now. Your answers are saved word for word, and the next sitting starts with the questions not yet answered."
+  expect text "tell-a-setting-1-follow" == "What was your own part in that?"
+  tap "tell-a-setting-1-delete"
   expect text "tell-delete-ask" == "Delete this answer? This cannot be undone."
   tap "tell-delete-no"
   expect tree missing "tell-delete-ask"
-  expect tree has "tell-said-before"
-  tap "tell-a-before-0-delete"
-  tap "tell-delete-yes"
-  clock data
-  expect tree missing "tell-said-before"
-  tap "tell-a-choice-0-delete"
+  expect tree has "tell-said-setting"
+  tap "tell-a-setting-0-delete"
   expect text "tell-delete-ask" == "Delete this answer and what you added to it? This cannot be undone."
   tap "tell-delete-yes"
   clock data
-  expect tree missing "tell-said-choice"
+  expect tree missing "tell-said-setting"
   expect tree missing "tell-delete-ask"
-  expect text "tell-a-pick-0" == "The new booking page, which I built in my first year."
+  expect text "tell-said-none" == "Nothing yet."
   expect tree has "tell-back-end"
 
 test "with every question answered or closed, the project says the day it was told, and Read it opens what was said"
@@ -1809,8 +1892,6 @@ test "with every question answered or closed, the project says the day it was to
   clock data
   tap "tell-dont-know"
   clock data
-  tap "tell-dont-know"
-  clock data
   expect text "tell-closing" == "That is the last question about this. Your answers are saved word for word."
   request POST "/test/clock" {"now": 0}
   tap "tell-back-end"
@@ -1828,7 +1909,7 @@ test "with every question answered or closed, the project says the day it was to
   expect text "tell-q-setting" == "Tell me about this project and your part in it."
   expect text "tell-a-setting-0" == "I rebuilt the index for the search page myself."
 
-test "a whole sitting is deleted only after asking, saying how many answers it holds, and the screen goes back to its role"
+test "a whole sitting is deleted only after asking, saying how many answers it holds, and the screen goes back to its project"
   size 1280x800
   at "/record/tell/2"
   clock data
@@ -1842,7 +1923,313 @@ test "a whole sitting is deleted only after asking, saying how many answers it h
   clock data
   clock settle
   clock data
-  expect state topName == "role"
-  expect text "pane-title" == "Staff Engineer"
+  expect state topName == "project"
+  expect text "pane-title" == "The new booking page"
   expect text "tell-start" == "Carry on telling it"
   request GET "/sittings/2" expect 404
+
+// Stories. From here P-006, The new booking page, is a story of R-07 with its Action written from what was told;
+// P-007, The clinic rota, has nothing written yet. Job J-003 has not been sent.
+test "stories opens from Record's second line; a story with a part is listed under its job, opens beside the list, and its spoken story is asked for and appears with its time"
+  size 1280x800
+  at "/record"
+  clock data
+  clock settle
+  tap "sub-stories"
+  clock data
+  clock settle
+  clock data
+  expect text "sub-current" == "Stories"
+  expect tree has "stories-beside"
+  expect text "stories-group-role:7-head" == "Staff Engineer at Brightwater Health"
+  expect text "story-6" == "The new booking page"
+  expect text "story-6-sub" == "No spoken story yet · Not practised yet"
+  expect tree missing "story-7"
+  expect text "story-none" == "Open a story on the left. It opens here, set to be read aloud, and the list stays."
+  tap "story-6"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "story"
+  expect text "story-title" == "The new booking page"
+  expect text "story-job" == "Staff Engineer at Brightwater Health"
+  expect text "story-parts-first-action" == "I built the booking page for the clinics and set up its rota myself."
+  expect text "story-parts-first-context" == "Not written yet."
+  expect text "story-write" == "Write the spoken story"
+  // Deleting the second sitting queued the story to be written again from what is left: the spoken story waits for it.
+  tap "story-write"
+  clock data
+  expect text "story-error" == "The story is being written from what you said. Ask again when it is done."
+  request POST "/test/work" {"kind": "derive-story", "id": 6, "to": "done"}
+  tap "story-write"
+  clock data
+  expect tree missing "story-error"
+  expect text "story-work-status" == "Waiting"
+  expect text "story-work" == "Writing the spoken story. Usually a few minutes."
+  request POST "/test/spoken" {"project": 6, "text": "The clinics took bookings by phone.\n\nI built the booking page for the clinics and set up its rota myself.\n\nI learned to ask the clinics first."}
+  // Work waited, so the activity list is asked for within 10 seconds; the story is written, so it loads again.
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect tree missing "story-work"
+  expect text "story-text-0" == "The clinics took bookings by phone."
+  expect text "story-text-1" == "I built the booking page for the clinics and set up its rota myself."
+  expect text "story-time" == "About 10 s when spoken."
+  expect text "story-write" == "Write it again"
+  expect text "story-parts-action" == "I built the booking page for the clinics and set up its rota myself."
+  expect text "story-6-sub" == "10 s · Not practised yet"
+  reload
+  clock data
+  clock settle
+  clock data
+  expect text "story-title" == "The new booking page"
+  expect text "story-time" == "About 10 s when spoken."
+
+test "on a narrow window a story opens as its own screen with a way back; I practised this and a timed practice change the row's line, and one is deleted after asking"
+  size 390x844
+  at "/record/stories/6"
+  request POST "/test/clock" {"now": 1794830400000}
+  clock data
+  clock settle
+  clock data
+  expect tree has "stories-frame"
+  expect tree missing "stories-pane"
+  expect text "story-back" == "Back to stories"
+  expect text "story-practised" == "Not practised yet"
+  tap "story-practise"
+  clock data
+  expect text "story-practised" == "Practised once, on 16 Nov 2026"
+  tap "story-time-it"
+  clock +65000
+  expect text "story-timer" == "Timing: 1 min 05 s. Read it aloud, then press Stop."
+  tap "story-timer-stop"
+  clock data
+  expect tree missing "story-timer"
+  expect text "story-time" == "About 10 s when spoken. Last timed at 1 min 05 s."
+  expect text "story-practised" == "Practised 2 times, last on 16 Nov 2026"
+  tap "story-practices-toggle"
+  expect text "practice-2-text" == "16 Nov 2026, timed at 1 min 05 s"
+  expect text "practice-1-text" == "16 Nov 2026"
+  tap "practice-2-delete"
+  expect text "practice-delete-ask" == "Delete this practice? This cannot be undone."
+  tap "practice-delete-yes"
+  clock data
+  expect tree missing "practice-2"
+  expect text "story-practised" == "Practised once, on 16 Nov 2026"
+  tap "story-back"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "stories"
+  expect text "story-6-sub" == "10 s · Practised once, on 16 Nov 2026"
+  request POST "/test/clock" {"now": 0}
+
+test "an edit is the owner's own text, and writing it again asks first; replaced, a long text says to aim for 3 min 30 s or less"
+  size 1280x800
+  at "/record/stories/6"
+  clock data
+  clock settle
+  clock data
+  tap "story-edit"
+  clock settle
+  type "spoken-text" "I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota."
+  tap "spoken-save"
+  clock data
+  clock settle
+  expect tree missing "spoken-form"
+  expect text "story-time" == "About 4 min 20 s when spoken. Aim for 3 min 30 s or less."
+  expect text "story-held" == "This is your own text. Writing it again asks first."
+  tap "story-write"
+  clock settle
+  expect tree has "replace-spoken-confirm"
+  tap "replace-spoken-confirm"
+  clock data
+  expect text "story-work-status" == "Waiting"
+  request POST "/test/spoken" {"project": 6, "text": "I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota. I set up the rota."}
+  clock +10000
+  clock data
+  clock +1
+  clock data
+  expect tree missing "story-work"
+  expect tree missing "story-held"
+  expect text "story-time" == "About 3 min 40 s when spoken. Aim for 3 min 30 s or less."
+
+test "an edit and a timer in progress are put away when another story opens, and the first story's text is unchanged"
+  size 1280x800
+  at "/record/stories/6"
+  clock data
+  clock settle
+  clock data
+  tap "story-time-it"
+  clock +5000
+  expect tree has "story-timer"
+  tap "story-5"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "story-timer"
+  tap "story-6"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "story-timer"
+  tap "story-edit"
+  clock settle
+  type "spoken-text" "Words that must not be saved over any story."
+  tap "story-5"
+  clock data
+  clock settle
+  clock data
+  expect text "story-title" == "Moved to one cloud"
+  expect tree missing "spoken-form"
+  tap "story-6"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "spoken-form"
+  expect text "story-time" == "About 3 min 40 s when spoken. Aim for 3 min 30 s or less."
+  expect text "story-practised" == "Practised once, on 16 Nov 2026"
+
+test "a question is added on a job that was interviewed, shows on Home, opens on Stories, is given a story there and leaves Home"
+  size 1280x800
+  at "/job/3"
+  request POST "/test/clock" {"now": 1794830400000}
+  clock data
+  clock settle
+  clock data
+  expect tree missing "job-asked"
+  type "job-outcome" "interviewed"
+  clock data
+  clock settle
+  clock data
+  expect text "job-asked-head" == "Questions you were asked"
+  tap "job-asked-add-start"
+  clock settle
+  tap "job-asked-add-save"
+  clock data
+  expect text "job-asked-add-error" == "Write the question you were asked."
+  type "job-asked-add-text" "Tell me about a page you built for people who booked by phone."
+  tap "job-asked-add-save"
+  clock data
+  clock settle
+  expect tree missing "job-asked-add-form"
+  expect text "job-asked-1-text" == "“Tell me about a page you built for people who booked by phone.”"
+  expect text "job-asked-1-from" == "Added 16 Nov 2026."
+  tap "nav-home"
+  clock settle
+  clock data
+  tap "home-item-asked:1"
+  clock settle
+  expect text "home-focus-text" == "You were asked “Tell me about a page you built for people who booked by phone.” and no story answers it yet."
+  expect text "home-go" == "Open the question"
+  tap "home-go"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "stories"
+  expect text "asked-1-from" == "Asked at a job with no title yet. Added 16 Nov 2026."
+  type "asked-1-story" "6"
+  clock data
+  clock settle
+  tap "story-6"
+  clock data
+  clock settle
+  clock data
+  expect text "story-question-1-text" == "“Tell me about a page you built for people who booked by phone.”"
+  tap "nav-home"
+  clock settle
+  clock data
+  expect tree missing "home-item-asked:1"
+  request POST "/test/clock" {"now": 0}
+
+// Next to last, since it empties the record every test before it shares; only the first run on the emptied record comes
+// after it. Earlier tests leave work waiting with no worker to take it; /test/idle sets it aside, as a start of a new
+// record is refused while any waits.
+test "a new record is started only once the phrase is typed; Experience is then empty, and a kept job is still listed and waits to be read again"
+  at "/record"
+  request POST "/facts" {"kind": "accomplishment", "text": "Ran the invented night market."}
+  request POST "/test/idle" {}
+  reload
+  clock data
+  expect tree missing "bank-empty-text"
+  tap "nav-system"
+  clock data
+  clock settle
+  tap "sub-backups"
+  clock data
+  clock settle
+  expect text "system-absent" == "Backups and sign-in work only in the deployed studio."
+  expect text "system-new-record-head" == "Start a new record"
+  tap "system-new-record"
+  clock settle
+  expect text "new-record-title" == "Start a new record?"
+  expect disabled "new-record-confirm"
+  type "new-record-phrase" "start a new"
+  expect disabled "new-record-confirm"
+  type "new-record-phrase" "start a new record"
+  expect enabled "new-record-confirm"
+  tap "new-record-confirm"
+  clock data
+  clock settle
+  clock data
+  expect tree has "system-new-record-result"
+  tap "nav-jobs"
+  clock data
+  clock settle
+  tap "stage-saved"
+  expect tree has "job-1"
+  tap "job-1"
+  clock data
+  clock settle
+  expect text "job-status" == "Reading failed. Your record was started again, so this posting has not been read against it. Read it again once your record has facts."
+  expect tree missing "job-resume"
+  tap "nav-record"
+  clock data
+  clock settle
+  expect text "bank-empty-text" == "Your record starts with a job."
+
+// After the new record: the first run. Home and Experience say how to start, and a job asks for its first story.
+test "on the emptied record a job is added from the first-run state, and Home then asks for its first story"
+  size 1280x800
+  clock data
+  tap "nav-home"
+  clock settle
+  clock data
+  expect text "home-focus-text" == "Your record is empty. Add your first job, then tell a story from it."
+  tap "home-go"
+  clock settle
+  clock data
+  expect text "bank-empty-text" == "Your record starts with a job."
+  expect text "bank-empty-more" == "Under each job you tell one story at a time, and the studio writes the record from what you say."
+  tap "bank-add"
+  clock settle
+  expect tree missing "bank-add"
+  type "new-first" "Analyst at Corbel Yard"
+  type "new-when" "Mar 2023 – now"
+  tap "new-save"
+  clock data
+  clock settle
+  clock data
+  expect text "pane-title" == "Analyst"
+  expect text "story-start" == "Tell a story from this job"
+  tap "nav-home"
+  clock settle
+  clock data
+  expect text "home-focus-text" == "Tell a story from Analyst at Corbel Yard."
+  expect text "home-go" == "Open the job"
+  tap "home-go"
+  clock settle
+  clock data
+  expect state nav.tab == "bank"
+  expect text "nav-current" == "Record"
+  expect text "sub-current" == "Experience"
+  expect state tree.loaded == true
+  expect text "pane-title" == "Analyst"
+  expect text "story-start" == "Tell a story from this job"
+  reload
+  clock data
+  clock settle
+  clock data
+  expect state nav.tab == "bank"
+  expect text "pane-title" == "Analyst"

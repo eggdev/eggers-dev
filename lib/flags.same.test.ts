@@ -19,7 +19,9 @@ const { db, seed, role } = await import(root + '/lib/scratch.ts');
 const { flags, flagContext } = await import(root + '/lib/checks.ts');
 seed();
 role({ id: 4, company: 'Globex', title: 'Engineer', start: '2022-01' });
-db.run("INSERT INTO projects (role_id, title, situation, created_at) VALUES (1, 'Console', 'It served 900 drivers and 640 users.', 1)");
+// The project's first part is "situation" in the code before CARL and "context" since (lib/db.ts).
+const part = db.query('PRAGMA table_info(projects)').all().some((c) => c.name === 'context') ? 'context' : 'situation';
+db.run("INSERT INTO projects (role_id, title, " + part + ", created_at) VALUES (1, 'Console', 'It served 900 drivers and 640 users.', 1)");
 const RESUMES = [
   '# Avery Lindqvist\nline\n\n## Summary\nAvery is an engineer with 14 years in logistics. She built a dispatch console for 640 users across 12 depots. It runs every day. It is fast.\n\n## Experience\n### VP of Engineering, Harborlight Systems\nMar 2021 – Present\n- Built the dispatch console.\n- Cut a run for [number] drivers.\n- Served 900 drivers.\n\n### Engineer, Globex\nJan 2022 – Present\n- Build the routing service.\n\n### Senior Engineer, Quillfeather Labs\nJan 2016 – Feb 2021\n\n### Support Lead, Tessellate Freight\nMay 2010 – Aug 2012\n- Led the support desk.\n- Answered tickets.\n\n## Awards\nWon a prize, 2018 – 2019\n\n## Skills\nGo, synergy',
   '# Avery Lindqvist\nline\n\n## Summary\nEngineer with 14 years building logistics software in Go.\n\n## Experience\n### Director of Engineering, Harborlight Systems\nMar 2021 – Present\n- Build the dispatch console that 640 users across 12 depots open every day.\n- Cut the nightly billing run from 6 hours to 40 minutes.\n\n### Senior Engineer, Quillfeather Labs\nJan 2016 – Feb 2021\n- Rebuilt the quoting API in Go.\n\n## Skills\nGo',

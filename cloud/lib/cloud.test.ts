@@ -166,6 +166,34 @@ describe('the database copy', () => {
     db.close();
     w.close();
   });
+
+  test('the busy check sees projects being suggested, a told story and a spoken story being written, and a database without their columns is not busy', () => {
+    const f = dataFolder();
+    const w = new Watcher(f.layout.db);
+    const db = new Database(f.layout.db);
+    db.run("UPDATE jobs SET status = 'failed'");
+    expect(w.busy()).toBe(false);
+    db.run("ALTER TABLE roles ADD COLUMN propose_status TEXT NOT NULL DEFAULT ''");
+    db.run("CREATE TABLE projects (id INTEGER PRIMARY KEY, derive_status TEXT NOT NULL DEFAULT '')");
+    db.run("INSERT INTO projects (derive_status) VALUES ('')");
+    expect(w.busy()).toBe(false);
+    db.run("UPDATE roles SET propose_status = 'running' WHERE id = 1");
+    expect(w.busy()).toBe(true);
+    db.run("UPDATE roles SET propose_status = 'done'");
+    db.run("UPDATE projects SET derive_status = 'queued'");
+    expect(w.busy()).toBe(true);
+    db.run("UPDATE projects SET derive_status = 'done'");
+    expect(w.busy()).toBe(false);
+    // A spoken story being written (lib/spoken.ts) keeps it awake too; a database without its column is not busy.
+    db.run("ALTER TABLE projects ADD COLUMN spoken_status TEXT NOT NULL DEFAULT ''");
+    expect(w.busy()).toBe(false);
+    db.run("UPDATE projects SET spoken_status = 'running'");
+    expect(w.busy()).toBe(true);
+    db.run("UPDATE projects SET spoken_status = 'done'");
+    expect(w.busy()).toBe(false);
+    db.close();
+    w.close();
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------

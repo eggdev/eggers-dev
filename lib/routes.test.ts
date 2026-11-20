@@ -100,7 +100,7 @@ test('one mark with no "reviewed" is not a review, and changes no stored resume'
   expect(list.skills.find((s: { name: string }) => s.name === 'TypeScript')).toMatchObject({ mark: 'not-confident', shown: false });
 });
 
-test('a review is refused while no skill is marked confident; then, once the sitting is over, only the Skills line of written resumes is written again', async () => {
+test('a review is refused while no skill is marked confident; then, once the sitting is over, only the Skills and Technologies lines of written resumes are written again', async () => {
   const refused = await call('POST', '/skills', { marks: [], reviewed: true });
   expect(refused).toMatchObject({ status: 400, body: { error: 'Mark at least one tool, language or platform as one you are confident in before you confirm the list. Nothing was saved.' } });
   expect((await call('GET', '/skills')).body.reviewed).toBe(false);
@@ -113,8 +113,9 @@ test('a review is refused while no skill is marked confident; then, once the sit
   expect((await call('POST', '/test/skills-due')).body).toEqual({ ok: true, written: [1, 2] });
   expect((await call('GET', '/skills')).body.due).toBe(false);
   const now = resumes() as { id: number; resume: string }[];
-  expect(now[1].resume).toBe(SECOND.replace('## Skills\nGo, TypeScript, synergy', '## Skills\n\nGo'));
-  expect(now[0].resume.split('## Skills')[0]).toBe(OLD_RESUME.split('## Skills')[0]);
+  // With CARL each entry also takes its Technologies line from the list: Go is the one confident skill its facts name.
+  expect(now[1].resume).toBe(SECOND.replace('- Rebuilt the quoting API.\n', '- Rebuilt the quoting API.\n\nTechnologies: Go\n').replace('## Skills\nGo, TypeScript, synergy', '## Skills\n\nGo'));
+  expect(now[0].resume.split('## Skills')[0]).toBe(OLD_RESUME.split('## Skills')[0].replace('- Built the dispatch console.\n', '- Built the dispatch console.\n\nTechnologies: Go\n'));
 });
 
 test('a hand edit is stored with plain line endings, and is then left alone', async () => {
@@ -218,22 +219,20 @@ test('suggestions asked for on a role with 6 facts in Day to day: stored through
   expect((await call('GET', '/queue')).body.items.some((i: { key: string }) => i.key === 'proposals:2')).toBe(false);
 });
 
-test('adding, moving and deleting a fact checks the record’s questions again at once', async () => {
+test('adding and deleting a story checks the record’s questions again at once', async () => {
   const r = await call('POST', '/roles', { title: 'Analyst', company: 'Corbel Yard', start: '2019-03' });
   expect(r.status).toBe(201);
   const empty = `record:empty:${r.body.id}`;
-  const open = async () => ((await call('GET', '/tree')).body.questions as { key: string }[]).some((q) => q.key === empty);
-  expect(await open()).toBe(true);
-  const f = await call('POST', '/facts', { roleId: Number(r.body.id), text: 'Wrote the invented weekly report.' });
-  expect(f.status).toBe(201);
-  expect(await open()).toBe(false);
-  // Moved to another role, the role is empty again; moved back, it is not.
-  expect((await call('PATCH', `/facts/${f.body.id}`, { roleId: 4 })).status).toBe(200);
-  expect(await open()).toBe(true);
-  expect((await call('PATCH', `/facts/${f.body.id}`, { roleId: Number(r.body.id) })).status).toBe(200);
-  expect(await open()).toBe(false);
-  expect((await call('DELETE', `/facts/${f.body.id}`)).status).toBe(200);
-  expect(await open()).toBe(true);
+  const open = async () => ((await call('GET', '/tree')).body.questions as { key: string; text: string }[]).find((q) => q.key === empty);
+  expect(await open()).toEqual({ key: empty, text: 'Tell a story from Analyst at Corbel Yard.', route: `/record/role/${r.body.id}` });
+  // A fact in Day to day is no story.
+  expect((await call('POST', '/facts', { roleId: Number(r.body.id), text: 'Wrote the invented weekly report.' })).status).toBe(201);
+  expect(await open()).toBeDefined();
+  const s = await call('POST', `/roles/${r.body.id}/stories`, { title: 'The invented weekly report' });
+  expect(s.status).toBe(201);
+  expect(await open()).toBeUndefined();
+  expect((await call('DELETE', `/projects/${s.body.project}`)).status).toBe(200);
+  expect(await open()).toBeDefined();
 });
 
 test('the new routes refuse a body that is not a JSON object, and a line name that cannot be read, in words', async () => {

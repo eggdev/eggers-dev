@@ -8,9 +8,13 @@ import { answer, openRaised, raisedByKey, choiceAt } from './raised.ts';
 import { queue } from './queue.ts';
 import { bankSignature } from './db.ts';
 
-beforeEach(() => seed());
 const now = 1_800_000_000_000;
 const project = (roleId: number, title: string) => (db.query('INSERT INTO projects (role_id, title, created_at) VALUES (?, ?, 1) RETURNING id').get(roleId, title) as { id: number }).id;
+// Each of the invented person's jobs has a story told in full, so only what a test adds raises a question.
+beforeEach(() => {
+  seed();
+  for (const r of [1, 2, 3]) db.query("INSERT INTO projects (role_id, title, context, action, result, created_at) VALUES (?, 'An invented story', 'A setting.', 'I did it.', 'It changed.', 1)").run(r);
+});
 const open = () => openRaised().filter((q) => q.kind === 'record');
 // An unsent job whose reading names these facts as its best evidence.
 const leanOn = (...facts: number[]) => db.query("INSERT INTO jobs (posting, title, company, status, analysis, resume, created_at, outcome) VALUES ('A posting.', 'Engineer', 'Initech', 'done', ?, '# A resume', 1, '')")
@@ -29,7 +33,7 @@ test('each row is found, in the plan’s order, with its wording', () => {
   expect(qs.map((q) => q.text)).toEqual([
     'Was avery/sketchbook work for one of your employers, or your own project?',
     'When did you start as Head of Platform at Fernway?',
-    'What did you do as Head of Platform at Fernway? This role has nothing in it yet.',
+    'Tell a story from Head of Platform at Fernway.',
     'What came of “Rebuilt dispatch”?',
     'Built the dispatch console that schedulers use every day. What was the number before?',
     'Built the dispatch console that schedulers use every day. What was your own part?']);
@@ -74,8 +78,8 @@ test('"I don’t know" is an answer: kept, and never asked again; the next part 
   expect(answer(`record:part:${p}:result`, 1, '', now, choiceAt(`record:part:${p}:result`, 1))).toBe('');
   syncRecordQuestions(now + 1);
   expect(raisedByKey(`record:part:${p}:result`)).toMatchObject({ answeredAt: now, answer: 'I don’t know' });
-  expect(open().map((q) => q.key)).toEqual([`record:part:${p}:did`]);
-  expect(db.query('SELECT result, did FROM projects WHERE id = ?').get(p)).toEqual({ result: '', did: '' });
+  expect(open().map((q) => q.key)).toEqual([`record:part:${p}:action`]);
+  expect(db.query('SELECT result, action FROM projects WHERE id = ?').get(p)).toEqual({ result: '', action: '' });
 });
 
 test('an answer writes exactly the one value its row names, and nothing else', () => {
@@ -96,7 +100,7 @@ test('an answer writes exactly the one value its row names, and nothing else', (
   expect(after[4].part_of).toBe(1);
   expect(answer(`record:part:${p}:result`, 0, '', now, choiceAt(`record:part:${p}:result`, 0))).toBe('Write it in one line.');
   expect(answer(`record:part:${p}:result`, 0, 'Schedulers stopped using paper.', now, choiceAt(`record:part:${p}:result`, 0))).toBe('');
-  expect(db.query('SELECT result, did, situation FROM projects WHERE id = ?').get(p)).toEqual({ result: 'Schedulers stopped using paper.', did: '', situation: '' });
+  expect(db.query('SELECT result, action, context FROM projects WHERE id = ?').get(p)).toEqual({ result: 'Schedulers stopped using paper.', action: '', context: '' });
   const sig = bankSignature();
   expect(answer('record:baseline:1', 1, '', now, choiceAt('record:baseline:1', 1))).toBe('');
   // "There was none" is kept as the answer, and is not a value a resume's writer is given: the signature is unchanged.
@@ -106,7 +110,7 @@ test('an answer writes exactly the one value its row names, and nothing else', (
   // The own part is given to the writer (stage 3): the signature moves.
   expect(bankSignature()).not.toBe(sig);
   syncRecordQuestions(now + 1);
-  expect(open().map((q) => q.key)).toEqual([`record:part:${p}:did`]);
+  expect(open().map((q) => q.key)).toEqual(['record:empty:4', `record:part:${p}:action`]);
 });
 
 test('placing a repository as the owner’s own makes it a side project', () => {
@@ -189,6 +193,40 @@ test('a snoozed record question gives its place on Home to the next, and any ope
   expect(queue(now).snoozed).toBe(2);
 });
 
+test('a job with no story asks for one, and a story told under it settles it; a Day to day fact does not', () => {
+  role({ id: 4, company: 'Fernway', title: 'Head of Platform', start: '2023-01' });
+  fact(4, 'Ran the weekly platform review.');
+  syncRecordQuestions(now);
+  expect(open().map((q) => [q.key, q.text, q.data.route])).toEqual([['record:empty:4', 'Tell a story from Head of Platform at Fernway.', '/record/role/4']]);
+  project(4, 'Moved every service to one cloud');
+  syncRecordQuestions(now + 1);
+  expect(open().map((q) => q.key)).toEqual([expect.stringMatching(/^record:part:\d+:result$/)]);
+});
+
+test('a told story’s parts are held back only while it waits to be written or is being written', async () => {
+  const { startSitting } = await import('./sittings.ts');
+  const p = project(1, 'Rebuilt dispatch');
+  startSitting(p, now);
+  const asked = (status: string, at: number) => {
+    db.query('UPDATE projects SET derive_status = ? WHERE id = ?').run(status, p);
+    syncRecordQuestions(at);
+    return open().map((q) => q.key);
+  };
+  expect(asked('queued', now)).toEqual([]);
+  expect(asked('running', now + 1)).toEqual([]);
+  // Never written (only "I don't know", a sitting left open, or from before deriving), failed, or written: asked.
+  for (const [i, status] of ['', 'failed', 'done'].entries()) expect(asked(status, now + 2 + i)).toEqual([`record:part:${p}:result`]);
+});
+
+test('an answer about a part that was written since is not lost: it is written over the part, and is the owner’s from then on', () => {
+  const p = project(1, 'Rebuilt dispatch');
+  syncRecordQuestions(now);
+  const key = `record:part:${p}:result`;
+  db.query("UPDATE projects SET result = 'Written by deriving.', derived = ? WHERE id = ?").run(JSON.stringify({ result: 'Written by deriving.' }), p);
+  expect(answer(key, 0, 'Schedulers stopped using paper.', now + 1, choiceAt(key, 0))).toBe('');
+  expect(db.query('SELECT result FROM projects WHERE id = ?').get(p)).toEqual({ result: 'Schedulers stopped using paper.' });
+});
+
 test('answer checks: an empty role is not answered here; a month to come, a repository placed since, a role no longer a role', () => {
   role({ id: 4, company: 'Fernway', title: 'Head of Platform', start: '' });
   role({ id: 5, company: 'avery/sketchbook', title: '', standing: '' });
@@ -211,4 +249,27 @@ test('a repository nobody placed is asked where it belongs before anything about
   expect(recordGaps(gapInput()).map((q) => q.key)).toEqual(['record:place:5']);
   db.run("UPDATE roles SET standing = 'personal' WHERE id = 5");
   expect(recordGaps(gapInput()).map((q) => q.key)).toEqual([`record:part:${p}:result`]);
+});
+
+test('a part answered under its name before CARL stays answered: the next part is asked', () => {
+  const p = project(1, 'Billing');
+  db.query("UPDATE projects SET result = 'One bill.' WHERE id = ?").run(p);
+  // "I don't know" given to the action's question when it was keyed "did".
+  db.query("INSERT INTO raised_questions (key, kind, text, raised_at, answered_at, answer) VALUES (?, 'record', 'What did you do yourself in “Billing”?', 1, 2, 'I don’t know')").run(`record:part:${p}:did`);
+  syncRecordQuestions(now);
+  expect(open().filter((q) => q.key.startsWith(`record:part:${p}:`)).map((q) => q.key)).toEqual([`record:part:${p}:context`]);
+  db.query("INSERT INTO raised_questions (key, kind, text, raised_at, answered_at, answer) VALUES (?, 'record', 'What was going on before you started “Billing”?', 1, 2, 'I don’t know')").run(`record:part:${p}:situation`);
+  syncRecordQuestions(now);
+  expect(open().filter((q) => q.key.startsWith(`record:part:${p}:`))).toEqual([]);
+});
+
+test('an open question raised before CARL, under the part "did" or "situation", writes its answer to the new column', () => {
+  const p = project(1, 'Billing');
+  const old = (part: string, text: string) => db.query("INSERT INTO raised_questions (key, kind, text, choices, about, data, raised_at) VALUES (?, 'record', ?, ?, ?, ?, 1)")
+    .run(`record:part:${p}:${part}`, text, JSON.stringify(['Write it in one line', 'I don’t know']), `project:${p}`, JSON.stringify({ kind: 'part', subject: p, part, rank: 0, route: '', actions: [{ field: part, input: 'line' }, { field: 'none' }] }));
+  old('did', 'What did you do yourself in “Billing”?');
+  old('situation', 'What was going on before you started “Billing”?');
+  expect(answer(`record:part:${p}:did`, 0, 'I moved the queue.', now, choiceAt(`record:part:${p}:did`, 0))).toBe('');
+  expect(answer(`record:part:${p}:situation`, 0, 'Bills went out by hand.', now, choiceAt(`record:part:${p}:situation`, 0))).toBe('');
+  expect(db.query('SELECT action, context FROM projects WHERE id = ?').get(p)).toEqual({ action: 'I moved the queue.', context: 'Bills went out by hand.' });
 });

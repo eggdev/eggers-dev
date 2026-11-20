@@ -4,6 +4,7 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DB_FILE } from './paths.ts';
+import { carlOn } from './carl.ts';
 
 const path = DB_FILE;
 if (path !== ':memory:') mkdirSync(dirname(resolve(path)), { recursive: true });
@@ -28,8 +29,8 @@ db.run(`CREATE TABLE IF NOT EXISTS roles (
   location TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '')`);
 // A fact is one true thing about the person's work: `text` is its one-sentence headline and
 // `detail` the story behind it. What the person supplies is taken as true, so there is no review
-// step. status only records where the wording came from: 'proposed' is as a source was read
-// (a re-read replaces it), 'confirmed' is written or edited by the person (a re-read keeps it).
+// step. status only records where the wording came from: 'proposed' is as a source or a told story was read
+// (a later reading replaces it), 'confirmed' is written or edited by the person (a later reading keeps it).
 db.run(`CREATE TABLE IF NOT EXISTS facts (
   id INTEGER PRIMARY KEY, role_id INTEGER, kind TEXT NOT NULL, text TEXT NOT NULL,
   metric TEXT NOT NULL DEFAULT '', skills TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '',
@@ -53,20 +54,37 @@ for (const column of ["note TEXT NOT NULL DEFAULT ''", "label TEXT NOT NULL DEFA
   try { db.run(`ALTER TABLE roles ADD COLUMN ${column}`); } catch { /* already there */ }
 }
 // The record as a tree (lib/tree.ts, lib/projects.ts, lib/record.ts): Role → Project → Fact. Every change here is
-// additive and safe to run again: it creates tables, adds columns and adds triggers, and changes no stored value.
+// additive and safe to run again: it creates tables, adds columns and adds triggers (and renamed the parts once, below),
+// and changes no stored value.
 // A project is a row of its own, or (a repository's project group, a side project) a `roles` row it points at with
 // `via_role`: the resume pipeline then reads the rows it always read. Title, dates and role are this table's only
-// while via_role is NULL; the parts (situation, what I did, result, what I learned) and where it lives are always here.
+// while via_role is NULL; the four CARL parts (context, action, result, learning) and where it lives are always here.
 // origin: owner (written by hand) or proposal:<id> (kept from a proposal).
 db.run(`CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT, role_id INTEGER, via_role INTEGER UNIQUE, title TEXT NOT NULL DEFAULT '',
   start TEXT NOT NULL DEFAULT '', end TEXT NOT NULL DEFAULT '', lives TEXT NOT NULL DEFAULT '',
-  situation TEXT NOT NULL DEFAULT '', did TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '', learned TEXT NOT NULL DEFAULT '',
+  context TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '', learning TEXT NOT NULL DEFAULT '',
   origin TEXT NOT NULL DEFAULT 'owner', created_at INTEGER NOT NULL DEFAULT 0)`);
 // A fact filed in a project of its role keeps its role_id, so a resume reads it where it always did. baseline, team
 // and own_part are text, so "about 40 people" stays as the person said it.
 for (const column of ['project_id INTEGER', "baseline TEXT NOT NULL DEFAULT ''", "team TEXT NOT NULL DEFAULT ''", "own_part TEXT NOT NULL DEFAULT ''"]) {
   try { db.run(`ALTER TABLE facts ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+// told is 1 for a fact written from what the owner told about a project (lib/derive.ts). Such a fact is never deleted
+// or reworded by a source reading or a tool; only deriving that project again replaces it, while it is still proposed.
+try { db.run('ALTER TABLE facts ADD COLUMN told INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+// Deriving a told project (lib/derive.ts). derive_status: '' | queued | running | done | failed, and derive_note says
+// what was left out or why it failed. derived: what deriving last wrote to each part, as JSON, so a part the owner typed
+// or edited is told apart and never overwritten. told_at: when the latest answer deriving read was given.
+for (const column of ["derive_status TEXT NOT NULL DEFAULT ''", "derive_note TEXT NOT NULL DEFAULT ''", "derived TEXT NOT NULL DEFAULT ''", 'told_at INTEGER NOT NULL DEFAULT 0']) {
+  try { db.run(`ALTER TABLE projects ADD COLUMN ${column}`); } catch { /* already there */ }
+}
+// The spoken story (lib/spoken.ts): one text to say aloud in an interview. spoken_wrote: what the writer last wrote, so
+// a text the owner typed, edited or cleared is told apart and never overwritten. spoken_replace: 1 while the owner has
+// asked for their own text to be replaced, until a text is written or the writing fails. spoken_status: '' | queued |
+// running | done | failed, and spoken_note says what was kept or why it failed.
+for (const column of ["spoken TEXT NOT NULL DEFAULT ''", "spoken_wrote TEXT NOT NULL DEFAULT ''", 'spoken_replace INTEGER NOT NULL DEFAULT 0', "spoken_status TEXT NOT NULL DEFAULT ''", "spoken_note TEXT NOT NULL DEFAULT ''"]) {
+  try { db.run(`ALTER TABLE projects ADD COLUMN ${column}`); } catch { /* already there */ }
 }
 // official: where each field of a role came from, as an earlier version marked it. Since 2026-11-18 (the owner: the
 // record is taken as given) nothing reads or writes it; it stays only so no stored data is dropped. propose_status and
@@ -99,6 +117,13 @@ db.run(`CREATE TABLE IF NOT EXISTS project_proposals (
 // here reaches an existing database. One transaction that takes the write lock first (immediate): the server and the
 // worker start together, and neither writes between the drop and the create.
 db.transaction(() => {
+  // The project parts took their CARL names on 2026-11-19: situation is context, did is action, learned is learning. A
+  // column is renamed only while its old name is there, under the write lock, so a second start and a second process do
+  // nothing. No stored value changes.
+  const cols = (db.query('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name);
+  for (const [from, to] of [['situation', 'context'], ['did', 'action'], ['learned', 'learning']]) {
+    if (cols.includes(from) && !cols.includes(to)) db.run(`ALTER TABLE projects RENAME COLUMN ${from} TO ${to}`);
+  }
   // The trigger that cleared a role's mark when its value changed is gone with the marks: dropped at every start, which
   // is safe when it is already gone and when two processes start together (one at a time, under the write lock).
   db.run('DROP TRIGGER IF EXISTS roles_mark_cleared');
@@ -224,9 +249,11 @@ export const saidValue = (v: string | null | undefined, field = ''): string | un
 // The facts filed in a project of their own role: a project the owner made or kept (not a repository's or a side
 // project's, which are rows of roles), whose role is the fact's role. By fact id.
 export const filedInProjects = () => db.query('SELECT f.id, f.project_id FROM facts f JOIN projects p ON p.id = f.project_id AND p.via_role IS NULL AND p.role_id = f.role_id ORDER BY f.id').all() as { id: number; project_id: number }[];
-// The projects of roles that hold a filed fact, as a writer is given them: the name and the parts that are set.
-export const filedProjects = (ids: number[]) => ids.length === 0 ? [] : (db.query(`SELECT id, role_id, title, situation, did, result FROM projects WHERE id IN (${ids.map(Number).join(',')}) ORDER BY id`).all() as
-  { id: number; role_id: number; title: string; situation: string; did: string; result: string }[]).map((p) => ({ id: p.id, role_id: p.role_id, name: p.title.trim(), situation: saidValue(p.situation), what_i_did: saidValue(p.did), result: saidValue(p.result) }));
+// The projects of roles that hold a filed fact, as a writer is given them: the name and the parts that are set. Learning
+// is given only with CARL on (lib/carl.ts).
+export const filedProjects = (ids: number[]) => ids.length === 0 ? [] : (db.query(`SELECT id, role_id, title, context, action, result, learning FROM projects WHERE id IN (${ids.map(Number).join(',')}) ORDER BY id`).all() as
+  { id: number; role_id: number; title: string; context: string; action: string; result: string; learning: string }[]).map((p) => ({ id: p.id, role_id: p.role_id, name: p.title.trim(),
+  context: saidValue(p.context), action: saidValue(p.action), result: saidValue(p.result), learning: carlOn() ? saidValue(p.learning) : undefined }));
 // A fact's details as a writer is given them: baseline, team and own part, each only when it says something.
 export const factDetails = (f: { baseline?: string; team?: string; own_part?: string }) => ({ baseline: saidValue(f.baseline), team: saidValue(f.team), own_part: saidValue(f.own_part, 'own_part') });
 
@@ -247,14 +274,19 @@ export const profileSignature = () => hash(recordParts());
 
 // Changes whenever anything a resume is written from changes: what the profile reads, and also which facts are filed
 // in a project of their role, that project's name and parts, and a fact's baseline, team and own part. Those count
-// only once one is set, as the writer is given them: "There was none" and "I don't know" count as not set, and what
-// was learned, where a project lives and its source marks are never given, so they never count.
+// only once one is set, as the writer is given them: "There was none" and "I don't know" count as not set, and where a
+// project lives and its source marks are never given, so they never count. A project's learning counts once it is set
+// and CARL is on. The parts are hashed under the names they had before CARL, so the rename changes no signature. But
+// with CARL on, a filed project that has a learning changes the signature once, so its unsent resumes are written again;
+// turning EGG_CARL off or on again does the same for such a project.
 export const bankSignature = () => {
   const parts = recordParts();
   const filed = filedInProjects();
   const details = (db.query("SELECT id, baseline, team, own_part FROM facts WHERE baseline != '' OR team != '' OR own_part != '' ORDER BY id").all() as { id: number; baseline: string; team: string; own_part: string }[])
     .map((f) => ({ id: f.id, ...factDetails(f) })).filter((f) => f.baseline !== undefined || f.team !== undefined || f.own_part !== undefined);
-  if (filed.length || details.length) parts.push({ filed, projects: filedProjects([...new Set(filed.map((f) => f.project_id))]), details });
+  const projects = filedProjects([...new Set(filed.map((f) => f.project_id))])
+    .map((p) => ({ id: p.id, role_id: p.role_id, name: p.name, situation: p.context, what_i_did: p.action, result: p.result, learning: p.learning }));
+  if (filed.length || details.length) parts.push({ filed, projects, details });
   return hash(parts);
 };
 
@@ -410,9 +442,10 @@ export function applyExtraction(sourceId: number, x: Extraction, now: number): n
       if (confirmed.has(norm(text)) || gone.has(norm(text))) { skipped.push({ key: norm(text), why: confirmed.has(norm(text)) ? 'confirmed' : 'deleted' }); continue; }
       const kind = (KINDS as readonly string[]).includes(f.kind) ? f.kind : 'other';
       // A fuller version of a fact the bank already has takes its place; the person's own wording is left alone.
-      const old = /^fact:\d+$/.test(f.replaces ?? '') ? (db.query('SELECT id, status, skills, evidence FROM facts WHERE id = ?').get(Number(f.replaces!.slice(5))) as { id: number; status: string; skills: string; evidence: string } | null) : null;
+      const old = /^fact:\d+$/.test(f.replaces ?? '') ? (db.query('SELECT id, status, skills, evidence, told FROM facts WHERE id = ?').get(Number(f.replaces!.slice(5))) as { id: number; status: string; skills: string; evidence: string; told: number } | null) : null;
       if (old) {
-        if (old.status !== 'confirmed') {
+        // A fact told by the owner is theirs, as an edited one is: a source never rewords it.
+        if (old.status !== 'confirmed' && old.told === 0) {
           const skills = [...new Set([...old.skills.split(',').map((x) => x.trim()), ...(f.skills ?? [])].filter(Boolean))].join(', ');
           const evidence = [...new Set([old.evidence.trim(), (f.evidence ?? '').trim()].filter(Boolean))].join(' · ').slice(0, 1200);
           db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = CASE WHEN ? != '' THEN ? ELSE metric END, skills = ?, evidence = ? WHERE id = ?")

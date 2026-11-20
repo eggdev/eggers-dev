@@ -39,12 +39,12 @@ test('skill: in 3 roles or more; never a skill marked not confident or one that 
 
 test('measured: from 5 projects; learned: from 4 projects that say what was learned, with a phrase shared by 2', () => {
   const projects = ['Move one team at a time.', 'Hand it over early, and move one team at a time.', 'Dates hold when scope is cut.', '', 'A weekly number per team did more than any rule.']
-    .map((learned, i) => ({ id: String(i + 1), learned }));
+    .map((learning, i) => ({ id: String(i + 1), learning }));
   const facts = [fact(1, '1', 'Cut deploys to 9 minutes.', { projectId: '1' }), fact(2, '1', 'Wrote the plan.', { projectId: '2' })];
   const x = { ...none, projects, facts, metrics: [{ fact: '1', kind: 'time saved' as const }] };
   expect(howYouWork(x)).toEqual([
     { key: 'measured', text: '1 of your 5 projects have a measured result.', basis: 'Counted from your 5 projects and the numbers in their facts.', items: ['project:1'] },
-    { key: 'learned:one team at a time', text: 'What you say you learned most often: “one team at a time” (2 projects).', basis: 'Read from What I learned on 4 projects.', items: ['project:1', 'project:2'] }]);
+    { key: 'learned:one team at a time', text: 'What you say you learned most often: “one team at a time” (2 projects).', basis: 'Read from Learning on 4 projects.', items: ['project:1', 'project:2'] }]);
   expect(keys({ ...x, projects: projects.slice(0, 4) })).toEqual([]);
 });
 

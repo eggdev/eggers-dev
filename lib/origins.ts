@@ -1,36 +1,62 @@
-// Where a fact came from, in the owner's own words: the turn of Talk, the source text or the fact as the owner typed
-// it, the span of characters inside that text, and a copy of the words. A writer can then show the words behind a
-// line, and a check can tell when the text it points at has changed since. Nothing calls this yet. Additive only: one
-// new table and its triggers, created when this file is imported. Safe to import alone: the `talk` table belongs to
-// lib/talk.ts, and nothing here needs it until a talk origin is added.
+// Where a fact came from, in the owner's own words: the turn of Talk, the source text, the owner's answer in a telling
+// sitting, or the fact as the owner typed it, the span of characters inside that text, and a copy of the words. A writer
+// can then show the words behind a line, and a check can tell when the text it points at has changed since. Deriving a
+// told project (lib/derive.ts) adds told origins; the other kinds are added only by tests so far. One table and its
+// triggers, created when this file is imported. Safe to import alone: the `talk` table belongs to lib/talk.ts and
+// `capture_turns` to lib/sittings.ts, and nothing here needs them until an origin of their kind is added.
 import { carryFacts, db, type CarriedFact } from './db.ts';
 
 // talk: a row of `talk` (lib/talk.ts) the owner wrote, its body. source: a row of `sources` of kind text, its body
-// (a file's or a repository's body is its name, not the words). typed: the fact itself, its text as the owner typed it
+// (a file's or a repository's body is its name, not the words). told: one of the owner's answers in a telling sitting
+// (a row of `capture_turns`), its text, stored exactly as given. typed: the fact itself, its text as the owner typed it
 // into the record; its span is checked against the fact's text as it now stands, so an edit to the fact shows.
-export const ORIGIN_KINDS = ['talk', 'source', 'typed'] as const;
+export const ORIGIN_KINDS = ['talk', 'source', 'told', 'typed'] as const;
 export type OriginKind = (typeof ORIGIN_KINDS)[number];
 
 // span_start and span_end are offsets into the text in UTF-16 code units (as String.slice takes them), end not
 // included. quote is the words as they were when the link was made.
-db.run(`CREATE TABLE IF NOT EXISTS fact_origins (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, fact_id INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('talk', 'source', 'typed')),
+const SHAPE = `id INTEGER PRIMARY KEY AUTOINCREMENT, fact_id INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('talk', 'source', 'told', 'typed')),
   ref_id INTEGER NOT NULL, span_start INTEGER NOT NULL, span_end INTEGER NOT NULL, quote TEXT NOT NULL, added_at INTEGER NOT NULL DEFAULT 0,
-  CHECK (span_start >= 0 AND span_end > span_start))`);
-db.run('CREATE INDEX IF NOT EXISTS fact_origins_fact ON fact_origins (fact_id)');
-// For the triggers that delete the origins of a deleted Talk turn or source.
-db.run('CREATE INDEX IF NOT EXISTS fact_origins_ref ON fact_origins (kind, ref_id)');
-// A deletion is real: a deleted fact, Talk turn or source takes the origins that point at it, and their copies of the
-// words, with it. A new fact never takes origins left behind under its id. Created only if missing, so a change to a
-// body needs a DROP first to reach an existing database.
-db.run('CREATE TRIGGER IF NOT EXISTS fact_origins_gone AFTER DELETE ON facts BEGIN DELETE FROM fact_origins WHERE fact_id = OLD.id; END');
-db.run('CREATE TRIGGER IF NOT EXISTS fact_origins_fresh AFTER INSERT ON facts BEGIN DELETE FROM fact_origins WHERE fact_id = NEW.id; END');
-db.run("CREATE TRIGGER IF NOT EXISTS fact_origins_source_gone AFTER DELETE ON sources BEGIN DELETE FROM fact_origins WHERE kind = 'source' AND ref_id = OLD.id; END");
+  CHECK (span_start >= 0 AND span_end > span_start)`;
 const hasTalk = () => db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'talk'").get() !== null;
 // The talk trigger can only be made once lib/talk.ts has made its table: here, or before the first talk origin is
 // added (addOrigin). So no talk origin is ever stored without it.
 const talkTrigger = () => { if (hasTalk()) db.run("CREATE TRIGGER IF NOT EXISTS fact_origins_talk_gone AFTER DELETE ON talk BEGIN DELETE FROM fact_origins WHERE kind = 'talk' AND ref_id = OLD.id; END"); };
-talkTrigger();
+// The same for the telling sittings: a deleted answer (alone, with its sitting, or with its project) takes the told
+// origins that quote it.
+const hasTurns = () => db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'capture_turns'").get() !== null;
+const toldTrigger = () => { if (hasTurns()) db.run("CREATE TRIGGER IF NOT EXISTS fact_origins_told_gone AFTER DELETE ON capture_turns BEGIN DELETE FROM fact_origins WHERE kind = 'told' AND ref_id = OLD.id; END"); };
+
+// The table, its indexes and its triggers, in one transaction that takes the write lock first, so a second start and a
+// second process find it done and nothing is written between a rebuild and its triggers. A table made before told
+// origins existed refuses the kind: it is made again in the new shape with every row, its id, and the counter of ids
+// (an id is never handed out twice). The triggers that name it are dropped first (a rename checks every trigger) and
+// made again below. Each trigger is created only if missing, so a change to a body needs a DROP first to reach an
+// existing database.
+db.transaction(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS fact_origins (${SHAPE})`);
+  const made = (db.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fact_origins'").get() as { sql: string }).sql;
+  if (!made.includes("'told'")) {
+    const seq = (db.query("SELECT seq FROM sqlite_sequence WHERE name = 'fact_origins'").get() as { seq: number } | null)?.seq ?? 0;
+    for (const t of ['fact_origins_gone', 'fact_origins_fresh', 'fact_origins_source_gone', 'fact_origins_talk_gone', 'fact_origins_told_gone']) db.run(`DROP TRIGGER IF EXISTS ${t}`);
+    db.run(`CREATE TABLE fact_origins_next (${SHAPE})`);
+    db.run('INSERT INTO fact_origins_next SELECT id, fact_id, kind, ref_id, span_start, span_end, quote, added_at FROM fact_origins');
+    db.run('DROP TABLE fact_origins');
+    db.run('ALTER TABLE fact_origins_next RENAME TO fact_origins');
+    db.query("UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'fact_origins'").run(seq);
+    if (seq > 0) db.query("INSERT INTO sqlite_sequence (name, seq) SELECT 'fact_origins', ? WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'fact_origins')").run(seq);
+  }
+  db.run('CREATE INDEX IF NOT EXISTS fact_origins_fact ON fact_origins (fact_id)');
+  // For the triggers that delete the origins of a deleted Talk turn, source or answer.
+  db.run('CREATE INDEX IF NOT EXISTS fact_origins_ref ON fact_origins (kind, ref_id)');
+  // A deletion is real: a deleted fact, Talk turn, source or answer takes the origins that point at it, and their copies
+  // of the words, with it. A new fact never takes origins left behind under its id.
+  db.run('CREATE TRIGGER IF NOT EXISTS fact_origins_gone AFTER DELETE ON facts BEGIN DELETE FROM fact_origins WHERE fact_id = OLD.id; END');
+  db.run('CREATE TRIGGER IF NOT EXISTS fact_origins_fresh AFTER INSERT ON facts BEGIN DELETE FROM fact_origins WHERE fact_id = NEW.id; END');
+  db.run("CREATE TRIGGER IF NOT EXISTS fact_origins_source_gone AFTER DELETE ON sources BEGIN DELETE FROM fact_origins WHERE kind = 'source' AND ref_id = OLD.id; END");
+  talkTrigger();
+  toldTrigger();
+}).immediate();
 
 export type Origin = { id: number; factId: number; kind: OriginKind; refId: number; start: number; end: number; quote: string; addedAt: number };
 type OriginRow = { id: number; fact_id: number; kind: string; ref_id: number; span_start: number; span_end: number; quote: string; added_at: number };
@@ -41,6 +67,7 @@ export function originText(kind: OriginKind, refId: number): string | null {
   switch (kind) {
     case 'talk': return hasTalk() ? (db.query('SELECT body FROM talk WHERE id = ?').get(refId) as { body: string } | null)?.body ?? null : null;
     case 'source': return (db.query('SELECT body FROM sources WHERE id = ?').get(refId) as { body: string } | null)?.body ?? null;
+    case 'told': return hasTurns() ? (db.query("SELECT text FROM capture_turns WHERE id = ? AND who = 'owner'").get(refId) as { text: string } | null)?.text ?? null : null;
     case 'typed': return (db.query('SELECT text FROM facts WHERE id = ?').get(refId) as { text: string } | null)?.text ?? null;
     default: return never(kind);
   }
@@ -57,6 +84,7 @@ export type Added = { ok: true; id: number } | { ok: false; error: string };
 export function addOrigin(factId: number, o: { kind: OriginKind; refId: number; start: number; end: number }, now = Date.now()): Added {
   if (!(ORIGIN_KINDS as readonly string[]).includes(o.kind)) return { ok: false, error: 'That is not a kind of origin.' };
   if (o.kind === 'talk') talkTrigger();
+  if (o.kind === 'told') toldTrigger();
   return db.transaction((): Added => {
     if (db.query('SELECT 1 FROM facts WHERE id = ?').get(factId) === null) return { ok: false, error: 'That fact is not in the record.' };
     const refId = o.kind === 'typed' ? factId : o.refId;

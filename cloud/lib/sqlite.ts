@@ -81,13 +81,29 @@ const countOf = (db: Database, table: string) => {
   }
 };
 
-/** The size and row counts a backup records, from a copy or an unpacked file. Only counts: no row's content is read. */
+// When the owner last started a new record (lib/reset.ts), 0 for never or a database without the table.
+const resetOf = (db: Database) => {
+  try {
+    return (db.query('SELECT coalesce(max(at), 0) AS at FROM record_resets').get() as { at: number }).at;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * The size and row counts a backup records, from a copy or an unpacked file, and the time of the last new record when
+ * there is one. Only counts and that time: no row's content is read.
+ */
 export function statsOf(path: string): DbStats {
   const bytes = statSync(path).size;
-  return openFile(path, (db) => ({ bytes, roles: countOf(db, 'roles'), facts: countOf(db, 'facts'), jobs: countOf(db, 'jobs') }));
+  return openFile(path, (db) => {
+    const resetAt = resetOf(db);
+    return { bytes, roles: countOf(db, 'roles'), facts: countOf(db, 'facts'), jobs: countOf(db, 'jobs'), ...(resetAt > 0 ? { resetAt } : {}) };
+  });
 }
 
-// The queues the worker takes work from (worker.ts), each as the condition under which it will take a row.
+// The queues the worker takes work from (worker.ts), each as the condition under which it will take a row. A table or
+// column a database does not have yet is no work (busy, below).
 const WORK = [
   "SELECT 1 FROM sources WHERE status IN ('queued', 'running') LIMIT 1",
   "SELECT 1 FROM profile WHERE status IN ('queued', 'running') LIMIT 1",
@@ -96,6 +112,9 @@ const WORK = [
   "SELECT 1 FROM jobs WHERE outreach_status IN ('queued', 'running') LIMIT 1",
   "SELECT 1 FROM talk WHERE status IN ('queued', 'running') LIMIT 1",
   "SELECT 1 FROM discovery WHERE status IN ('queued', 'running') LIMIT 1",
+  "SELECT 1 FROM roles WHERE propose_status IN ('queued', 'running') LIMIT 1",
+  "SELECT 1 FROM projects WHERE derive_status IN ('queued', 'running') LIMIT 1",
+  "SELECT 1 FROM projects WHERE spoken_status IN ('queued', 'running') LIMIT 1",
 ];
 
 /** A read-only connection the keeper keeps open: the app's busy state and SQLite's change counter. */

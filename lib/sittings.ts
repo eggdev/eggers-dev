@@ -1,7 +1,8 @@
-// The sittings of Capture (lib/capture.ts): each is one interview about one role or one project, and its turns. The
-// owner's words are stored exactly as given: no trimming, no case change, no spelling fix, so a fact can later point
-// at them and quote them. Nothing calls this yet, and it makes no facts. Additive only: new tables and their triggers,
-// created when this file is imported.
+// The sittings of Capture (lib/capture.ts): each is one interview about one project, a story told under a job or on
+// the side, and its turns. The owner's words are stored exactly as given: no trimming, no case change, no spelling fix,
+// so a fact can later point at them and quote them. When a sitting ends with something said, the project is queued for
+// deriving (lib/derive.ts), which writes its four parts and its facts from the answers. Additive only: new tables and
+// their triggers, created when this file is imported.
 //
 // There are two ways to write a turn, and only two. advance: the module plans the next interviewer turn, takes its
 // words from the fixed data and stores it under the planned question; no caller can store an interviewer turn out of
@@ -9,12 +10,12 @@
 // free text.
 import { db, type RoleRow } from './db.ts';
 import { levelOf, projectRef } from './tree.ts';
-import {
-  canQuote, checkLimits, END_REASONS, hasWords, isDontKnow, isFollowUpKind, isQuestionKey, nextTurn, QUESTIONS,
-  type EndReason, type InterviewerTurn, type Limits, type OwnerTurn, type QuestionKey, type SittingState, type SubjectKind, type Turn,
-} from './capture.ts';
+import { checkLimits, END_REASONS, FOLLOW_UPS, hasWords, isDontKnow, isFollowUpKind, isQuestionKey, nextTurn, question, QUESTIONS,
+  type EndReason, type InterviewerTurn, type Limits, type OwnerTurn, type Part, type QuestionKey, type SittingState, type Turn } from './capture.ts';
 
-// A sitting is about exactly one role or one project. state: open | ended. ended_by: why it ended (done: the list is
+// A sitting is about exactly one project. role_id stays only so a database from when a role could be told still starts:
+// such a sitting is never shown, counted or continued, and no answer in it is moved to a project (the record those
+// answers were about was emptied when telling became a story). state: open | ended. ended_by: why it ended (done: the list is
 // finished, stopped: the owner stopped, limit: the turn limit), empty while open. Ids are never reused (AUTOINCREMENT),
 // so a fact linked to a turn can never come to point at someone else's words.
 db.run(`CREATE TABLE IF NOT EXISTS capture_sittings (
@@ -36,10 +37,10 @@ db.run(`CREATE TABLE IF NOT EXISTS capture_turns (
   text TEXT NOT NULL, question TEXT NOT NULL DEFAULT '', follow_up TEXT NOT NULL DEFAULT '',
   closes INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)`);
 db.run('CREATE INDEX IF NOT EXISTS capture_turns_sitting ON capture_turns (sitting_id)');
-// A deletion the owner asks for is real: a deleted role or project takes its sittings and every word in them. Each
-// trigger deletes the turns itself rather than counting on another trigger. A project that is a roles row (via_role)
-// deletes that row too (lib/record.ts), so both triggers run. Created only if missing, so a change to a body needs a
-// DROP first to reach an existing database.
+// A deletion the owner asks for is real: a deleted project takes its sittings and every word in them, and a deleted role
+// takes any sitting left from when a role could be told. Each trigger deletes the turns itself rather than counting on
+// another trigger. A project that is a roles row (via_role) deletes that row too (lib/record.ts), so both triggers run.
+// Created only if missing, so a change to a body needs a DROP first to reach an existing database.
 db.run(`CREATE TRIGGER IF NOT EXISTS capture_role_gone AFTER DELETE ON roles BEGIN
   DELETE FROM capture_turns WHERE sitting_id IN (SELECT id FROM capture_sittings WHERE role_id = OLD.id);
   DELETE FROM capture_sittings WHERE role_id = OLD.id; END`);
@@ -47,21 +48,18 @@ db.run(`CREATE TRIGGER IF NOT EXISTS capture_project_gone AFTER DELETE ON projec
   DELETE FROM capture_turns WHERE sitting_id IN (SELECT id FROM capture_sittings WHERE project_id = OLD.id);
   DELETE FROM capture_sittings WHERE project_id = OLD.id; END`);
 
-export type Subject = { kind: SubjectKind; id: number };
-export type Sitting = { id: number; subject: Subject; state: 'open' | 'ended'; endedBy: EndReason | null; startedAt: number; endedAt: number };
+export type Sitting = { id: number; project: number; state: 'open' | 'ended'; endedBy: EndReason | null; startedAt: number; endedAt: number };
 // A stored turn. question is the key as stored, which may no longer be in the list (the turn's key is then null).
 export type StoredTurn = Turn & { id: number; at: number; question: string };
 export type Refused = { ok: false; error: string };
 
-type SittingRow = { id: number; role_id: number | null; project_id: number | null; state: string; ended_by: string; started_at: number; ended_at: number };
+type SittingRow = { id: number; project_id: number; state: string; ended_by: string; started_at: number; ended_at: number };
 type TurnRow = { id: number; sitting_id: number; who: string; step: string; text: string; question: string; follow_up: string; closes: number; at: number };
 
 const isEndReason = (s: string): s is EndReason => (END_REASONS as readonly string[]).includes(s);
 
-function toSitting(r: SittingRow): Sitting {
-  const subject: Subject = r.role_id !== null ? { kind: 'role', id: r.role_id } : { kind: 'project', id: r.project_id! };
-  return { id: r.id, subject, state: r.state === 'ended' ? 'ended' : 'open', endedBy: isEndReason(r.ended_by) ? r.ended_by : null, startedAt: r.started_at, endedAt: r.ended_at };
-}
+const toSitting = (r: SittingRow): Sitting =>
+  ({ id: r.id, project: r.project_id, state: r.state === 'ended' ? 'ended' : 'open', endedBy: isEndReason(r.ended_by) ? r.ended_by : null, startedAt: r.started_at, endedAt: r.ended_at });
 
 // A stored row as the turn capture.ts reasons about. A question key or follow-up kind no longer in the list reads as
 // null: the turn stays in place and settles nothing.
@@ -84,29 +82,13 @@ function toTurn(r: TurnRow, endedBy: EndReason | null): StoredTurn {
   }
 }
 
-const subjectWhere = (s: Subject) => (s.kind === 'role' ? 'role_id = ?' : 'project_id = ?');
-
-// Why a sitting cannot be about this role or project, or '' when it can. A roles row that the record shows as a
-// project, a side project or a repository nobody placed (lib/tree.ts, levelOf) is not a role: a sitting about it is
-// started on the project that carries it, so the same work never has two separate question lists.
-function subjectProblem(s: Subject): string {
-  if (s.kind === 'project') return db.query('SELECT 1 FROM projects WHERE id = ?').get(s.id) === null ? 'That project is not in the record.' : '';
-  const roles = db.query('SELECT * FROM roles').all() as RoleRow[];
-  const row = roles.find((r) => r.id === s.id);
-  if (!row) return 'That role is not in the record.';
-  const level = levelOf(row, roles);
-  if (level === 'role') return '';
-  const carrier = db.query('SELECT id FROM projects WHERE via_role = ?').get(s.id) as { id: number } | null;
-  const what = level === 'project' ? 'a project' : level === 'side' ? 'a side project' : 'a repository not yet placed';
-  return `That row is ${what} in the record, not a role. ${carrier ? `Start the sitting on its project, ${projectRef(carrier.id)}.` : 'Place it first.'}`;
-}
-
+// A sitting about a project; one left from a role is not one.
 export function sitting(id: number): Sitting | null {
-  const r = db.query('SELECT * FROM capture_sittings WHERE id = ?').get(id) as SittingRow | null;
+  const r = db.query('SELECT * FROM capture_sittings WHERE id = ? AND project_id IS NOT NULL').get(id) as SittingRow | null;
   return r ? toSitting(r) : null;
 }
-// The sittings about one role or project, oldest first.
-export const sittingsOf = (s: Subject): Sitting[] => (db.query(`SELECT * FROM capture_sittings WHERE ${subjectWhere(s)} ORDER BY id`).all(s.id) as SittingRow[]).map(toSitting);
+// The sittings about one project, oldest first.
+export const sittingsOf = (project: number): Sitting[] => (db.query('SELECT * FROM capture_sittings WHERE project_id = ? ORDER BY id').all(project) as SittingRow[]).map(toSitting);
 
 // A sitting's turns, oldest first.
 export function turnsOf(sittingId: number): StoredTurn[] {
@@ -115,42 +97,45 @@ export function turnsOf(sittingId: number): StoredTurn[] {
   return (db.query('SELECT * FROM capture_turns WHERE sitting_id = ? ORDER BY id').all(sittingId) as TurnRow[]).map((r) => toTurn(r, s.endedBy));
 }
 
-// What a later slice needs to link a fact to the owner's words: the turn's id and its exact text. Null when the turn
-// is gone or is not the owner's.
-export function ownerWords(turnId: number): { id: number; text: string } | null {
-  const r = db.query("SELECT id, text FROM capture_turns WHERE id = ? AND who = 'owner'").get(turnId) as { id: number; text: string } | null;
-  return r ? { id: r.id, text: r.text } : null;
-}
-
 export type QuestionState = 'open' | 'answered' | 'closed';
-// Where each question of the list stands for one role or project, across all its sittings, in the list's order.
-// answered: the owner gave an answer that was not "I don't know". closed: the only answers were "I don't know", so it
-// is never asked again. open: not yet answered. A deleted answer no longer counts, so its question can open again. An
-// answer filed under a key no longer in the list counts for nothing.
-export function questionStatus(s: Subject): { key: QuestionKey; state: QuestionState }[] {
+// Where each question of the list stands for one project, across all its sittings, in the list's order. answered: the
+// owner gave an answer that was not "I don't know". closed: the only answers were "I don't know", so it is never asked
+// again. open: not yet answered. A deleted answer no longer counts, so its question can open again. An answer filed
+// under a key no longer in the list counts for nothing.
+export function questionStatus(project: number): { key: QuestionKey; state: QuestionState }[] {
   const rows = db.query(`SELECT t.question, max(CASE WHEN t.closes = 0 THEN 1 ELSE 0 END) AS answered FROM capture_turns t
-    JOIN capture_sittings x ON x.id = t.sitting_id WHERE x.${subjectWhere(s)} AND t.who = 'owner' GROUP BY t.question`).all(s.id) as { question: string; answered: number }[];
+    JOIN capture_sittings x ON x.id = t.sitting_id WHERE x.project_id = ? AND t.who = 'owner' GROUP BY t.question`).all(project) as { question: string; answered: number }[];
   const by = new Map(rows.map((r) => [r.question, r.answered === 1 ? 'answered' as const : 'closed' as const]));
   return QUESTIONS.map((q) => ({ key: q.key, state: by.get(q.key) ?? 'open' }));
 }
-const settledFor = (s: Subject) => new Set(questionStatus(s).filter((q) => q.state !== 'open').map((q) => q.key));
-// For the reminder: the owner's latest answer about "pick" that names a piece of work (canQuote), follow-up answers
-// included. After "I can't remember one", the real pick is in the answer to the anchor follow-up. None: no reminder.
-const pickedFor = (s: Subject) => (db.query(`SELECT t.text FROM capture_turns t JOIN capture_sittings x ON x.id = t.sitting_id
-  WHERE x.${subjectWhere(s)} AND t.who = 'owner' AND t.question = 'pick' ORDER BY t.id DESC`).all(s.id) as { text: string }[]).find((r) => canQuote(r.text))?.text;
+const settledFor = (project: number) => new Set(questionStatus(project).filter((q) => q.state !== 'open').map((q) => q.key));
+// The project's name, as the record shows it: its own title, or the name of the roles row that carries it.
+export const projectTitle = (project: number): string =>
+  (db.query('SELECT coalesce(r.company, p.title) AS title FROM projects p LEFT JOIN roles r ON r.id = p.via_role WHERE p.id = ?').get(project) as { title: string } | null)?.title ?? '';
 
-// Starts a sitting about a role or a project. If one is already open for it, that one is given back (resumed: true),
-// so there is never more than one open sitting about the same thing. A new sitting continues with the questions not
-// yet answered or closed; when none is left there is nothing to start.
-export function startSitting(s: Subject, now: number): { ok: true; id: number; resumed: boolean } | Refused {
-  const problem = subjectProblem(s);
-  if (problem) return { ok: false, error: problem };
+// Why a story cannot be added under this roles row, or '' when it can. A story is added only under a job: a roles row
+// that the record shows as a project, a side project or a repository nobody placed (lib/tree.ts, levelOf) is told from
+// the project that carries it, so the same work never has two question lists.
+export function storyRefused(role: number): string {
+  const roles = db.query('SELECT * FROM roles').all() as RoleRow[], row = roles.find((r) => r.id === role);
+  if (!row) return 'That job is no longer in your record.';
+  const level = levelOf(row, roles);
+  if (level === 'role') return '';
+  const carrier = db.query('SELECT id FROM projects WHERE via_role = ?').get(role) as { id: number } | null;
+  const what = level === 'project' ? 'a project' : level === 'side' ? 'a side project' : 'a repository not yet placed';
+  return `That row is ${what} in the record, not a job. ${carrier ? `Tell it from its project, ${projectRef(carrier.id)}.` : 'Place it first.'}`;
+}
+
+// Starts a sitting about a project. If one is already open for it, that one is given back (resumed: true), so there is
+// never more than one open sitting about the same thing. A new sitting continues with the questions not yet answered
+// or closed; when none is left there is nothing to start.
+export function startSitting(project: number, now: number): { ok: true; id: number; resumed: boolean } | Refused {
+  if (db.query('SELECT 1 FROM projects WHERE id = ?').get(project) === null) return { ok: false, error: 'That project is not in the record.' };
   return db.transaction((): { ok: true; id: number; resumed: boolean } | Refused => {
-    const open = db.query(`SELECT id FROM capture_sittings WHERE ${subjectWhere(s)} AND state = 'open' ORDER BY id LIMIT 1`).get(s.id) as { id: number } | null;
+    const open = db.query("SELECT id FROM capture_sittings WHERE project_id = ? AND state = 'open' ORDER BY id LIMIT 1").get(project) as { id: number } | null;
     if (open) return { ok: true, id: open.id, resumed: true };
-    if (questionStatus(s).every((q) => q.state !== 'open')) return { ok: false, error: 'Every question about this is already answered.' };
-    const r = db.query('INSERT INTO capture_sittings (role_id, project_id, started_at) VALUES (?, ?, ?) RETURNING id')
-      .get(s.kind === 'role' ? s.id : null, s.kind === 'project' ? s.id : null, now) as { id: number };
+    if (questionStatus(project).every((q) => q.state !== 'open')) return { ok: false, error: 'Every question about this is already answered.' };
+    const r = db.query('INSERT INTO capture_sittings (project_id, started_at) VALUES (?, ?) RETURNING id').get(project, now) as { id: number };
     return { ok: true, id: r.id, resumed: false };
   }).immediate();
 }
@@ -159,7 +144,7 @@ export function startSitting(s: Subject, now: number): { ok: true; id: number; r
 export function stateOf(sittingId: number, opts: { stop?: boolean; limits?: Partial<Limits> } = {}): SittingState | null {
   const s = sitting(sittingId);
   if (!s) return null;
-  return { subject: s.subject.kind, turns: turnsOf(sittingId), settled: settledFor(s.subject), picked: pickedFor(s.subject), stop: opts.stop, limits: opts.limits };
+  return { turns: turnsOf(sittingId), settled: settledFor(s.project), title: projectTitle(s.project), stop: opts.stop, limits: opts.limits };
 }
 
 // An interviewer turn as advance stored it.
@@ -255,16 +240,48 @@ export function answerTurn(sittingId: number, turnId: number, text: string, now:
   }).immediate();
 }
 
-// Ends a sitting with no closing line, for a caller that must close one without saying anything. The normal end is
-// advance with stop, which says the closing line. Returns false when the sitting is gone or already ended.
-export const endSitting = (sittingId: number, reason: EndReason, now: number): boolean =>
-  db.query("UPDATE capture_sittings SET state = 'ended', ended_by = ?, ended_at = ? WHERE id = ? AND state = 'open'").run(reason, now, sittingId).changes > 0;
+// One of the owner's answers about a project as deriving reads it (lib/derive.ts): its turn, the question it answers
+// and that question's CARL part ('' for a question no longer in the list), the follow-up it answers ('' for none), its
+// words exactly as stored, and when it was given.
+export type Told = { turn: number; key: string; part: Part | ''; question: string; followUp: string; text: string; at: number };
+// Every answer about a project, from every sitting, in the order given, but those that are only "I don't know".
+export function toldAbout(project: number): Told[] {
+  const rows = db.query(`SELECT t.id, t.question, t.follow_up, t.text, t.at FROM capture_turns t JOIN capture_sittings x ON x.id = t.sitting_id
+    WHERE x.project_id = ? AND t.who = 'owner' AND t.closes = 0 ORDER BY t.id`).all(project) as { id: number; question: string; follow_up: string; text: string; at: number }[];
+  return rows.map((r) => ({ turn: r.id, key: r.question, part: isQuestionKey(r.question) ? question(r.question).part : '', question: isQuestionKey(r.question) ? question(r.question).text : '',
+    followUp: isFollowUpKind(r.follow_up) ? FOLLOW_UPS[r.follow_up].text : '', text: r.text, at: r.at }));
+}
+// Whether a project holds an answer deriving can read.
+export const hasSaid = (project: number) => db.query(`SELECT 1 FROM capture_turns t JOIN capture_sittings x ON x.id = t.sitting_id
+  WHERE x.project_id = ? AND t.who = 'owner' AND t.closes = 0 LIMIT 1`).get(project) !== null;
+// Queues a project for deriving (lib/derive.ts runs it). Asked again while it runs, it runs again once that run ends.
+export const queueDerive = (project: number) => db.query("UPDATE projects SET derive_status = 'queued', derive_note = '' WHERE id = ?").run(project);
+
+// Ends a sitting, for any reason. The normal end is advance (with stop, or at the last question), which says the
+// closing line first. A sitting that holds something said queues its project for deriving (lib/derive.ts). Returns
+// false when the sitting is gone or already ended.
+export function endSitting(sittingId: number, reason: EndReason, now: number): boolean {
+  const ended = db.query("UPDATE capture_sittings SET state = 'ended', ended_by = ?, ended_at = ? WHERE id = ? AND state = 'open' AND project_id IS NOT NULL").run(reason, now, sittingId).changes > 0;
+  const project = sitting(sittingId)?.project;
+  if (ended && project !== undefined && hasSaid(project)) queueDerive(project);
+  return ended;
+}
+
+// A deleted answer or sitting: the facts and parts written from it may no longer stand, so a project already derived
+// is derived again from what is left.
+function deriveAgain(project: number) {
+  if ((db.query('SELECT derive_status FROM projects WHERE id = ?').get(project) as { derive_status: string } | null)?.derive_status) queueDerive(project);
+}
 
 // Deletes one sitting and every turn in it. Its answers no longer count, so their questions open again.
 export function deleteSitting(sittingId: number): boolean {
   return db.transaction(() => {
+    const s = sitting(sittingId);
+    if (!s) return false;
     db.query('DELETE FROM capture_turns WHERE sitting_id = ?').run(sittingId);
-    return db.query('DELETE FROM capture_sittings WHERE id = ?').run(sittingId).changes > 0;
+    db.query('DELETE FROM capture_sittings WHERE id = ?').run(sittingId);
+    deriveAgain(s.project);
+    return true;
   }).immediate();
 }
 
@@ -273,14 +290,17 @@ export function deleteSitting(sittingId: number): boolean {
 // the answer it followed. An answer to a follow-up goes alone. The question then counts as unanswered unless another
 // sitting answered it. The interviewer's turns stay. If that question is the last turn of an open sitting, it waits for
 // a new answer. Otherwise it is not asked again in the same sitting, since that would be out of order: it comes in its
-// place in the next sitting. Refused (false) for an interviewer turn or a turn that is gone.
+// place in the next sitting. Refused (false) for an interviewer turn, a turn that is gone, and a turn of a sitting left
+// from a role.
 export function deleteOwnerTurn(turnId: number): boolean {
   return db.transaction(() => {
-    const t = db.query("SELECT * FROM capture_turns WHERE id = ? AND who = 'owner'").get(turnId) as TurnRow | null;
+    const t = db.query("SELECT t.*, x.project_id FROM capture_turns t JOIN capture_sittings x ON x.id = t.sitting_id WHERE t.id = ? AND t.who = 'owner' AND x.project_id IS NOT NULL").get(turnId) as (TurnRow & { project_id: number }) | null;
     if (!t) return false;
     if (t.follow_up === '' && t.question !== '') {
       db.query("DELETE FROM capture_turns WHERE sitting_id = ? AND who = 'owner' AND question = ? AND follow_up != ''").run(t.sitting_id, t.question);
     }
-    return db.query('DELETE FROM capture_turns WHERE id = ?').run(turnId).changes > 0;
+    db.query('DELETE FROM capture_turns WHERE id = ?').run(turnId);
+    deriveAgain(t.project_id);
+    return true;
   }).immediate();
 }

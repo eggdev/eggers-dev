@@ -53,6 +53,16 @@ shape ExperienceLook
   besideFrom: number
 
 fn experienceLook(): ExperienceLook = ExperienceLook(firstView="roles", factsShown=6, indent=1.5, besideFrom=1040)
+// A text set to be read aloud (the spoken story, DESIGN.md section 12): the `text` size, with looser leading and a
+// narrower column than running text, so the eye finds the next line while the voice runs on. leading: line height;
+// measure: the column's width, in rem; paragraphGap: the space between paragraphs, in rows.
+shape ReadingLook
+  leading: number
+  measure: number
+  paragraphGap: number
+
+fn readingLook(): ReadingLook = ReadingLook(leading=1.7, measure=34, paragraphGap=1.5)
+
 // From this width an opened item is drawn beside the list; under it, under its own row.
 fn lookBeside(): number = experienceLook().besideFrom
 // How far a row of the tree steps in at a level (0 for the top).
@@ -199,6 +209,21 @@ component Prose
     testId: string
   view
     text text font-size=lookText() font-weight=(strong ? look().strong : 400) line-height=lookLeading() color="look.ink" white-space="pre-wrap" overflow-wrap="break-word" testId=testId
+
+// A paragraph to be read aloud, and its place in the text ("0" for the first).
+shape ReadParagraph
+  id: string
+  text: string
+
+// Paragraphs to be read aloud (readingLook): each kept as written, its line breaks too.
+component ReadAloud
+  props
+    paragraphs: ReadParagraph[]
+    testId: string
+  view
+    column gap=(look().rowGap * readingLook().paragraphGap) max-width=`${readingLook().measure}rem` testId=testId
+      for p in paragraphs key=p.id
+        text p.text font-size=lookText() font-weight=400 line-height=`${readingLook().leading}` color="look.ink" white-space="pre-line" overflow-wrap="break-word" testId=`${testId}-${p.id}`
 
 // A failure, in red: what was refused and why, in the words it was refused in.
 component FailLine

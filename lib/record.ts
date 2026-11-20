@@ -11,6 +11,7 @@ import { inventory } from './metrics.ts';
 import { suggestedResults } from './propose.ts';
 import { handWrote, openRaised } from './raised.ts';
 import { allSkills } from './skills.ts';
+import { originsOf } from './origins.ts';
 
 type Body = Record<string, unknown>;
 // wrote: false when the request changed nothing (a Save with no change), so no time of a hand write is kept for it.
@@ -116,7 +117,7 @@ export function readTree() {
 }
 
 // What "How you work" counts from (lib/derived.ts): the tree, each fact's skills, the metrics inventory, the skills list.
-export function derivedInput(t: { roles: { id: string }[]; projects: { id: string; learned: string }[]; facts: { id: string; roleId: string; projectId: string; text: string; metric: string }[] }): DerivedInput {
+export function derivedInput(t: { roles: { id: string }[]; projects: { id: string; learning: string }[]; facts: { id: string; roleId: string; projectId: string; text: string; metric: string }[] }): DerivedInput {
   const skills = new Map((db.query('SELECT id, skills FROM facts').all() as { id: number; skills: string }[]).map((f) => [String(f.id), f.skills]));
   const metrics = inventory(db.query("SELECT id, role_id, metric FROM facts WHERE metric != ''").all() as { id: number; role_id: number | null; metric: string }[]);
   return { roles: t.roles, projects: t.projects, facts: t.facts.map((f) => ({ ...f, skills: skills.get(f.id) ?? '' })), metrics: metrics.map((m) => ({ fact: String(m.fact), kind: m.kind })),
@@ -134,13 +135,15 @@ export function derivedNow() {
 export const keptLines = () => shownLines(derivedNow(), verdicts()).filter((l) => l.verdict === 'kept');
 
 // One fact whole (GET /facts/:id): its story, evidence and skills too. null when it is gone. Where it was read from is
-// not given: the owner's record is taken as the owner gave it, and no screen says where a value came from.
+// not given: the owner's record is taken as the owner gave it, and no screen says where a value came from. said: for a
+// fact written from a told story, the passages of the owner's own answers it quotes (lib/derive.ts), oldest first.
 export function fullFact(id: number) {
   const f = db.query('SELECT * FROM facts WHERE id = ?').get(id) as (FactLean & { detail: string; skills: string; evidence: string; baseline: string; team: string; own_part: string }) | null;
   if (!f) return null;
   const at = placeOf(f, rolesNow(), projectsNow());
   return { id: String(f.id), ref: factRef(f.id), roleId: at.role === null ? '' : String(at.role), projectId: at.project === null ? '' : String(at.project), kind: f.kind, text: f.text, detail: f.detail,
-    metric: f.metric, skills: f.skills, evidence: f.evidence, baseline: f.baseline, team: f.team, ownPart: f.own_part };
+    metric: f.metric, skills: f.skills, evidence: f.evidence, baseline: f.baseline, team: f.team, ownPart: f.own_part,
+    said: originsOf(id).filter((o) => o.kind === 'told').map((o) => o.quote) };
 }
 
 // ---------- Roles ----------
@@ -243,10 +246,10 @@ export function deleteRole(id: number, now = Date.now()): Done {
 // ---------- Projects ----------
 
 const projectRow = (id: number) => db.query('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | null;
-const PARTS = ['lives', 'situation', 'did', 'result', 'learned'] as const;
+const PARTS = ['lives', 'context', 'action', 'result', 'learning'] as const;
 // A project's longer parts: each at most this long, refused in words when longer and never cut (as a title is).
 export const MAX_PART = 4000;
-const PART_WORDS: Record<string, string> = { situation: 'the situation', did: 'what you did', result: 'the result', learned: 'what you learned' };
+const PART_WORDS: Record<string, string> = { context: 'the context', action: 'the action', result: 'the result', learning: 'the learning' };
 const partsRefused = (parts: Partial<Record<string, string>>): Done | null => {
   const long = Object.keys(PART_WORDS).find((k) => (parts[k] ?? '').length > MAX_PART);
   return long ? refuse(`Keep ${PART_WORDS[long]} to at most 4,000 characters. Nothing was saved.`) : null;

@@ -4,10 +4,11 @@
 // - `syncQuestions`: brings the questions code raises for the person (lib/raised.ts) in step with the data: the
 //   timeline, the LinkedIn differences, and skills not yet marked.
 // A flag never changes a resume. What code repairs in a resume a model wrote is done before this (lib/entries.ts).
-import { bullets, wrongTense } from './ats.ts';
+import { bullets, contextClause, wrongTense } from './ats.ts';
+import { carlOn } from './carl.ts';
 import { db, type RoleRow } from './db.ts';
 import { checkEntries, emptyEntries, employers, normCompany, type ProjectName } from './entries.ts';
-import { checkLinks, keyMark, keyOf, linksOn, places, type CitedFact, type Links } from './links.ts';
+import { checkLinks, keyMark, keyOf, linkFinder, linksOn, places, type CitedFact, type Links } from './links.ts';
 import { syncLinkedin } from './linkedin.ts';
 import { inventory, kept, type FactLite } from './metrics.ts';
 import { NUMBER_TOKEN, redact, unsupported } from './numbers.ts';
@@ -15,7 +16,7 @@ import { keptLines } from './record.ts';
 import { onAnswer, openRaised, raise, type Raised } from './raised.ts';
 import { parseResume, sentences, skimView, STANDARD, wordCount, type Entry, type Resume } from './resume.ts';
 import type { Skim } from './skim.ts';
-import { allSkills, skillProblems, syncSkills } from './skills.ts';
+import { allSkills, skillProblems, syncSkills, technologyProblems } from './skills.ts';
 import { timeline, type Action, type Finding } from './timeline.ts';
 
 // high: a fact on the page disagrees with the bank. warn: a rule is broken. info: worth knowing.
@@ -46,6 +47,7 @@ function shownFindings(resume: Resume, roles: RoleRow[], now: number): Finding[]
 }
 
 // What the rules find in the resume's own text, measured against the bank. The same for a written and an edited resume.
+// An entry's Technologies line is no bullet (lib/resume.ts): it is never read as a fragment, a stack list or a line to cite.
 // `links`: the resume's links to its facts (lib/links.ts), null for a resume written before them: then no link is checked
 // and every line has today's checks. `owner`: the text is the owner's own edit, in which they may type what they like.
 export function codeFlags(markdown: string, pages: number, now = Date.now(), context: FlagContext = flagContext(), links: Links | null = null, owner = false): Flag[] {
@@ -84,8 +86,15 @@ export function codeFlags(markdown: string, pages: number, now = Date.now(), con
   const skills = skillProblems(resume.skills, pages);
   if (skills.over > 0) out.push({ kind: 'skills-cap', severity: 'warn', text: `Skills lists ${resume.skills.length} items. The most for this length is ${skills.cap}.` });
   if (skills.notAllowed.length > 0) out.push({ kind: 'skills-other', severity: 'warn', items: skills.notAllowed, text: `Skills lists items that are not on your skills list as a tool, language or platform you are confident in: ${list(skills.notAllowed, 8)}.` });
+  // Rule 14: an entry's Technologies line names only what its own facts name and what may be on a resume. Code writes it
+  // that way, so this is found on a line the owner edited, or one written before a mark changed.
+  for (const e of resume.experience.filter((x) => x.technologies.length > 0)) {
+    const g = groups.find((x) => x.rows.some((r) => normCompany(r.company) === normCompany(e.company || e.title)));
+    const off = technologyProblems(e.technologies, new Set(g ? [...g.rows, ...g.children].map((r) => r.id) : []));
+    if (off.length > 0) out.push({ kind: 'technologies-other', severity: 'warn', items: off, text: `The Technologies line of “${e.heading}” names items that no fact of that job names, or that are not on your skills list as a tool, language or platform you are confident in: ${list(off, 8)}.`, at: [roleAt(e)] });
+  }
   if (skills.unconfirmed) out.push({ kind: 'skills-unconfirmed', severity: 'info', text: 'You have not reviewed your skills list yet, so this resume may name a skill you would not defend in an interview. Review the list once and this goes away.' });
-  const tense = bullets(markdown).flags.filter((f) => /tense/.test(f.why));
+  const tense = bullets(markdown, [], pages).flags.filter((f) => /tense/.test(f.why));
   if (tense.length > 0) out.push({ kind: 'tense', severity: 'info', items: tense.map((f) => f.quote), text: `${tense.length} ${tense.length === 1 ? 'bullet opens' : 'bullets open'} in the wrong tense for the job: the present tense is for your current job, the past tense for the others.`,
     // Placed on each bullet where the slip holds: under its own heading, in the order of the page (lib/resumeview.ts puts
     // repeated anchors on successive lines of the same words), never on the same words under a role where it is right.
@@ -97,6 +106,7 @@ export function codeFlags(markdown: string, pages: number, now = Date.now(), con
   // facts it cites, in place of the employer-wide context check. A resume with no links has none of this.
   const linked = links && linksOn() ? checkLinks(markdown, links, { ...cited(context), roles }) : undefined;
   out.push(...contextFlags(resume, roles, context, linked?.linked));
+  if (links && linksOn() && carlOn() && !owner) out.push(...carlFlags(markdown, links, roles, context));
   for (const f of linked?.findings ?? []) out.push({ kind: f.kind, severity: f.severity, text: f.text, at: [f.place.where === 'summary' ? { where: 'summary' } : { where: 'bullet', entry: f.place.entry, text: f.place.text }] });
   // A key a model left in its text with links on is never printed (lib/links.ts takes every shape it can read out first).
   // Not on the owner's own edit, and not on a resume written before links or with them off.
@@ -113,8 +123,8 @@ const roleAt = (e: Entry): Anchor => ({ where: 'role', entry: entryOf(e), text: 
 // Rule 9, a number is never invented, now that a writer is given context beside the facts: a project's name and parts
 // (lib/jobs.ts, bank) and the kept lines of "How you work" (brief). The numbers no fact holds are taken out of what the
 // writer is given ("[number]", lib/numbers.ts, redact), so this check is the simple one:
-// - `context-number`: a number in a bullet whose value stands in the context as stored (the name and parts of every
-//   project of a role in the record) and in no fact of the bullet's employer, with its story, metric, number before,
+// - `context-number`: a number in a bullet whose value stands in the context as stored (the name and the four CARL
+//   parts of every project of a role in the record) and in no fact of the bullet's employer, with its story, metric, number before,
 //   team, own part and skills. In the summary any fact counts, and a count of years is left to the role dates. Only the
 //   value is compared (lib/numbers.ts, unsupported), so a flagged number is one no such fact holds in any form.
 // - `number-mark`: a resume that prints "[number]".
@@ -123,16 +133,54 @@ const roleAt = (e: Entry): Anchor => ({ where: 'role', entry: entryOf(e), text: 
 export type FlagContext = { context: string; names: ProjectName[]; lines: { key: string; text: string }[];
   facts: { role_id: number | null; text: string; detail: string; metric: string; baseline: string; team: string; own_part: string; skills: string }[]; versions: string[];
   // Every fact with its id, and the person's tools by name, for the check of links (read once, when a resume has links).
-  cited?: { facts: CitedFact[]; versions: string[] } };
+  cited?: { facts: CitedFact[]; versions: string[] };
+  // The projects' Context and Learning and which project each fact is filed in, for the CARL checks (read once).
+  carl?: { projects: { id: number; context: string; learning: string }[]; filed: Map<number, number> } };
 // What these checks read from the record, read once: reflagOpen and compose take it once for every resume they check.
 export function flagContext(): FlagContext {
-  const projects = db.query("SELECT title, situation, did, result FROM projects WHERE via_role IS NULL AND role_id IS NOT NULL").all() as { title: string; situation: string; did: string; result: string }[];
-  const context = projects.map((p) => [p.title, p.situation, p.did, p.result].join(' ')).join(' ');
+  const projects = db.query("SELECT title, context, action, result, learning FROM projects WHERE via_role IS NULL AND role_id IS NOT NULL").all() as { title: string; context: string; action: string; result: string; learning: string }[];
+  const context = projects.map((p) => [p.title, p.context, p.action, p.result, p.learning].join(' ')).join(' ');
   const lines = keptLines();
   const names = projectNames();
   if (context.trim() === '' && lines.length === 0) return { context: '', names, lines, facts: [], versions: [] };
   const facts = db.query('SELECT role_id, text, detail, metric, baseline, team, own_part, skills FROM facts').all() as FlagContext['facts'];
   return { context, names, lines, facts, versions: versionNames() };
+}
+// Rule 13, with links and CARL, on a resume a model wrote. Two soft checks of the words a bullet may take from a project:
+// - `context-words`: the bullet's opening context clause holds a content word that none of the facts it cites (their
+//   text, story, metric, number before, team and own part) holds, and none of the Context parts of the projects those
+//   facts are filed in. A word written another way ("warehouse" for "warehouses") is the same word; a synonym is not.
+// - `learning-elsewhere`: the bullet holds four or more words in a row from a project's Learning, and none of the facts
+//   it cites is filed in that project: a Learning goes only on a bullet of its own project.
+// Both are flags for the owner and the writer, never a reason to refuse: code cannot tell a fair paraphrase.
+const STOP = new Set('a an the and or but of to in on at by for from with without into over under across after before during while when as its their our his her this that these those than then it is are was were be been being new one two three four five six seven eight nine ten per each every all some more most less few many much'.split(' '));
+const stem = (w: string) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
+const contentWords = (text: string) => (text.toLowerCase().match(/[\p{L}][\p{L}'-]*/gu) ?? []).map((w) => w.replace(/['’]s$/, '')).filter((w) => w.length > 2 && !STOP.has(w)).map(stem);
+const runs4 = (text: string) => { const w = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []; return new Set(w.slice(3).map((_x, i) => w.slice(i, i + 4).join(' '))); };
+function carlFlags(markdown: string, links: Links, roles: RoleRow[], c: FlagContext): Flag[] {
+  const out: Flag[] = [], find = linkFinder(links), facts = new Map(cited(c).facts.map((f) => [f.id, f]));
+  const parts = c.carl ??= { projects: db.query('SELECT id, context, learning FROM projects WHERE via_role IS NULL').all() as { id: number; context: string; learning: string }[],
+    filed: new Map((db.query('SELECT id, project_id FROM facts WHERE project_id IS NOT NULL').all() as { id: number; project_id: number }[]).map((f) => [f.id, f.project_id])) };
+  for (const p of places(markdown, roles.map((r) => r.company)).places.filter((x) => x.where === 'bullet')) {
+    const ids = (find(p)?.facts ?? []).filter((id) => facts.has(id));
+    if (ids.length === 0) continue;
+    const homes = new Set(ids.map((id) => parts.filed.get(id)).filter((x) => x !== undefined));
+    const at: Anchor[] = [{ where: 'bullet', entry: p.entry, text: p.text }];
+    const clause = contextClause(p.text);
+    if (clause) {
+      const held = new Set(contentWords([...ids.map((id) => { const f = facts.get(id)!; return [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part].join(' '); }),
+        ...parts.projects.filter((x) => homes.has(x.id)).map((x) => x.context)].join(' ')));
+      const missing = [...new Set(contentWords(clause.split(/\s+/).slice(1).join(' ')).filter((w) => !held.has(w)))];
+      if (missing.length > 0) out.push({ kind: 'context-words', severity: 'warn', items: missing,
+        text: `“${p.text}” opens with “${clause}”, and ${andList(missing.map((w) => `“${w}”`))} ${missing.length === 1 ? 'is' : 'are'} in none of the facts it cites or the context of their project. Say the setting in your record’s words, or open with the action.`, at });
+    }
+    const mine = runs4(p.text);
+    for (const x of parts.projects.filter((q) => !homes.has(q.id) && q.learning.trim() !== '')) {
+      if ([...runs4(x.learning)].some((r) => mine.has(r))) { out.push({ kind: 'learning-elsewhere', severity: 'warn',
+        text: `“${p.text}” uses the words of what you learned on a project whose facts it does not cite. A Learning goes only on a bullet of its own project.`, at }); break; }
+    }
+  }
+  return out;
 }
 const cited = (c: FlagContext) => (c.cited ??= { facts: db.query('SELECT id, role_id, text, detail, metric, baseline, team, own_part, skills FROM facts').all() as CitedFact[], versions: versionNames() });
 // The record's projects of roles by name, with their role in words, for lib/entries.ts to name a project written as a
@@ -168,7 +216,7 @@ function contextFlags(resume: Resume, roles: RoleRow[], c: FlagContext, linked?:
 }
 // The code findings a rewrite can put right, as instructions for the writer (lib/skim.ts). With `links`, also what the
 // check of links found (lib/links.ts): a key is never repaired by code, only sent back to the writer.
-const FIXABLE = ['summary-long', 'summary-person', 'summary-metric', 'old-role', 'context-number', 'kept-line', 'project-heading', 'number-mark', 'link-unknown', 'link-elsewhere', 'link-number', 'unlinked', 'link-mark'];
+const FIXABLE = ['context-words', 'learning-elsewhere', 'summary-long', 'summary-person', 'summary-metric', 'old-role', 'context-number', 'kept-line', 'project-heading', 'number-mark', 'link-unknown', 'link-elsewhere', 'link-number', 'unlinked', 'link-mark'];
 export const fixable = (markdown: string, pages: number, context?: FlagContext, links: Links | null = null): string[] => codeFlags(markdown, pages, Date.now(), context, links).filter((f) => FIXABLE.includes(f.kind)).map((f) => f.text);
 
 // Every flag for a job's resume as it stands: the code findings, what was repaired when it was written, what the

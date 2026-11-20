@@ -1,69 +1,63 @@
-// Capture: an interview about one role or one project per sitting, one question at a time. The owner's answers are
-// kept word for word; lib/sittings.ts stores them. This file is pure: the questions, the follow-ups and the choice of
-// what to say next. Nothing here reads the database or asks a model.
+// Capture: an interview about one story, one question at a time. A story is a project: a named piece of work, under a
+// job or on the side. The owner's answers are kept word for word; lib/sittings.ts stores them, and lib/derive.ts writes
+// the project's four parts and its facts from them afterwards. This file is pure: the questions, the follow-ups and the
+// choice of what to say next. Nothing here reads the database or asks a model.
 //
-// The interviewer says only fixed words: the opening line, the fifteen questions below (in a job's or a project's
-// wording), the four fixed follow-up sentences, the reminder of the piece of work picked earlier, and the closing
-// lines. The owner's answers are the only free text. A model-written interviewer was tried and dropped: a word-list
-// check could not hold a model to the rules (see checkTurn), and research for this project found that tailored
-// follow-ups drew no more words from people than a fixed one.
-//
-// A known limit of this version: one piece of work per role or project. The "pick" question is asked once, and every
-// later question is about that piece of work, in every sitting about the same role or project.
+// The interviewer says only fixed words: the opening line, the fourteen questions below, the four fixed follow-up
+// sentences, the reminder of the piece of work named, and the closing lines. The owner's answers are the only free
+// text. A model-written interviewer was tried and dropped: a word-list check could not hold a model to the rules (see
+// checkTurn), and research for this project found that tailored follow-ups drew no more words from people than a fixed
+// one.
 
-export const SUBJECT_KINDS = ['role', 'project'] as const;
-export type SubjectKind = (typeof SUBJECT_KINDS)[number];
-
-// The part of a story each question fills.
-export const PARTS = ['setting', 'the work', 'before', 'own part', 'choice', 'hard part', 'result', 'people', 'what others said', 'another view', 'went wrong', 'learned', 'close'] as const;
+// The CARL part each question fills (DESIGN.md section 8), and the closing question, which fills none.
+export const PARTS = ['context', 'action', 'result', 'learning', 'close'] as const;
 export type Part = (typeof PARTS)[number];
+// Each part as the telling screen names it.
+export const PART_NAMES: Record<Part, string> = { context: 'Context', action: 'Action', result: 'Result', learning: 'Learning', close: 'To finish' };
 
-// The questions, the most important first. A sitting asks them in this order and skips any already answered or
-// closed for the same role or project. The words come from interview research; keep them plain. Each is one ask, and
-// passes checkTurn. "project" is the wording for a sitting about a project, for every question that speaks of the job.
+// The questions, in CARL order. A sitting asks them in this order and skips any already answered or closed for the same
+// project. The words come from interview research; keep them plain. Each is one ask, and passes checkTurn.
 export const QUESTIONS = [
-  { key: 'setting', part: 'setting', text: 'Tell me about this job and your role in it.', project: 'Tell me about this project and your part in it.' },
-  { key: 'pick', part: 'the work', text: 'Pick one piece of work from this job that you remember well.', project: 'Pick one part of this project that you remember well.' },
-  { key: 'before', part: 'before', text: 'Take me back to the start. What was happening just before you got involved?' },
-  { key: 'own-part', part: 'own part', text: 'What did you do yourself on this?' },
-  { key: 'normal-week', part: 'own part', text: 'Picture a normal week in the middle of it. What were you working on?' },
-  { key: 'choice', part: 'choice', text: 'Tell me about a point where you had to choose between options.' },
-  { key: 'hardest', part: 'hard part', text: 'What was the hardest part? Tell me what happened.' },
+  { key: 'setting', part: 'context', text: 'Tell me about this project and your part in it.' },
+  { key: 'before', part: 'context', text: 'Take me back to the start. What was happening just before you got involved?' },
+  { key: 'own-part', part: 'action', text: 'What did you do yourself on this?' },
+  { key: 'normal-week', part: 'action', text: 'Picture a normal week in the middle of it. What were you working on?' },
+  { key: 'choice', part: 'action', text: 'Tell me about a point where you had to choose between options.' },
+  { key: 'hardest', part: 'action', text: 'What was the hardest part? Tell me what happened.' },
+  { key: 'people', part: 'action', text: 'Who did you work with on this?' },
   // The next question asks for the number, date or user that shows the change.
   { key: 'changed', part: 'result', text: 'What changed because of this work?' },
   { key: 'evidence', part: 'result', text: "Is there a number, a date or a user that shows it? If you don't know one, say so." },
-  { key: 'people', part: 'people', text: 'Who did you work with on this?' },
-  { key: 'said', part: 'what others said', text: 'Did anyone say something about the work at the time?' },
-  { key: 'other-view', part: 'another view', text: "Tell it again from your manager's or a teammate's seat. What did they see?" },
-  { key: 'went-wrong', part: 'went wrong', text: 'Tell me about a time something at this job went wrong.', project: 'Tell me about a time something on this project went wrong.' },
-  { key: 'learned', part: 'learned', text: 'What did you learn here?', project: 'What did you learn from this project?' },
+  { key: 'said', part: 'result', text: 'Did anyone say something about the work at the time?' },
+  { key: 'other-view', part: 'result', text: "Tell it again from your manager's or a teammate's seat. What did they see?" },
+  { key: 'went-wrong', part: 'learning', text: 'Tell me about a time something on this project went wrong.' },
+  { key: 'learned', part: 'learning', text: 'What did you learn from this project?' },
   { key: 'missed', part: 'close', text: "What should I have asked that I didn't?" },
-] as const satisfies readonly { key: string; part: Part; text: string; project?: string }[];
+] as const satisfies readonly { key: string; part: Part; text: string }[];
 export type QuestionKey = (typeof QUESTIONS)[number]['key'];
 export type Question = (typeof QUESTIONS)[number];
 
 // The first and last lines of a sitting. The opening says plainly that the questions are a fixed list (no model writes
-// them, and DESIGN.md rule 10 keeps models off screens) and that the owner's words are
-// kept as given. The closing says whether anything is left for a later sitting.
-export const OPENING = 'These questions are a fixed list. They come one at a time, about one piece of your work. Your answers are kept exactly as you give them, word for word.';
+// them, and DESIGN.md rule 10 keeps models off screens), that the owner's words are kept as given, and what is made
+// from them afterwards. The closing says whether anything is left for a later sitting.
+export const OPENING = 'These questions are a fixed list. They come one at a time, about this one piece of work. Your answers are kept word for word. Afterwards the studio writes the story’s four parts and its facts from them, and you can change what it writes.';
 export const CLOSING_DONE = 'That is the last question about this. Your answers are saved word for word.';
 export const CLOSING_PAUSED = 'We will stop here for now. Your answers are saved word for word, and the next sitting starts with the questions not yet answered.';
 
-// A later sitting says which piece of work the owner picked, in their own words, before it goes on. It is the one
-// place the interviewer repeats the owner's words, so it is a fixed frame around a quote of their answer to "pick"
-// (canQuote says which answers can be quoted). Only spaces and line breaks are changed in the quote, to fit one line.
-// A long answer is cut at a word boundary, or, with no space to cut at, between two characters as a reader sees them:
-// never inside an emoji or a letter with its accent, so the stored line reads back as written.
+// A later sitting says which piece of work it is about, in the owner's own words (the project's title), before it goes
+// on. It is a fixed frame around a quote. Only spaces and line breaks are changed in the quote, to fit one line. A long
+// title is cut at a word boundary, or, with no space to cut at, between two characters as a reader sees them: never
+// inside an emoji or a letter with its accent, so the stored line reads back as written.
 export const REMINDER_QUOTE_CHARS = 120;
-export function reminderText(picked: string): string {
-  const flat = picked.trim().replace(/\s+/g, ' ');
-  if (flat.length <= REMINDER_QUOTE_CHARS) return `We carry on with the piece of work you picked last time: “${flat}”`;
+export function reminderText(title: string): string {
+  const flat = title.trim().replace(/\s+/g, ' ');
+  if (flat.length <= REMINDER_QUOTE_CHARS) return `We carry on with the piece of work you named: “${flat}”`;
   // The longest run of whole characters that fits, then back to its last space if it has one.
   let fit = 0;
   for (const g of graphemes(flat)) { if (fit + g.length > REMINDER_QUOTE_CHARS) break; fit += g.length; }
   const space = flat[fit] === ' ' ? fit : flat.lastIndexOf(' ', fit);
   const quote = `${flat.slice(0, space > 0 ? space : fit).replace(/[\s,;:.]+$/, '')}…`;
-  return `We carry on with the piece of work you picked last time: “${quote}”`;
+  return `We carry on with the piece of work you named: “${quote}”`;
 }
 // The characters of a text as a reader sees them. Without Intl.Segmenter, a surrogate pair is still kept whole.
 function graphemes(s: string): string[] {
@@ -73,11 +67,6 @@ function graphemes(s: string): string[] {
 
 export const question = (key: QuestionKey): Question => QUESTIONS.find((q) => q.key === key)!;
 export const isQuestionKey = (s: string): s is QuestionKey => QUESTIONS.some((q) => q.key === s);
-// The words of a question for this kind of sitting.
-export function questionText(key: QuestionKey, subject: SubjectKind): string {
-  const q = question(key);
-  return subject === 'project' && 'project' in q ? q.project : q.text;
-}
 
 // ---- Follow-ups ----
 
@@ -306,9 +295,9 @@ export type OwnerTurn = { who: 'owner'; text: string; key: QuestionKey | null; f
 export type Turn = InterviewerTurn | OwnerTurn;
 
 // A sitting so far, as data. turns: this sitting's, oldest first. settled: the questions already answered or closed
-// for the same role or project, in any sitting. picked: the owner's answer to "pick" in an earlier sitting, for the
-// reminder. stop: the owner asked to stop (a button, never a typed word).
-export type SittingState = { subject: SubjectKind; turns: readonly Turn[]; settled?: ReadonlySet<QuestionKey>; picked?: string; stop?: boolean; limits?: Partial<Limits> };
+// for the same project, in any sitting. title: the project's name, for the reminder. stop: the owner asked to stop (a
+// button, never a typed word).
+export type SittingState = { turns: readonly Turn[]; settled?: ReadonlySet<QuestionKey>; title?: string; stop?: boolean; limits?: Partial<Limits> };
 export type Plan = Step | { step: 'wait' } | { step: 'ended' };
 
 const waiting = (t: Turn | undefined) => t?.who === 'interviewer' && (t.step === 'question' || t.step === 'follow-up');
@@ -326,10 +315,6 @@ export function settledKeys(turns: readonly Turn[], before: ReadonlySet<Question
   return out;
 }
 
-// Whether an answer to "pick" names a piece of work that the reminder can quote: not a bare "No", not "I don't know",
-// not "I don't remember", and not an answer with no words.
-export const canQuote = (answer: string): boolean => hasWords(answer) && phrase(answer) !== '' && !isBareNo(answer) && !isDontKnow(answer) && !any(NOT_REMEMBER, plain(answer));
-
 // Limits a caller may pass. Each is a whole number, and may only lower the default: a sitting never runs longer than
 // LIMITS allows. The fewest turns is four, room for an opening, one question, one answer and a closing line.
 export const MIN_TURNS = 4;
@@ -343,7 +328,8 @@ export function checkLimits(limits: Partial<Limits> = {}): Limits {
 // What the interviewer does next, decided by the program alone. In order: a closed sitting stays closed; the owner
 // stopping closes it; an open question waits for its answer; the first turn is the opening. Otherwise the next ask is
 // a follow-up on a gap in the last answer, or else the next question not yet settled; with no ask left, the list is
-// done. In a later sitting the reminder of the piece of work comes right after the opening, before the first ask. An
+// done. In a later sitting (some question already settled) the reminder of the piece of work comes right after the
+// opening, before the first ask. An
 // ask is made only if there is room for it (and the reminder), its answer and the closing line; if not, the turn limit
 // closes the sitting.
 export function planStep(state: SittingState): Plan {
@@ -355,7 +341,7 @@ export function planStep(state: SittingState): Plan {
   if (waiting(last)) return { step: 'wait' };
   const ask = nextAsk(turns, state.settled, L.maxFollowUps);
   if (ask === null) return { step: 'closing', reason: 'done' };
-  const remind = state.picked !== undefined && canQuote(state.picked) && turns.length === 1 && last.who === 'interviewer' && last.step === 'opening';
+  const remind = hasWords(state.title ?? '') && (state.settled?.size ?? 0) > 0 && turns.length === 1 && last.who === 'interviewer' && last.step === 'opening';
   if (turns.length + 3 + (remind ? 1 : 0) > L.maxTurns) return { step: 'closing', reason: 'limit' };
   return remind ? { step: 'reminder' } : ask;
 }
@@ -375,12 +361,12 @@ function nextAsk(turns: readonly Turn[], before: ReadonlySet<QuestionKey> | unde
   return next ? { step: 'question', key: next.key } : null;
 }
 
-// The fixed words for a step. picked is the owner's earlier answer to "pick", for the reminder.
-export function fixedText(step: Step, subject: SubjectKind, picked = ''): string {
+// The fixed words for a step. title is the project's name, for the reminder.
+export function fixedText(step: Step, title = ''): string {
   switch (step.step) {
     case 'opening': return OPENING;
-    case 'reminder': return reminderText(picked);
-    case 'question': return questionText(step.key, subject);
+    case 'reminder': return reminderText(title);
+    case 'question': return question(step.key).text;
     case 'follow-up': return FOLLOW_UPS[step.kind].text;
     case 'closing': return step.reason === 'done' ? CLOSING_DONE : CLOSING_PAUSED;
     default: return never(step);
@@ -396,5 +382,5 @@ export function nextTurn(state: SittingState): Next {
   const plan = planStep(state);
   if (plan.step === 'wait') return { do: 'wait' };
   if (plan.step === 'ended') return { do: 'ended' };
-  return { do: 'say', turn: { who: 'interviewer', text: fixedText(plan, state.subject, state.picked), ...plan } };
+  return { do: 'say', turn: { who: 'interviewer', text: fixedText(plan, state.title), ...plan } };
 }

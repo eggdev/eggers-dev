@@ -17,10 +17,11 @@
 use WidePage, Section, WideSection, Title, SectionHead, Line, QuietLine, FailLine, Action, Actions, ActivityRow, RecordList, statusWord from "./look.contract"
 
 // One piece of slow work. kind: read-source | read-posting | write-resume | draft-messages | write-profile |
-// write-reply | check-watchlist | propose-projects. subject: the source's, job's or message's id ("1" for the profile and the
-// watchlist). status: waiting | running | done | failed. ahead: how many pieces are before it in its line while it
-// waits (-1 otherwise). since: milliseconds since it was asked for (waiting), started (running) or ended. took: how
-// long a finished run took, usual: how long its kind usually takes; -1 when not known. link: where what it made is.
+// write-reply | check-watchlist | propose-projects | derive-story | write-spoken. subject: the source's, job's,
+// message's, role's or project's id ("1" for the profile and the watchlist). status: waiting | running | done | failed.
+// ahead: how many pieces are before it in its line while it waits (-1 otherwise). since: milliseconds since it was asked
+// for (waiting), started (running) or ended. took: how long a finished run took, usual: how long its kind usually takes;
+// -1 when not known. link: where what it made is.
 shape WorkItem
   id: string
   kind: string
@@ -179,8 +180,16 @@ members App
   action clearFailures
     activityFails = 0
   action reloadChanged
-    if changedKinds.includes("read-source") or changedKinds.includes("write-reply") or changedKinds.includes("propose-projects")
+    if changedKinds.includes("read-source") or changedKinds.includes("write-reply") or changedKinds.includes("propose-projects") or changedKinds.includes("derive-story")
       refresh tree
+    // A story written from what was told: its parts, its facts and the line under them.
+    if changedKinds.includes("derive-story")
+      refresh telling
+      refresh factFull
+    // A spoken story written: the open story and the list's time lines.
+    if changedKinds.includes("write-spoken")
+      refresh storyShown
+      refresh stories
     if changedKinds.includes("propose-projects")
       refresh proposals
     if changedKinds.includes("read-source")

@@ -1,6 +1,7 @@
 // Eggdev: the career studio. Six places on one main line (look.contract's MainLine), each its own stack.
 // Home: the things that need the person, one in focus (home.contract).
-// Record (record.contract and the Sources screens here): Experience, the roles and facts as records; Profile, one
+// Record (record.contract and the Sources screens here): Experience, the roles and facts as records; Stories
+//   (stories.contract), each piece of work as it is told in an interview, to read aloud and practise; Profile, one
 //   document written from the whole record, and the questions whose answers would strengthen it; Direction and
 //   Details, the person's own notes and contact line; Sources, what has been added to read and how each reading
 //   went. What the person supplies is taken as true, so nothing waits for review.
@@ -19,6 +20,7 @@ use Tree, FactFull, Made, ExpState, Proposals, Overlap, Profile, Direction, Pers
 use ActivityScreen, workPlace, workUsual, workAhead, workStatus, inHand, kindInHand, usualWords, kindUsual from "./activity.contract"
 use SkillsScreen from "./skills.contract"
 use TellScreen from "./telling.contract"
+use StoriesScreen from "./stories.contract"
 
 // The look is DESIGN.md's on every screen: Geist, one ink, one paper, two greys, hairline rules (look.contract).
 font "Geist" = "assets/fonts/Geist.ttf"
@@ -40,8 +42,11 @@ routes nav
       fFact "/record/facts/:id"
     // Skills: the skills list of resume rule 7, reviewed in one pass (skills.contract).
     skills "/record/skills"
-    // One sitting of telling a role or a project, opened from it in Experience (telling.contract).
+    // One sitting of telling a story, opened from its project in Experience (telling.contract).
     tell "/record/tell/:id"
+    // Stories: every piece of work as it is told in an interview, and one open to be read aloud (stories.contract).
+    stories "/record/stories"
+      story "/record/stories/:id"
     profile "/profile"
       direction "/profile/direction"
       details "/profile/details"
@@ -220,6 +225,7 @@ component App
   members "./activity.contract"
   members "./skills.contract"
   members "./telling.contract"
+  members "./stories.contract"
   state kind = "text"
   state draftTitle = ""
   state draftText = ""
@@ -328,7 +334,7 @@ component App
   // screens too, and Profile marks the profile's (Direction and Details mark themselves).
   derive inRecord = nav.tab == "bank"
   derive inSystem = nav.tab == "publicPage"
-  derive recordAt = top(nav).name == "skills" ? "skills" : stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
+  derive recordAt = top(nav).name == "skills" ? "skills" : top(nav).name == "stories" or top(nav).name == "story" ? "stories" : stack(nav).filter(e => e.name == "sources").length > 0 ? "sources" : top(nav).name == "direction" ? "direction" : top(nav).name == "details" ? "details" : stack(nav).filter(e => e.name == "profile").length > 0 ? "profile" : "bank"
   // The open questions about two roles that both say Present, read while Experience is shown.
   resource overlaps = loadOverlaps() when onExperience as shape Overlap[] else empty()
   // Slow work started here is in the activity list at once: each write that asks for work reads the list again.
@@ -429,7 +435,8 @@ component App
   derive expState = ExpState(view=expView, open=openKey, just=just, justWord=justWord, q=bankQuery, adding=adding, editing=editing, deleting=deleting, shownAll=shownAll, madeError=madeError, madeSplit=roleSplit, changeError=changeError, changeOn=changeOn, busy=(pending(made) or pending(changed)), wide=wide, beside=(viewport.width >= lookBeside()), projectsOf=projectsFilter, sortKey=factSort, sortDesc=factDesc,
     showQuestions=showQuestions, derivedFilter=derivedFilter, lastRejected=lastRejected, editingProposal=editingProposal, proposalOn=proposalOn, proposalError=decideError,
     proposeError=(roleAsked == openRoleId ? proposeError : ""), work=activity.items, proposals=proposals,
-    telling=telling, tellError=(tellOn == openKey ? tellStartError : ""), tellBusy=pending(tellStarted))
+    telling=telling, tellError=(tellOn == openKey ? tellStartError : ""), tellBusy=pending(tellStarted),
+    storyError=(tellOn == openKey ? storyError : ""), storyBusy=(pending(storyTold) or pending(storyAsked)), againError=(tellOn == openKey ? againError : ""))
   derive addError = match added { case some(r) => r.error, case none => "" }
   derive rereadError = pending(reread) ? "" : match reread { case some(r) => r.error, case none => "" }
   derive removeSourceError = pending(removedSource) ? "" : match removedSource { case some(r) => r.error, case none => "" }
@@ -464,6 +471,8 @@ component App
   mutation published as shape Outcome refreshes live
   mutation unpublished as shape Outcome refreshes live
   mutation backedUp as shape Outcome refreshes sys
+  // Starting a new record: every screen's data is read again, so each shows the empty record when it is next shown.
+  mutation newRecord as shape Outcome refreshes sys, activity, tree, lib, profile, jobs, job, homeList, skillsList, stories
   mutation loginAsked as shape Outcome refreshes sys
   mutation loginCancelled as shape Outcome refreshes sys
   derive nowMs = time.epochAtZero + ticked
@@ -501,6 +510,11 @@ component App
   derive cancelError = pending(loginCancelled) ? "" : match loginCancelled { case some(r) => r.error, case none => "" }
   derive backupReply = pending(backedUp) ? "" : match backedUp { case some(r) => (r.ok ? r.note : r.error), case none => "" }
   derive backupFailed = match backedUp { case some(r) => not r.ok, case none => false }
+  // The words typed in the dialog that starts a new record; its red button waits for them.
+  state resetPhrase = ""
+  derive phraseTyped = resetPhrase.trim() == "start a new record"
+  derive newRecordReply = pending(newRecord) ? "" : match newRecord { case some(r) => (r.ok ? r.note : r.error), case none => "" }
+  derive newRecordFailed = match newRecord { case some(r) => not r.ok, case none => false }
 
   // System: its status when it opens and after each action; every 3 seconds only while a sign-in waits for the
   // owner and the tab is shown.
@@ -517,6 +531,8 @@ component App
   // Loads the shown screen again (Try again, a return to the tab): a resource whose screen is not shown asks nothing.
   action pull
     refresh tree
+    refresh stories
+    refresh storyShown
     refresh lib
     refresh profile
     refresh jobs
@@ -555,6 +571,8 @@ component App
       nav = push(select(nav, "bank"), "/sources")
     else if name == "skills"
       nav = push(select(nav, "bank"), "/record/skills")
+    else if name == "stories"
+      nav = push(select(nav, "bank"), "/record/stories")
   // System's second line: the Public page and the machine.
   action goSystem(name: string)
     if name == "system"
@@ -562,7 +580,10 @@ component App
     else
       openPublic()
   // A row is a link; Back, Forward and a deep link arrive here too. Every screen is a page of its own, pushed over
-  // the one it was opened from; a fact or source opened from another of its kind takes its place.
+  // the one it was opened from; a fact or source opened from another of its kind takes its place. An address that
+  // another place owns (the route table says which: `open` puts it in its own tab), such as a Home item's link to a
+  // role or a job, opens in that place over its first screen: its data loads, its place is marked, Back stays there,
+  // and a reload lands on it.
   action follow(url: string)
     rowTried = false
     just = ""
@@ -571,7 +592,8 @@ component App
     deleting = ""
     if url != "/"
       sendHeld()
-    nav = (isItem(top(nav).name) and isItemUrl(url)) or (top(nav).name == "source" and url.startsWith("/source/")) ? replace(nav, url) : go(nav, url)
+    let owner = open(nav, url).tab
+    nav = owner != nav.tab ? open(select(select(nav, owner), owner), url) : (isItem(top(nav).name) and isItemUrl(url)) or (top(nav).name == "source" and url.startsWith("/source/")) or (top(nav).name == "story" and url.startsWith("/record/stories/")) ? replace(nav, url) : go(nav, url)
   // The resume's page goes back to its job: the page under it, or (after a reload or a link straight to the resume)
   // the job's page in its place.
   action backToJob(id: string)
@@ -850,6 +872,15 @@ component App
     if not pending(backedUp)
       sysAct = "backup"
       send backedUp = backupNow()
+  action askNewRecord
+    resetPhrase = ""
+    showModal("new-record")
+  action editResetPhrase(v: string)
+    resetPhrase = v
+  action startNewRecord
+    if phraseTyped and not pending(newRecord)
+      sysAct = "new-record"
+      send newRecord = resetRecord(resetPhrase.trim())
   action signIn
     if not pending(loginAsked)
       sysAct = "login"
@@ -908,9 +939,9 @@ component App
     if not pending(made)
       send made = addRole(line.trim(), title.trim(), company.trim(), dates.trim(), employment, location.trim())
   // ctx is where the form is open; home is where the project goes: role:<id>, side, or new (a role made from newRole).
-  action addProject(ctx: string, title: string, home: string, newRole: string, dates: string, result: string, situation: string, did: string, learned: string, lives: string)
+  action addProject(ctx: string, title: string, home: string, newRole: string, dates: string, result: string, context: string, act: string, learning: string, lives: string)
     if not pending(made)
-      send made = addProject(title.trim(), ctx == "sides" ? "side" : home, newRole.trim(), dates.trim(), result.trim(), situation.trim(), did.trim(), learned.trim(), lives.trim())
+      send made = addProject(title.trim(), ctx == "sides" ? "side" : home, newRole.trim(), dates.trim(), result.trim(), context.trim(), act.trim(), learning.trim(), lives.trim())
   // home is where the fact goes: the group the form is open in, or (from the Facts view) the one chosen.
   action addFact(ctx: string, text: string, home: string, newRole: string, metric: string)
     if not pending(made)
@@ -935,10 +966,10 @@ component App
     changeOn = `role:${id}`
     lastChange = "edit"
     send changed = saveRole(id, changed, title.trim(), company.trim(), start.trim(), end.trim(), employment, location.trim(), reach)
-  action saveProject(id: string, changed: string[], title: string, dates: string, lives: string, result: string, situation: string, did: string, learned: string, place: string)
+  action saveProject(id: string, changed: string[], title: string, dates: string, lives: string, result: string, context: string, act: string, learning: string, place: string)
     changeOn = `project:${id}`
     lastChange = "edit"
-    send changed = saveProject(id, changed, title.trim(), dates.trim(), lives.trim(), result.trim(), situation.trim(), did.trim(), learned.trim(), place)
+    send changed = saveProject(id, changed, title.trim(), dates.trim(), lives.trim(), result.trim(), context.trim(), act.trim(), learning.trim(), place)
   action saveFact(id: string, changed: string[], text: string, detail: string, metric: string, kind: string)
     changeOn = `fact:${id}`
     lastChange = "edit"
@@ -1117,11 +1148,15 @@ component App
               // testIds and its scrollers' ids are never on the page twice.
               if isExperience(e.name) and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
                 column navigationKey=`${e.id}` navigationScroll=`exp-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
-                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, addSource=openAdd, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine, tell=tellIt)
+                  ExperienceScreen(tree=tree, failed=failed(tree), error=treeError, s=expState, fact=factFull, overlaps=overlaps, scrollId=`exp-${e.id}`, search=searchBank, setView=setView, filterProjects=filterProjects, sortFacts=sortFacts, retry=pull, home=pick("home"), close=closeItem, openAdd=openAddForm, closeAdd=closeAdd, addRole=addRole, addProject=addProject, addFact=addFact, startEdit=startEdit, stopEdit=stopEdit, saveRole=saveRole, saveProject=saveProject, saveFact=saveFact, moveFact=moveFact, askDelete=askDelete, keepIt=keepIt, remove=removeItem, showAll=showAll, askProposals=askProposals, keepProposal=keepProposal, editProposal=editProposal, cancelProposal=cancelProposal, keepEdited=keepEdited, rejectProposal=rejectProposal, decideResult=decideResult, toggleQuestions=toggleQuestions, showDerived=showDerived, clearDerived=clearDerived, judgeLine=judgeLine, tell=tellIt, story=tellStory, again=writeStoryAgain)
               if e.name == "tell"
                 column navigationKey=`${e.id}` navigationScroll="tell-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="tell-scroll" flex=1 min-height=0
                     TellScreen(sitting=sitting, failed=failed(sitting), draft=tellField, sending=pending(tellAnswered), stopping=pending(tellStopped), deleting=pending(tellDeleted), error=tellError, asking=tellAsking, sittingAsked=sittingAsked, removingSitting=pending(sittingDeleted), edit=editTell, send=sendTell, dontKnow=tellDontKnow, stop=stopTell, askDelete=askTellDelete, keep=keepTellAnswer, remove=removeTellAnswer, askSitting=askSittingDelete, keepSitting=keepSitting, removeSitting=removeSitting, retry=pullSitting)
+              // Stories: one screen for the list and for a story open, drawn for the top of the tab's stack only.
+              if (e.name == "stories" or e.name == "story") and (match t.stack.at(-1) { case some(x) => x.id == e.id, case none => false })
+                column navigationKey=`${e.id}` navigationScroll=`stories-${e.id}` navigationSplit="none" position="absolute" inset=0 display="flex" flex-direction="column" background-color="look.paper"
+                  StoriesScreen(list=stories, listFailed=failed(stories), story=storyShown, storyFailed=failed(storyShown), s=storyState, a=askedState, scrollId=`stories-${e.id}`, write=writeSpoken, edit=editSpoken, cancelEdit=cancelSpoken, save=saveSpokenText, practise=practise, startTimer=startTimer, stopTimer=stopTimer, cancelTimer=cancelTimer, togglePractices=togglePractices, askPracticeDelete=askPracticeDelete, keepPractice=keepPractice, removePractice=removePractice, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, choose=chooseStory, noStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked, retry=pullStories)
               if e.name == "skills"
                 column navigationKey=`${e.id}` navigationScroll="skills-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="skills-scroll" flex=1 min-height=0
@@ -1129,7 +1164,7 @@ component App
               if e.name == "profile"
                 column navigationKey=`${e.id}` navigationScroll="profile-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="profile-scroll" flex=1 min-height=0
-                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=workAhead(activity.items, "write-profile", "1"), usual=workUsual(activity.items, "write-profile", "1"), state=workStatus(activity.items, "write-profile", "1", profile.status), write=writeProfile, ask=askQuestion, add=openAdd, retry=pull)
+                    ProfileScreen(profile=profile, failed=failed(profile), error=profileError, askError=askError, asking=pending(asked), ahead=workAhead(activity.items, "write-profile", "1"), usual=workUsual(activity.items, "write-profile", "1"), state=workStatus(activity.items, "write-profile", "1", profile.status), write=writeProfile, ask=askQuestion, retry=pull)
               if e.name == "talk"
                 column navigationKey=`${e.id}` navigationScroll=(talk.loaded and talk.messages.length > 0 ? "transcript" : "talk-scroll") navigationSplit="none" position="absolute" inset=0 background-color="look.paper"
                   TalkScreen(talk=talk, work=activity.items, usual=kindUsual(activity, "write-reply"), failed=failed(talk), loadError=talkLoadError, draft=talkDraft, sending=pending(talkSent), clearing=pending(talkCleared), error=talkTried, edit=editTalk, send=sendTalk, questions=openQuestions, askClear=askClearTalk, retry=pull)
@@ -1231,7 +1266,7 @@ component App
                       if not sys.loaded or sys.where != "here"
                         Section(testId="system-wait")
                           if sys.loaded and sys.where == "absent"
-                            Line(text="This screen works only in the deployed studio.", testId="system-absent")
+                            Line(text="Backups and sign-in work only in the deployed studio.", testId="system-absent")
                           else if sys.loaded and sys.where == "starting"
                             Line(text="The machine is starting. Try again in a moment.", testId="system-starting")
                             Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
@@ -1240,6 +1275,9 @@ component App
                             Action(label="Try again", press=pullSystem, disabled=pending(sys), keys="", testId="system-retry")
                           else
                             QuietLine(text="Checking the machine…", testId="system-loading")
+                        // On a machine with no studio around it a new record can still be started, with no backup.
+                        if sys.loaded and sys.where == "absent"
+                          NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
                       else
                         if sys.backupError != ""
                           Section(testId="system-backup-failed")
@@ -1260,6 +1298,7 @@ component App
                               FailLine(text=backupReply, testId="system-backup-result")
                             else
                               QuietLine(text=backupReply, testId="system-backup-result")
+                        NewRecord(busy=pending(newRecord), reply=(sysAct == "new-record" ? newRecordReply : ""), failed=newRecordFailed, ask=askNewRecord)
                         Section(testId="system-login")
                           SectionHead(text="ChatGPT sign-in", testId="system-login-head")
                           Line(text=modelLine(sys), testId="system-model")
@@ -1302,7 +1341,7 @@ component App
                     if not job.loaded or job.id != e.params.id
                       RecordWait(title="Job", waiting=(not failed(job)), message="This job couldn’t be loaded. It may have been deleted.", backLabel="Back to jobs", back=back, testId="job-wait")
                     else
-                      JobScreen(job=job, work=activity.items, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength)
+                      JobScreen(job=job, work=activity.items, wide=wide, pages=(wantPages != "" and wantPages != "again" ? wantPages : `${job.pages}`), lengthError=jobLengthError, doorsError=doorsError, writeError=writeError, writeBusy=pending(resumeAsked), doorsBusy=pending(doorsAsked), copied=copied, busy=pending(jobReread), error=jobActionError, saveError=jobSaveError, back=back, writeAgain=writeAgain, draftDoors=draftDoors, copyDoor=copyDoor, askGap=askQuestion, reread=rereadJob, askRemove=askRemoveJob, pickOutcome=pickOutcome, saveNote=saveOutcomeNote, saveContact=saveContact, editResume=openEditResume, setLength=setLength, asked=jobAsked, askedState=askedState, openAsked=openAsked, closeAsked=closeAsked, addAsked=addAsked, chooseStory=chooseStory, markNoStory=markNoStory, askAskedDelete=askAskedDelete, keepAsked=keepAsked, removeAsked=removeAsked)
               if e.name == "resume"
                 column navigationKey=`${e.id}` navigationScroll="resume-scroll" position="absolute" inset=0 background-color="look.paper"
                   scroll id="resume-scroll" flex=1 min-height=0
@@ -1473,6 +1512,13 @@ component App
           text "Replace my edits"
         button press=keepEdits commandfor="replace-edits" command="close" testId="replace-edits-cancel"
           text "Cancel"
+      // Writing a spoken story again over the owner's own text: their text is kept unless they replace it.
+      dialog id="replace-spoken" role="alertdialog" aria-label="Replace your edit?"
+        text "You changed this spoken story yourself. Writing it again keeps your text, so nothing changes unless you replace it."
+        button press=replaceSpoken destructive=true commandfor="replace-spoken" command="close" testId="replace-spoken-confirm"
+          text "Replace my edit"
+        button commandfor="replace-spoken" command="close" testId="replace-spoken-cancel"
+          text "Cancel"
       dialog id="dismiss-lead" role="alertdialog" aria-label="Not for you?"
         text "This posting leaves Found and won’t be shown again."
         button press=dismissLead destructive=true commandfor="dismiss-lead" command="close" testId="dismiss-lead-confirm"
@@ -1515,12 +1561,50 @@ component App
           text "Remove"
         button commandfor="remove-company" command="close" testId="remove-company-cancel"
           text "Cancel"
+      // Starting a new record: what goes and what stays, and the words to type before the red button works.
+      dialog id="new-record" aria-label="Start a new record?" testId="new-record-dialog"
+        column gap=12 padding=12 max-width="34rem"
+          text "Start a new record?" role="heading" font-weight=600 testId="new-record-title"
+          text "Deleted: every role, project, fact and source; Talk and your telling sittings; your answers and the questions raised; the profile, the skills list and everything else written from your record; and for each job not yet sent, its reading, resume, PDF and drafted messages." testId="new-record-deleted"
+          text "Kept: your details and direction notes, every job you track with its posting, the watchlist, and each job already sent with its resume and PDF." testId="new-record-kept"
+          text "This can’t be undone here. In the deployed studio your record is backed up first, and older backups stay in the bucket. If the machine restarts before the new record is backed up, your old record comes back." testId="new-record-warning"
+          text "Backups of your old record stay in the bucket only while each is one of the newest 30 backups or the newest of its day in the last 30 days, so most are gone 30 days from now, and the last one may go sooner." testId="new-record-retention"
+          FieldLabel(label="Type “start a new record” to confirm")
+            input value=resetPhrase input=editResetPhrase submit=startNewRecord aria-label="Type start a new record to confirm" autocapitalize="none" autocomplete="off" testId="new-record-phrase"
+          row gap=12 justify-content="flex-end" flex-wrap="wrap"
+            button commandfor="new-record" command="close" testId="new-record-cancel"
+              text "Cancel"
+            button press=startNewRecord destructive=true disabled=(not phraseTyped) commandfor="new-record" command="close" testId="new-record-confirm"
+              text "Delete my record"
       dialog id="remove-source" role="alertdialog" aria-label="Delete this source?"
         text "Its facts are deleted too, except ones you edited."
         button press=removeSource destructive=true commandfor="remove-source" command="close" testId="remove-source-confirm"
           text "Delete"
         button commandfor="remove-source" command="close" testId="remove-source-cancel"
           text "Cancel"
+
+// System's "Start a new record": what it deletes and keeps in plain words, and the red action, which asks first (the
+// dialog new-record in App). busy while it runs; reply its result in one line, failed when that is a refusal.
+component NewRecord
+  props
+    busy: bool
+    reply: string
+    failed: bool
+    ask: action
+  view
+    Section(testId="system-new-record-section")
+      SectionHead(text="Start a new record", testId="system-new-record-head")
+      Line(text="Deletes your career record to tell it again from nothing: every role, project, fact and source, your answers, and everything written from them, such as the profile and the resumes of jobs not yet sent.", testId="system-new-record-deletes")
+      Line(text="Keeps your details, your direction notes, the jobs you track and the watchlist. A job already sent keeps its resume and PDF.", testId="system-new-record-keeps")
+      QuietLine(text="In the deployed studio your record is backed up first, and the new record is backed up right after.", testId="system-new-record-hint")
+      if busy
+        WorkLine(word="Running", place="", text="Backing up, then starting a new record. Usually a few minutes.", testId="system-new-record-work")
+      DangerAction(label="Start a new record", press=ask, disabled=busy, testId="system-new-record")
+      if reply != ""
+        if failed
+          FailLine(text=reply, testId="system-new-record-result")
+        else
+          QuietLine(text=reply, testId="system-new-record-result")
 
 // System's second line. `at` is the screen shown: publicPage | system.
 component SystemNav

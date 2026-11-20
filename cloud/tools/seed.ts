@@ -90,6 +90,8 @@ const r = await prepareBackup({
   work: join(out, '.work'),
   from: 'seed',
   last,
+  // A database emptied by "Start a new record" on this machine must not replace the studio's backup by its mark alone.
+  honourReset: false,
   allowShrink: process.env.EGG_ALLOW_SHRINK === '1',
   now: Date.now(),
 });

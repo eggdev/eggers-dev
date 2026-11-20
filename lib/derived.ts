@@ -11,7 +11,7 @@ export const SHOWN = 3;
 export type DerivedFact = { id: string; roleId: string; projectId: string; text: string; metric: string; skills: string };
 export type DerivedInput = {
   roles: { id: string }[];
-  projects: { id: string; learned: string }[];
+  projects: { id: string; learning: string }[];
   facts: DerivedFact[];
   // The metrics inventory (lib/metrics.ts): which facts hold a measured result, and of which kind.
   metrics: { fact: string; kind: MetricKind }[];
@@ -69,12 +69,13 @@ export function howYouWork(x: DerivedInput): Line[] {
   const measured = x.projects.filter((p) => x.facts.some((f) => f.projectId === p.id && measuredFacts.has(f.id)));
   if (x.projects.length >= 5) out.push({ key: 'measured', text: `${measured.length} of your ${x.projects.length} projects have a measured result.`,
     basis: `Counted from your ${x.projects.length} projects and the numbers in their facts.`, items: measured.map((p) => `project:${p.id}`) });
-  // learned: the longest phrase of 2 to 5 words that What I learned shares on 2 or more projects, once 4 have it.
-  const said = x.projects.filter((p) => p.learned.trim() !== '');
+  // learned: the longest phrase of 2 to 5 words that a project's Learning shares on 2 or more projects, once 4 have it.
+  // The key keeps its name from before CARL, so a verdict on the line stands.
+  const said = x.projects.filter((p) => p.learning.trim() !== '');
   if (said.length >= 4) {
     const grams = new Map<string, { n: number; ids: Set<string> }>();
     for (const p of said) {
-      const w = p.learned.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+      const w = p.learning.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
       for (let k = 2; k <= 5; k++) for (let i = 0; i + k <= w.length; i++) {
         const g = w.slice(i, i + k);
         if (STOP.has(g[0]) || STOP.has(g[k - 1])) continue;
@@ -89,7 +90,7 @@ export function howYouWork(x: DerivedInput): Line[] {
       if (!best || v.ids.size > best.ids.size || (v.ids.size === best.ids.size && (v.n > best.n || (v.n === best.n && phrase < best.phrase)))) best = { phrase, ...v };
     }
     if (best) out.push({ key: `learned:${best.phrase}`, text: `What you say you learned most often: “${best.phrase}” (${best.ids.size} projects).`,
-      basis: `Read from What I learned on ${many(said.length, 'project')}.`, items: [...best.ids].map((id) => `project:${id}`) });
+      basis: `Read from Learning on ${many(said.length, 'project')}.`, items: [...best.ids].map((id) => `project:${id}`) });
   }
   return out;
 }

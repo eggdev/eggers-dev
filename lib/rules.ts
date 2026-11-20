@@ -18,7 +18,8 @@
 // What needs the record (rules 5 and 6), the person's names and tools, or the posting is passed in by the caller, so this
 // file opens no database and asks no model (lib/imports.test.ts).
 import type { RoleRow } from './db.ts';
-import { density } from './ats.ts';
+import { actionVerb, density } from './ats.ts';
+import { carlOn } from './carl.ts';
 import { canonical, checkEntries, employers, normCompany, type FactFinding, type ProjectName } from './entries.ts';
 import { noiseSpans } from './metrics.ts';
 import { counts, quantities } from './numbers.ts';
@@ -106,8 +107,11 @@ const AFTER_A_WORD = /[\p{L}\p{N}],?\s+$/u;
 export type Limits = { lineWords: number; technologiesPerLine: number; documentWords: number; summaryWords: number; summarySentences: number };
 // Starting values to tune, not findings.
 export const LIMITS = {
-  // Words in one bullet or line. lib/ats.ts takes points off past 35 and asks for under 30.
-  lineWords: 28,
+  // Words in one bullet or line: what the writer is told a CARL bullet may hold on two pages (RESUME-RULES.md, rule 13;
+  // lib/jobs.ts, limits), and on one page `onePageLineWords`. With no page count, the two-page limit, so no line is held
+  // to less than the writer was allowed. lib/ats.ts takes points off past 35. With EGG_CARL=off, 28 as before.
+  get lineWords(): number { return carlOn() ? 34 : 28; },
+  onePageLineWords: 30,
   // Technologies named in one bullet or line, past which it reads as a stack list.
   technologiesPerLine: 4,
   // Words in a whole resume: the top of the ranges lib/ats.ts (density) uses for one page and for two.
@@ -192,7 +196,7 @@ export function limitsFor(surface: Surface, context: Pick<Context, 'pages' | 'li
   if (context.pages !== undefined && context.pages !== 1 && context.pages !== 2) throw new Error(`A resume has 1 or 2 pages, not ${String(context.pages)}.`);
   const fallback = surface === 'resume' ? (context.pages ? LIMITS.resumeWords[context.pages] : null) : surface === 'message' ? LIMITS.messageWords : null;
   const l = context.limits ?? {};
-  return { lineWords: l.lineWords ?? LIMITS.lineWords, technologiesPerLine: l.technologiesPerLine ?? LIMITS.technologiesPerLine, documentWords: l.documentWords ?? fallback,
+  return { lineWords: l.lineWords ?? (carlOn() && context.pages === 1 ? LIMITS.onePageLineWords : LIMITS.lineWords), technologiesPerLine: l.technologiesPerLine ?? LIMITS.technologiesPerLine, documentWords: l.documentWords ?? fallback,
     summaryWords: l.summaryWords ?? LIMITS.summaryWords, summarySentences: l.summarySentences ?? LIMITS.summarySentences };
 }
 
@@ -239,9 +243,10 @@ export type Checked = { surface: Surface; verdict: Verdict; exact: RuleResult[];
 //   it, and it is read like written text;
 // - earlier: an Earlier experience line that differs from the record;
 // - skills, education, summary: a line of those sections of a resume;
+// - technologies: an entry's Technologies line (RESUME-RULES.md, rule 14), a list that code writes;
 // - bullet: a bullet of a role;
 // - body: any other line.
-type Kind = 'top' | 'header' | 'supplied' | 'heading' | 'dates' | 'earlier' | 'skills' | 'education' | 'summary' | 'bullet' | 'body';
+type Kind = 'top' | 'header' | 'supplied' | 'heading' | 'dates' | 'earlier' | 'skills' | 'education' | 'technologies' | 'summary' | 'bullet' | 'body';
 // `read`: what the banned-word and number rules read: the line without its marks, a link as its text, '' for text the
 // record supplies (of a top line, only the parts that are not the person's). `odd`: why neither rule can vouch for it.
 // `cited`: the facts it cites. `dates`: its date ranges that equal a dated row of its own employer in the record.
@@ -293,7 +298,7 @@ function readText(surface: Surface, text: string, context: Context): Read {
   const earlier = new Set(canons.map((c) => same(c.earlier)));
   const person = { name: same(context.person?.name ?? ''), contact: new Set((context.person?.contact ?? []).map(same).filter(Boolean)) };
   const entries = [...resume.experience, ...resume.projects, ...resume.elsewhere];
-  const headings = new Set(entries.map((e) => e.at.heading));
+  const headings = new Set(entries.map((e) => e.at.heading)), technologies = new Set(entries.flatMap((e) => e.at.technologies));
   // A dates or Previously line, with the dated rows of its own employer in the record. lib/entries.ts compares its
   // ranges only when that employer has dated rows, so a range counts as the record's only when it equals one of them.
   const datesOf = new Map<number, RoleRow[]>();
@@ -319,6 +324,7 @@ function readText(surface: Surface, text: string, context: Context): Read {
     if (supplied.has(same(t))) return lineOf(i, t, 'supplied', '');
     if (section === 'skills' || section === 'education') return lineOf(i, t, section, strip(t));
     if (headings.has(i)) return lineOf(i, t, 'heading', strip(t));
+    if (technologies.has(i)) return lineOf(i, t, 'technologies', strip(t));
     const rows = datesOf.get(i);
     if (rows) return lineOf(i, t, 'dates', strip(t), undefined, rangesIn(strip(t)).filter((x) => rows.some((r) => sameDate(x.start, r.start) && sameDate(x.end, r.end))).map((x) => x.text));
     if (bullets.has(i)) return lineOf(i, t, 'bullet', strip(t), cites?.get(bullets.get(i)!));
@@ -328,9 +334,9 @@ function readText(surface: Surface, text: string, context: Context): Read {
   return { all, lines, roles: roleList };
 }
 // The lines whose length and tools are measured: every written line of a resume but a section line, a line the record
-// supplies, a Skills line (a list, which names many tools by design and is capped elsewhere, lib/skills.ts) and the
-// Summary's prose, which is measured as a whole (summaryOf). A bullet in the Summary is measured as a line.
-const measured = (r: Read) => r.lines.filter((l) => !['header', 'supplied', 'skills'].includes(l.kind) && !(l.kind === 'summary' && !l.bullet));
+// supplies, a Skills line or a Technologies line (lists, which name many tools by design and are capped elsewhere,
+// lib/skills.ts) and the Summary's prose, which is measured as a whole (summaryOf). A bullet in the Summary is measured as a line.
+const measured = (r: Read) => r.lines.filter((l) => !['header', 'supplied', 'skills', 'technologies'].includes(l.kind) && !(l.kind === 'summary' && !l.bullet));
 // The Summary's prose: its lines that are no bullet.
 const summaryOf = (r: Read) => r.lines.filter((l) => l.kind === 'summary' && !l.bullet);
 // What the checklist reads: a resume's summary and the lines of its roles; every line but a heading elsewhere.
@@ -551,7 +557,9 @@ export function verdictOf(results: readonly RuleResult[]): Verdict {
 
 // ---------- Checklist ----------
 
-const firstWord = (text: string) => (unmark(text).split(/\s+/)[0] ?? '').toLowerCase().replace(/[^\p{L}\p{N}-]+/gu, '');
+// A bullet's opener is its action verb: with CARL the first word after an opening context clause, if it has one
+// (lib/ats.ts); with EGG_CARL=off its first word, as before.
+const firstWord = (text: string) => (carlOn() ? actionVerb(unmark(text)) : (unmark(text).split(/\s+/)[0] ?? '').toLowerCase()).replace(/[^\p{L}\p{N}-]+/gu, '');
 const round = (n: number) => Math.round(n * 100) / 100;
 
 function alike(role: Role): BulletsAlike {

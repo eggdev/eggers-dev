@@ -60,7 +60,7 @@ console.log('PROMPTS' + JSON.stringify(prompts));
 `;
 
 function run(root: string, db: string): string[] {
-  const p = Bun.spawnSync(['bun', '-e', CHILD], { cwd: repo, env: { ...process.env, EGG_ROOT: root, DB: db, NODE_ENV: 'test', EGG_COUNCIL: 'on', EGG_LINKS: 'off' }, stdout: 'pipe', stderr: 'pipe' });
+  const p = Bun.spawnSync(['bun', '-e', CHILD], { cwd: repo, env: { ...process.env, EGG_ROOT: root, DB: db, NODE_ENV: 'test', EGG_COUNCIL: 'on', EGG_LINKS: 'off', EGG_CARL: 'off' }, stdout: 'pipe', stderr: 'pipe' });
   const out = p.stdout.toString(), at = out.lastIndexOf('PROMPTS');
   if (p.exitCode !== 0 || at < 0) throw new Error(`${root}: ${p.stderr.toString().slice(-1500)}`);
   return JSON.parse(out.slice(at + 7).trim());

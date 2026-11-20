@@ -7,7 +7,7 @@ import { db, seed } from './scratch.ts';
 import { checkEntries } from './entries.ts';
 import { refreshDueSkills, refreshSkills, saveOwnerEdit, skillsChanged, SKILLS_QUIET_MS, type JobRow } from './jobs.ts';
 import { storeLinks, type Links } from './links.ts';
-import { markSkills, syncSkills, withSkills } from './skills.ts';
+import { markSkills, syncSkills, withSkillLines } from './skills.ts';
 import { publish, saveResume, storePrinted } from './jobs.ts';
 import { pdfPath } from './pdf.ts';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -173,7 +173,7 @@ test('no suggestion on a sent job, on a job being written, or on a resume a mode
   expect([sugs(sent), sugs(written), sugs(busy), sugs(reading)]).toEqual([[], [], [], []]);
   // The model-written resume takes the list's Skills line straight away, as before rule 7.
   expect(refreshSkills()).toContain(written);
-  expect(row(written).resume).toBe(withSkills(RESUME, POSTING, 2));
+  expect(row(written).resume).toBe(withSkillLines(RESUME, POSTING, 2));
   expect(sugs(written)).toEqual([]);
 });
 

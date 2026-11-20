@@ -1,4 +1,5 @@
 import type { Answer, Result, Sources } from './app.contract.d.ts';
+import { startNewRecord, type Answer as Reply } from './lib/resetflow.ts';
 
 // The server's address: this machine's by default (server.ts listens there). A build for the
 // standing machine sets API_BASE_URL to its Tailscale address (app.json's env, .env.local).
@@ -147,6 +148,17 @@ const tellReply = (r: Awaited<ReturnType<typeof exchange>>, sitting = ''): Resul
 const NB = '\u00a0';
 const drawn = (t: string) => t.replace(/\r\n?/g, '\n').split('\n').map((line) => line.replace(/\t/g, NB.repeat(4))
   .replace(/^ +/, (m) => NB.repeat(m.length)).replace(/ {2,}/g, (m) => `${NB.repeat(m.length - 1)} `)).join('\n');
+// A story a question's select offers, and a question from an interview with the stories its select offers.
+type Choice = { id: string; label: string };
+const choiceOf = (c: Record<string, unknown>): Choice => ({ id: text(c.id), label: text(c.label) });
+// A question linked to a project with nothing told any more still shows that project, by its title.
+const askedOf = (q: Record<string, unknown>, choices: Choice[]) => {
+  const projectId = text(q.projectId), linked = projectId === '' || choices.some((c) => c.id === projectId);
+  return { id: text(q.id), text: text(q.text), jobId: text(q.jobId), job: text(q.job), added: text(q.added), projectId, story: text(q.story), noStory: q.noStory === true,
+    choices: linked ? choices : [...choices, { id: projectId, label: text(q.story) }] };
+};
+// A spoken story's paragraphs, as the screen sets them: parted by a blank line, each kept as written.
+const paragraphsOf = (t: string) => t.replace(/\r\n?/g, '\n').split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p !== '').map((p, i) => ({ id: String(i), text: p }));
 // A flag's severity, the most serious first.
 const SEVERITY = ['high', 'warn', 'info'];
 
@@ -159,7 +171,7 @@ const sources: Sources = {
       roles: rows(t.roles).map((r) => ({ id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end), location: text(r.location),
         employment: text(r.employment), reach: text(r.reach), proposeStatus: text(r.proposeStatus), proposeNote: text(r.proposeNote) })),
       projects: rows(t.projects).map((p) => ({ id: text(p.id), ref: text(p.ref), roleId: text(p.roleId), place: text(p.place), carried: p.carried === true, title: text(p.title), start: text(p.start), end: text(p.end),
-        lives: text(p.lives), situation: text(p.situation), did: text(p.did), result: text(p.result), learned: text(p.learned),
+        lives: text(p.lives), context: text(p.context), action: text(p.action), result: text(p.result), learning: text(p.learning),
         suggestedResult: text(p.suggestedResult), suggestedFact: text(p.suggestedFact), proposal: text(p.proposal) })),
       facts: rows(t.facts).map((f) => ({ id: text(f.id), ref: text(f.ref), roleId: text(f.roleId), projectId: text(f.projectId), text: text(f.text), metric: text(f.metric), kind: text(f.kind) })),
       questions: rows(t.questions ?? []).map((q) => ({ key: text(q.key), text: text(q.text), route: text(q.route) })),
@@ -178,58 +190,100 @@ const sources: Sources = {
   decideProposal: ([proposal, how, title, facts, edited]) =>
     made('POST', `/proposals/${id(proposal)}`, how === 'keep' ? { keep: true, ...(edited ? { title, facts } : {}) } : how === 'reject' ? { reject: true } : { result: how }),
   judgeLine: ([key, verdict]) => write('POST', `/derived/${id(key)}`, { verdict }),
-  // Telling a role or a project (telling.contract): where it stands, while it is open in Experience.
-  loadTelling: async ([kind, subject]): Promise<Result<'loadTelling'>> => {
-    if (kind === '' || subject === '') return { loaded: false, kind: '', id: '', open: false, sitting: '', settled: 0, total: 0, lastOn: '' };
-    const b = obj(await get(`/${kind === 'project' ? 'projects' : 'roles'}/${id(subject)}/sitting`)) ?? {};
-    return { loaded: true, kind, id: subject, open: b.open === true, sitting: text(b.sitting), settled: num(b.settled), total: num(b.total), lastOn: text(b.lastOn) };
+  // Telling a story (telling.contract): where the open project's telling stands, while it is open in Experience.
+  loadTelling: async ([project]): Promise<Result<'loadTelling'>> => {
+    if (project === '') return { loaded: false, project: '', open: false, sitting: '', settled: 0, total: 0, lastOn: '', said: false, deriveStatus: '', deriveNote: '', toldOn: '' };
+    const b = obj(await get(`/projects/${id(project)}/sitting`)) ?? {};
+    return { loaded: true, project, open: b.open === true, sitting: text(b.sitting), settled: num(b.settled), total: num(b.total), lastOn: text(b.lastOn), said: b.said === true,
+      deriveStatus: text(b.deriveStatus), deriveNote: text(b.deriveNote), toldOn: text(b.toldOn) };
   },
   // One sitting. One deleted since is gone, not a failed read.
   loadSitting: async ([sitting]): Promise<Result<'loadSitting'>> => {
-    const none = { loaded: false, gone: false, id: '', kind: '', subject: '', name: '', open: false, due: false, position: 0, total: 0, closing: '', answers: 0, turns: [], said: [] };
+    const none = { loaded: false, gone: false, id: '', project: '', name: '', open: false, due: false, position: 0, part: '', total: 0, closing: '', answers: 0, turns: [], said: [] };
     if (sitting === '') return none;
     const res = await fetch(`${API}/sittings/${id(sitting)}`, { exactTimeout: 10000, headers });
     if (res.status === 404) return { ...none, gone: true };
     if (!res.ok) throw new Error(`The server answered ${res.status}.`);
     const s = obj(await res.json()) ?? {};
-    return { loaded: true, gone: false, id: text(s.id), kind: text(s.kind), subject: text(s.subject), name: text(s.name), open: s.open === true, due: s.due === true,
-      position: num(s.position), total: num(s.total), closing: text(s.closing), answers: num(s.answers),
+    return { loaded: true, gone: false, id: text(s.id), project: text(s.project), name: text(s.name), open: s.open === true, due: s.due === true,
+      position: num(s.position), part: text(s.part), total: num(s.total), closing: text(s.closing), answers: num(s.answers),
       turns: rows(s.turns ?? []).map((t) => ({ id: text(t.id), mine: t.mine === true, step: text(t.step), text: text(t.text), shown: drawn(text(t.text)) })),
       said: rows(s.said ?? []).map((g) => ({ key: text(g.key), question: text(g.question),
         answers: rows(g.answers ?? []).map((a) => ({ id: text(a.id), sitting: text(a.sitting), text: text(a.text), shown: drawn(text(a.text)), followUp: text(a.followUp), more: num(a.more) })) })) };
   },
-  // A start (or the open sitting given back), an answer sent exactly as typed, a stop, a deleted answer: the refusal in
-  // words, the sitting, and whether it has ended.
-  startTelling: async ([kind, subject]) => tellReply(await exchange('POST', `/${kind === 'project' ? 'projects' : 'roles'}/${id(subject)}/sitting`, {})),
+  // A start (or the open sitting given back), a new story under a job with its first sitting, an answer sent exactly as
+  // typed, a stop, a deleted answer: the refusal in words, the sitting, and whether it has ended.
+  startTelling: async ([project]) => tellReply(await exchange('POST', `/projects/${id(project)}/sitting`, {})),
+  tellStory: async ([role, title]) => tellReply(await exchange('POST', `/roles/${id(role)}/stories`, { title })),
+  // Write it again from what you said: the refusal in words, or the story queued.
+  deriveStory: async ([project]) => tellReply(await exchange('POST', `/projects/${id(project)}/derive`, {})),
   // turn: the interviewer turn the screen shows as waiting; an answer to one that no longer waits is refused (stale).
   answerSitting: async ([sitting, turn, answer]) => tellReply(await exchange('POST', `/sittings/${id(sitting)}/answer`, { text: answer, turn }), sitting),
   stopSitting: async ([sitting]) => tellReply(await exchange('POST', `/sittings/${id(sitting)}/stop`, {}), sitting),
   deleteSitting: async ([sitting]) => tellReply(await exchange('DELETE', `/sittings/${id(sitting)}`, {}), sitting),
   deleteAnswer: async ([sitting, turn]) => tellReply(await exchange('DELETE', `/sittings/${id(sitting)}/turns/${id(turn)}`, {}), sitting),
+  // Stories (stories.contract): the list, one story to read aloud, and the questions asked at a job.
+  loadStories: async (): Promise<Result<'loadStories'>> => {
+    const b = obj(await get('/stories')) ?? {};
+    const choices = rows(b.choices ?? []).map(choiceOf);
+    return { loaded: true, untold: num(b.untold), questions: rows(b.questions ?? []).map((q) => askedOf(q, choices)),
+      groups: rows(b.groups ?? []).map((g) => ({ key: text(g.key), name: text(g.name), stories: rows(g.stories ?? []).map((st) => ({ id: text(st.id), ref: text(st.ref), title: text(st.title), line: text(st.line) })) })) };
+  },
+  // One story. One deleted since is gone, not a failed read.
+  loadStory: async ([story]): Promise<Result<'loadStory'>> => {
+    const none = { loaded: false, gone: false, id: '', ref: '', title: '', job: '', spoken: '', paragraphs: [], held: false, status: '', note: '', canWrite: false, timeLine: '', over: false,
+      practiceLine: '', practices: [], parts: { context: '', action: '', result: '', learning: '' }, questions: [] };
+    if (story === '') return none;
+    const res = await fetch(`${API}/stories/${id(story)}`, { exactTimeout: 10000, headers });
+    if (res.status === 404) return { ...none, id: story, gone: true };
+    if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+    const v = obj(await res.json()) ?? {}, parts = obj(v.parts) ?? {};
+    return { loaded: true, gone: false, id: text(v.id), ref: text(v.ref), title: text(v.title), job: text(v.job), spoken: text(v.spoken), paragraphs: paragraphsOf(text(v.spoken)),
+      held: v.held === true, status: text(v.status), note: text(v.note), canWrite: v.canWrite === true, timeLine: text(v.timeLine), over: v.over === true, practiceLine: text(v.practiceLine),
+      practices: rows(v.practices ?? []).map((p) => ({ id: text(p.id), on: text(p.on), timed: text(p.timed) })),
+      parts: { context: text(parts.context), action: text(parts.action), result: text(parts.result), learning: text(parts.learning) },
+      questions: rows(v.questions ?? []).map((q) => ({ id: text(q.id), text: text(q.text), job: text(q.job) })) };
+  },
+  loadJobQuestions: async ([job]): Promise<Result<'loadJobQuestions'>> => {
+    if (job === '') return { loaded: false, job: '', questions: [] };
+    const b = obj(await get(`/jobs/${id(job)}/questions`)) ?? {}, choices = rows(b.choices ?? []).map(choiceOf);
+    return { loaded: true, job, questions: rows(b.questions ?? []).map((q) => askedOf(q, choices)) };
+  },
+  // replace: a text the owner changed becomes the writer's again, so it can be replaced.
+  askSpoken: ([story, replace]) => write('POST', `/projects/${id(story)}/spoken`, { replace }),
+  saveSpoken: ([story, body]) => write('PATCH', `/projects/${id(story)}/spoken`, { text: body }),
+  // seconds: the time it took when it was timed; 0 when it was not.
+  addPractice: ([story, seconds]) => write('POST', `/projects/${id(story)}/practices`, seconds > 0 ? { seconds } : {}),
+  removePractice: ([practice]) => write('DELETE', `/practices/${id(practice)}`),
+  addAsked: ([job, question]) => write('POST', '/interview-questions', { text: question, jobId: job }),
+  chooseStory: ([question, story]) => write('PATCH', `/interview-questions/${id(question)}`, { projectId: story }),
+  markNoStory: ([question, on]) => write('PATCH', `/interview-questions/${id(question)}`, { noStory: on }),
+  removeAsked: ([question]) => write('DELETE', `/interview-questions/${id(question)}`),
   // One fact whole, while it is open.
   loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
-    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '' };
+    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '', said: [] };
     if (fact === '') return none;
     // A fact deleted while it was open is gone, not a failed read.
     const res = await fetch(`${API}/facts/${id(fact)}`, { exactTimeout: 10000, headers });
     if (res.status === 404) return none;
     if (!res.ok) throw new Error(`The server answered ${res.status}.`);
     const f = (await res.json()) as Record<string, unknown>;
-    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence) };
+    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence),
+      said: rows(f.said ?? []).map((q) => text(q)) };
   },
   // The role as one line ("title at employer"), or, once a line was refused as unclear, its title and employer apart.
   addRole: ([line, title, company, when, employment, location]) => made('POST', '/roles', { ...(line !== '' ? { line } : { title, company }), when, employment, location }),
   // home: role:<id>, side, or new (the role newRole names, made on the spot).
-  addProject: ([title, home, newRole, when, result, situation, did, learned, lives]) =>
-    made('POST', '/projects', { title, when, result, situation, did, learned, lives, ...(home === 'side' ? { side: true } : home === 'new' ? { newRole } : { roleId: home.replace(/^role:/, '') }) }),
+  addProject: ([title, home, newRole, when, result, context, action, learning, lives]) =>
+    made('POST', '/projects', { title, when, result, context, action, learning, lives, ...(home === 'side' ? { side: true } : home === 'new' ? { newRole } : { roleId: home.replace(/^role:/, '') }) }),
   // home: day:<role>, project:<id>, general, or new (the role newRole names).
   addFact: ([body, home, newRole, metric]) => made('POST', '/facts', { text: body, metric, ...where(home, newRole) }),
   // Only the fields named in `changed` are sent, so a Save with no change asks the server to change nothing.
   saveRole: ([role, changed, title, company, start, end, employment, location, reach]) =>
     made('PATCH', `/roles/${id(role)}`, only(changed, { title, company, start, end, employment, location, reach })),
   // place: role:<id> or side for a project that is placed here; '' leaves it where it is.
-  saveProject: ([project, changed, title, when, lives, result, situation, did, learned, place]) =>
-    made('PATCH', `/projects/${id(project)}`, { ...only(changed, { title, when, lives, result, situation, did, learned }), ...(!changed.includes('place') ? {} : place === 'side' ? { side: true } : place.startsWith('role:') ? { roleId: place.slice(5) } : {}) }),
+  saveProject: ([project, changed, title, when, lives, result, context, action, learning, place]) =>
+    made('PATCH', `/projects/${id(project)}`, { ...only(changed, { title, when, lives, result, context, action, learning }), ...(!changed.includes('place') ? {} : place === 'side' ? { side: true } : place.startsWith('role:') ? { roleId: place.slice(5) } : {}) }),
   saveFact: ([fact, changed, body, detail, metric, kind]) => made('PATCH', `/facts/${id(fact)}`, only(changed, { text: body, detail, metric, kind })),
   moveFact: ([fact, home]) => made('PATCH', `/facts/${id(fact)}`, where(home, '')),
   // A project's facts stay when it is deleted.
@@ -427,6 +481,25 @@ const sources: Sources = {
   backupNow: async () => {
     const r = await studio('POST', '/backup', {}, 330000);
     return outcome(r, r.kind === 'ok' && text(r.body.reason) !== '' ? sentence(text(r.body.reason)) : 'Backed up.');
+  },
+  // Starting a new record: the steps are lib/resetflow.ts's (where it runs, a backup first in the studio, the reset, a
+  // backup of the new record); here only the requests, each an answer or status 0 when none came.
+  resetRecord: async ([phrase]): Promise<Result<'resetRecord'>> => {
+    const call = async (method: 'GET' | 'POST', path: string, body: unknown, timeout: number): Promise<Reply> => {
+      try {
+        const res = await fetch(`${API}${path}`, { method, exactTimeout: timeout, headers, body: method === 'GET' ? undefined : JSON.stringify(body) });
+        return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+      } catch (e) {
+        if ((e as { code?: string }).code === 'bake') throw e;
+        return { status: 0, body: {} };
+      }
+    };
+    return startNewRecord({
+      status: () => call('GET', '/_studio/status', undefined, 30000),
+      // A backup can take up to five minutes.
+      backup: () => call('POST', '/_studio/backup', {}, 330000),
+      reset: () => call('POST', '/record/reset', { confirm: phrase }, 60000),
+    });
   },
   // A sleeping machine is started first, which can take about 80 seconds.
   // Its reply holds the one-time code, which is dropped here: the screen shows the code only from the latest status.

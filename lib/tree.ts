@@ -14,7 +14,7 @@ import type { RoleRow } from './db.ts';
 
 export type Level = 'role' | 'project' | 'side' | 'unplaced';
 export type TreeRoleRow = RoleRow;
-export type ProjectRow = { id: number; role_id: number | null; via_role: number | null; title: string; start: string; end: string; lives: string; situation: string; did: string; result: string; learned: string };
+export type ProjectRow = { id: number; role_id: number | null; via_role: number | null; title: string; start: string; end: string; lives: string; context: string; action: string; result: string; learning: string };
 export type FactLean = { id: number; role_id: number | null; project_id: number | null; text: string; metric: string; kind: string };
 
 // The level of a `roles` row, by the rules the resume pipeline already uses: a row filed under an existing role is
@@ -57,7 +57,7 @@ const datedFirst = <T extends { id: number; start: string }>(a: T, b: T) =>
 export type TreeRole = { id: string; ref: string; title: string; company: string; start: string; end: string; location: string; employment: Employment; standing: string; reach: string; label: string; note: string };
 // place: role (in a role), side (the person's own), unplaced (a repository nobody placed). carried: its name and dates
 // are a `roles` row's.
-export type TreeProject = { id: string; ref: string; roleId: string; place: 'role' | 'side' | 'unplaced'; carried: boolean; title: string; start: string; end: string; lives: string; situation: string; did: string; result: string; learned: string };
+export type TreeProject = { id: string; ref: string; roleId: string; place: 'role' | 'side' | 'unplaced'; carried: boolean; title: string; start: string; end: string; lives: string; context: string; action: string; result: string; learning: string };
 // roleId '' and projectId '' is General; roleId alone is the role's Day to day.
 export type TreeFact = { id: string; ref: string; roleId: string; projectId: string; text: string; metric: string; kind: string };
 export type Tree = { roles: TreeRole[]; projects: TreeProject[]; facts: TreeFact[] };
@@ -88,11 +88,11 @@ export function tree(rows: TreeRoleRow[], projects: ProjectRow[], facts: FactLea
       if (!row || level === 'role') continue;
       const parent = level === 'project' && roleIds.has(row.part_of!) ? String(row.part_of) : '';
       shown.push({ id: String(p.id), ref: projectRef(p.id), roleId: parent, place: parent !== '' ? 'role' : level === 'side' ? 'side' : 'unplaced', carried: true,
-        title: row.company, start: row.start, end: row.end, lives: p.lives, situation: p.situation, did: p.did, result: p.result, learned: p.learned, n: p.id, s: row.start });
+        title: row.company, start: row.start, end: row.end, lives: p.lives, context: p.context, action: p.action, result: p.result, learning: p.learning, n: p.id, s: row.start });
     } else {
       const parent = p.role_id !== null && roleIds.has(p.role_id) ? String(p.role_id) : '';
       shown.push({ id: String(p.id), ref: projectRef(p.id), roleId: parent, place: parent !== '' ? 'role' : 'unplaced', carried: false,
-        title: p.title, start: p.start, end: p.end, lives: p.lives, situation: p.situation, did: p.did, result: p.result, learned: p.learned, n: p.id, s: p.start });
+        title: p.title, start: p.start, end: p.end, lives: p.lives, context: p.context, action: p.action, result: p.result, learning: p.learning, n: p.id, s: p.start });
     }
   }
   // Projects in roles first, then side projects, then the unplaced; each group in its own order.

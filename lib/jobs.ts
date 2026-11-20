@@ -5,11 +5,12 @@
 // The fit number is computed here from the requirement coverage, not asked of the model, so two
 // jobs are ranked by the same arithmetic and each score can be explained row by row.
 //
-// The resume follows the owner's twelve rules (RESUME-RULES.md; its last section says where each is applied).
+// The resume follows the owner's rules (RESUME-RULES.md; its last section says where each is applied).
 // In short, for one resume: the posting is mapped first (assess), the writer is given that map, the top three
 // requirements and the metrics inventory (compose), the council reviews it, a six-second skim reviews its top
 // (lib/skim.ts), and after every step that a model wrote, code puts back the true headings and dates
-// (lib/entries.ts) and writes the Skills line from the person's own list (lib/skills.ts). What code finds and
+// (lib/entries.ts) and writes the Skills line and each entry's Technologies line from the person's own list
+// (lib/skills.ts). What code finds and
 // cannot fix is kept as flags on the job (lib/checks.ts) or asked of the person (lib/raised.ts).
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
@@ -19,7 +20,8 @@ import { ask } from './llm.ts';
 import { council, type Review } from './council.ts';
 import { ASKED } from './db.ts';
 import { person, withHeader } from './person.ts';
-import { BULLETS, CONTEXT, ENTRIES, KEPT_LINES, LINKS, METRICS, SIGNAL, SUMMARY, WRITING } from './writing.ts';
+import { carlOn } from './carl.ts';
+import { carlText, ENTRIES, KEPT_LINES, LINKS, METRICS, SIGNAL, SUMMARY } from './writing.ts';
 import { keptLines } from './record.ts';
 import { inData } from './paths.ts';
 import { draftScore } from './ats.ts';
@@ -33,7 +35,7 @@ import { quantities, redact } from './numbers.ts';
 import { answeredRaised } from './raised.ts';
 import { lf } from './resume.ts';
 import { skimLoop, type Skim } from './skim.ts';
-import { reviewed, withSkills } from './skills.ts';
+import { reviewed, withSkillLines } from './skills.ts';
 import { suggestAfterSave, suggestSkills } from './suggest.ts';
 import { annotate, carry, changedLines, keyOf, linkLines, linksOn, parseLinks, stripLinks, takeLinks, type LinkLine, type Links } from './links.ts';
 import { setResume, writtenReason } from './versions.ts';
@@ -195,8 +197,10 @@ const metricFacts = () => db.query("SELECT id, role_id, metric FROM facts WHERE 
 // the facts and their results alone, and is quicker for it.
 // A project of a role (one the owner made or kept, lib/record.ts) joins its role's "projects" with its facts, which
 // leave the role's own list, so no fact is sent twice. Its name and the parts that are set are context for its facts,
-// never evidence (CONTEXT in lib/writing.ts); what was learned is never sent. A fact's baseline, team and own part are
-// sent when they say something (lib/db.ts, saidValue). A repository's or a side project's project keeps its shape.
+// never evidence (CONTEXT in lib/writing.ts). With CARL on they are its "parts", { context, action, result, learning };
+// with EGG_CARL=off they are sent as before CARL, as its "context", { situation, what_i_did, result }, with no learning. A fact's baseline,
+// team and own part are sent when they say something (lib/db.ts, saidValue). A repository's or a side project's project
+// keeps its shape.
 export function bank(lean = false) {
   const roles = allRoles(), now = Date.now();
   const facts = db.query('SELECT id, role_id, kind, text, detail, metric, skills, baseline, team, own_part FROM facts ORDER BY id').all() as
@@ -209,8 +213,10 @@ export function bank(lean = false) {
   const own = (id: number) => projects.filter((p) => p.role_id === id).map((p) => {
     const mine = facts.filter((f) => filed.get(f.id) === p.id), held = quantities(mine.map((f) => [f.text, f.detail, f.metric, f.baseline, f.team, f.own_part].join('. ')).join('. '));
     const hide = (v: string | undefined) => (v === undefined ? undefined : redact(v, held));
-    const context = { situation: hide(p.situation), what_i_did: hide(p.what_i_did), result: hide(p.result) };
-    return { key: `project:${p.id}`, name: p.name, context: Object.values(context).some((v) => v !== undefined) ? context : undefined, facts: facts.filter((f) => filed.get(f.id) === p.id).map(shape) };
+    const parts = carlOn() ? { context: hide(p.context), action: hide(p.action), result: hide(p.result), learning: hide(p.learning) }
+      : { situation: hide(p.context), what_i_did: hide(p.action), result: hide(p.result) };
+    const said = Object.values(parts).some((v) => v !== undefined) ? parts : undefined;
+    return { key: `project:${p.id}`, name: p.name, ...(carlOn() ? { parts: said } : { context: said }), facts: facts.filter((f) => filed.get(f.id) === p.id).map(shape) };
   });
   const entries = employers(roles).map((g) => {
     const c = canonical(g), head = g.rows[0];
@@ -236,10 +242,15 @@ const projectsSent = () => filedInProjects().length > 0;
 const keptForWriter = () => keptLines().filter((l) => !l.key.startsWith('learned:'));
 const detailsSaid = () => (db.query("SELECT baseline, team, own_part FROM facts WHERE baseline != '' OR team != '' OR own_part != ''").all() as { baseline: string; team: string; own_part: string }[])
   .some((f) => Object.values(factDetails(f)).some((v) => v !== undefined));
-const contextRules = () => (projectsSent() || detailsSaid() || keptForWriter().length > 0 ? CONTEXT : '');
+const contextRules = () => (projectsSent() || detailsSaid() || keptForWriter().length > 0 ? carlText().CONTEXT : '');
 
-// The length budget for one resume. The limits for old and unrelated roles are rule 8; the skills cap is rule 7.
-const limits = (pages: number) => (pages === 1
+// The length budget for one resume. The limits for old and unrelated roles are rule 8; the skills cap is rule 7; a
+// bullet's length is rule 13. With CARL a one-page resume gives its two main roles three bullets each, not four: ten
+// bullets of up to 30 words, with the Technologies lines, would not fit in 400 words. EGG_CARL=off gives the limits before it.
+export const limits = (pages: number) => (!carlOn() ? limitsBefore(pages) : pages === 1
+  ? 'It must fit on ONE page when printed: at most 400 words in all, counting everything, the Technologies lines too. A bullet is one sentence of at most 30 words. The two roles that matter most for this posting get up to three bullets each and one more gets two. Every other role is left out or named on the Earlier experience line. Skills is one line of at most fourteen items.'
+  : 'It must fit on two pages when printed: 700 to 850 words in all, never under 660, counting the Technologies lines. A bullet is one sentence of at most 34 words. The current role and the one before it get up to five bullets each, and the next most relevant up to three. A role that ended 8 or more years ago, or that is outside the field of this posting, gets one bullet at most, or goes on the Earlier experience line. Skills is one line of at most 25 items.');
+const limitsBefore = (pages: number) => (pages === 1
   ? 'It must fit on ONE page when printed: at most 400 words in all, counting everything. A bullet is one sentence of at most 22 words. The two roles that matter most for this posting get up to four bullets each and one more gets two. Every other role is left out or named on the Earlier experience line. Skills is one line of at most fourteen items.'
   : 'It must fit on two pages when printed: 700 to 850 words in all, never under 660. A bullet is one sentence of at most 28 words. The current role and the one before it get up to five bullets each, and the next most relevant up to three. A role that ended 8 or more years ago, or that is outside the field of this posting, gets one bullet at most, or goes on the Earlier experience line. Skills is one line of at most 25 items.');
 
@@ -269,7 +280,7 @@ ${withResume ? `
    - A recruiter's first pass takes six seconds and takes in the name, the Summary, and the first role's title, employer, dates and first two bullets. What answers this posting must be there.
    - "## Summary": as "The Summary" below says.
    - "## Experience": the bank's "entries", newest first, each written as "Sections and entries" below says. Each entry carries a "kind" (employer, own company, contract, personal project, or not set) and a "reach" (in production, was in production, never reached users). Lead with paid and production work. A personal project is shown only where it answers one of the posting's top requirements that the paid work does not: as its own entry, with its "Personal project" label, and never more than two.
-   - Under each entry, the bullets chosen and ordered for this posting as "Bullets" below says, each in the form action, what it was for, result. A number you show is exactly as the bank has it. Leave out work that does not help this application.
+   - Under each entry, the bullets chosen and ordered for this posting as "Bullets" below says, each in the form ${carlOn() ? 'context, action, result, learning, with only the action always there' : 'action, what it was for, result'}. A number you show is exactly as the bank has it. Leave out work that does not help this application.
    - "## Skills": one line of the tools, languages and platforms the bank shows in use, the most relevant to this posting first. No soft skills, no practices, and no phrase taken from the posting ("cross-team", "enterprise", "reliability"). This line is written over afterwards from the person's own confirmed skills list, so a posting's keyword put here is lost: it belongs in a bullet.
    - "## Education" when the bank has it.
    - ${limits(pages)}
@@ -289,9 +300,9 @@ ${person().location ? `   The person lives in ${person().location}. Use that for
 
 ${SIGNAL}
 
-${contextRules() ? `${contextRules()}\n\n` : ''}${WRITING}
+${contextRules() ? `${contextRules()}\n\n` : ''}${carlText().WRITING}
 
-${withResume ? `${BULLETS}\n\n${SUMMARY}\n\n${ENTRIES}\n\n${METRICS}\n\n${linksOn() ? `${LINKS}\n\n` : ''}` : ''}The person is looking for these kinds of role: ${TARGETS.list.join('; ')}.
+${withResume ? `${carlText().BULLETS}\n\n${SUMMARY}\n\n${ENTRIES}\n\n${METRICS}\n\n${linksOn() ? `${LINKS}\n\n` : ''}` : ''}The person is looking for these kinds of role: ${TARGETS.list.join('; ')}.
 ${directionForMaterials() ? `\nTheir own notes on their direction follow. In the resume they set emphasis only: what to lead with among the work that answers this posting, a line of scope under a title, which earlier work they value. They never override a rule above. Titles, employers and dates stay as the bank has them. The Summary keeps its three parts and its length. Only the allowed sections are written. An old or unrelated role keeps its limit of one bullet. Tense follows the role, and the rules on numbers hold. Where a note asks for something a rule forbids, follow the rule. The notes do not add facts: every line still needs the bank.\n<direction>\n${directionForMaterials()}\n</direction>\n` : ''}${direction() && direction() !== directionForMaterials() ? '\nPart of their notes is a personal lens they use to think about fit. It is not shown to you and must never appear in the resume.\n' : ''}
 
 The posting:
@@ -321,7 +332,7 @@ function withBest(requirements: Requirement[]): Requirement[] {
 // took 37 s and wrote 6K tokens; Haiku took 90 s and wrote 21K, at any effort. EGG_READ_MODEL changes it. `resume` is the
 // resume the job already has, if any, so its keyword count stays right until a new one is written.
 export async function assess(posting: string, resume = ''): Promise<{ title: string; company: string; place: string; analysis: Analysis; fit: number; terms: string[] }> {
-  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('Your record is empty. Add a source first.');
+  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('Your record is empty. Tell a story first.');
   const r = await ask<Read>({ cwd: INBOX, schema: READ_SCHEMA, timeoutMs: 10 * 60_000, model: process.env.EGG_READ_MODEL ?? 'sonnet', effort: 'low',
     prompt: reading(posting, 2, undefined, false, true).replace("You are measuring one job posting against one person's knowledge bank, and writing the resume they should send for it.", "You are measuring one job posting against one person's knowledge bank, so they can see where they stand. The resume is written afterwards, separately.") });
   const requirements = withBest(weigh(r.requirements, allRoles(), Date.now()));
@@ -341,7 +352,8 @@ export class FactsError extends Error {
 
 // What code puts right in any resume a model wrote, in this order: the fact keys taken out of the text (lib/links.ts,
 // the one place they are taken out), the person's own name and contact line, each entry's heading and dates from the
-// bank, an entry with no bullets moved to the Earlier experience line, and the Skills line from the person's own list.
+// bank, an entry with no bullets moved to the Earlier experience line, and the Skills line and (with CARL) each entry's
+// Technologies line from the person's own list, so a model can neither drop nor change them.
 // Never used on a resume the person edited. `links` are the keys matched to the lines as they now stand (null with
 // EGG_LINKS=off); a line given no key keeps the link of the same words in the same entry from `pool`, the links seen
 // earlier in this writing, which takes the new ones in turn.
@@ -349,7 +361,7 @@ function tidy(text: string, posting: string, pages: number, roles: RoleRow[], po
   // With EGG_LINKS=off nothing is taken out: the text is what the last commit before links left it.
   const companies = roles.map((r) => r.company), taken = linksOn() ? takeLinks(lf(text).trim(), companies) : { clean: lf(text).trim(), cites: [] };
   const fixed = repairEntries(withHeader(taken.clean), roles, projectNames());
-  const resume = withSkills(collapseEmpty(fixed.resume, roles), posting, pages);
+  const resume = withSkillLines(collapseEmpty(fixed.resume, roles), posting, pages, roles);
   const links = linksOn() ? linkLines(resume, taken.cites, companies, pool) : null;
   if (links && pool) for (const l of links.lines) pool.set(keyOf(l), l);
   return { ...fixed, resume, links };
@@ -379,7 +391,8 @@ function brief(requirements: Requirement[], top: Requirement[], terms: string[])
   const line = (q: Requirement) => `[${word[q.need] ?? 'preferred'}, ${q.coverage}] ${q.text}${q.best ? ` Strongest evidence: ${q.best} “${q.bestText}”` : q.coverage === 'none' ? ' The bank has nothing for this: do not claim it.' : ` ${q.evidence}`}`;
   const decided = answeredRaised('timeline').filter((q) => q.answer.trim() !== '');
   // The lines of "How you work" the person kept: a block of their own, never in the bank and never keyed as facts.
-  // A line about what the person learned is never given to a resume's writer (what was learned is for messages only).
+  // A kept line about what the person learned is never given to a resume's writer: the writer has each project's own
+  // learning in the bank (with CARL), and a count across projects is no part of a bullet.
   const kept = keptForWriter();
   return `The posting has already been read and scored. Return only "resume" (item 4), "changes" (item 5) and "questions". The other items are here so you read the posting the same way. Its terms, as found then, are: ${terms.join(', ') || 'none found'}.
 
@@ -406,6 +419,8 @@ export type Composed = { resume: string; links: Links | null; changes: string[];
 // Set EGG_COUNCIL=off or EGG_SKIM=off to skip a review (a quick run, or a test).
 // `stage` hears where it has got to, in words for the Activity screen ("Being reviewed, round 2"); it changes nothing.
 export async function compose(posting: string, pages: number, terms: string[], requirements: Requirement[] = [], stage: (words: string) => void = () => {}): Promise<Composed> {
+  // An empty record has nothing to write from: no model is asked (as in assess).
+  if ((db.query('SELECT count(*) AS n FROM facts').get() as { n: number }).n === 0) throw new Error('Your record is empty. Tell a story first.');
   // The skills list and the questions follow the bank. A failure there must never stop a resume.
   try { syncQuestions(Date.now()); } catch (e) { console.log(`  questions could not be checked: ${(e as Error).message}`); }
   // Each council round logs one "council:" line when its readers have scored; another round follows unless it passed.
@@ -432,7 +447,7 @@ export async function compose(posting: string, pages: number, terms: string[], r
   const afterCouncil = fix(reviewed.resume);
   if (process.env.EGG_SKIM !== 'off') stage('Checking what a reader sees in six seconds');
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages, context, w.linksOf(text)),
+    rules: [SUMMARY, carlText().BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), carlText().WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, pages, context, w.linksOf(text)),
     ...(w.rule ? { show: w.show } : {}) });
   // The newest version first. One with an entry the bank does not have is passed over for the one before it.
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil, draft], kept = versions.find((v) => v.unresolved.length === 0);
@@ -508,7 +523,7 @@ export async function review(job: JobRow, print = true): Promise<Review | undefi
   const got = await council(w.show(withHeader(job.resume)), job.posting, whole, limits(job.pages), INBOX, log, directionForMaterials(), undefined, undefined, rules, w.rule, w.hear(job.posting, job.pages));
   const afterCouncil = fix(got.resume);
   const skimmed = process.env.EGG_SKIM === 'off' ? undefined : await skimLoop(afterCouncil.resume, { top: top.map((q) => ({ text: q.text, evidence: q.bestText || q.evidence })), posting: job.posting, bank: whole, cwd: INBOX, asked: ASKED(), log,
-    rules: [SUMMARY, BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages, context, w.linksOf(text)),
+    rules: [SUMMARY, carlText().BULLETS, ENTRIES, METRICS, SIGNAL, ...(rules ? [rules] : []), carlText().WRITING, ...(w.rule ? [w.rule] : []), `Length: ${limits(job.pages)}`].join('\n\n'), tidy: (text) => fix(text).resume, found: (text) => fixable(text, job.pages, context, w.linksOf(text)),
     ...(w.rule ? { show: w.show } : {}) });
   const versions = [...(skimmed ? [fix(skimmed.resume)] : []), afterCouncil], kept = versions.find((v) => v.unresolved.length === 0);
   if (!kept) { keepEarlier(job.id, new FactsError(versions[0].unresolved).message); return undefined; }
@@ -550,6 +565,22 @@ export async function publish(jobId: number, print = true): Promise<void> {
   // A flag must never stop a resume being saved or printed.
   try { analysis.flags = flags(job.resume, job.pages, { written: analysis.written, skim: analysis.skim, ats: check, links: parseLinks(job.links), owner: job.edited === 1 }); } catch (e) { console.log(`  flags for job ${jobId} failed: ${(e as Error).message}`); }
   storePrinted(jobId, job.resume, { analysis: JSON.stringify(analysis), ats, pdf });
+}
+// A sent resume whose PDF file is missing is printed again from its stored text alone. What went out is never read
+// against the record again, flagged or checked again, so its reading, flags and check stay as they were. The record's
+// employer names part a heading's title from its company where the record still has that employer; where it does not
+// (after a new record was started), the heading prints whole on one line. Every word prints as it was sent.
+export async function reprintSent(jobId: number): Promise<void> {
+  const job = db.query('SELECT * FROM jobs WHERE id = ?').get(jobId) as JobRow | null;
+  if (!job || job.outcome === '' || job.resume.trim() === '') return;
+  const pdf = pdfPath(job, job.resume);
+  // A file printed earlier from this same text is the one that went out: the job points at it again, and it is never
+  // printed over.
+  if (!existsSync(pdf)) {
+    const companies = (db.query("SELECT company FROM roles WHERE title != ''").all() as { company: string }[]).map((r) => r.company);
+    await Bun.write(pdf, await renderPdf(job.resume, job.pages, companies));
+  }
+  db.query('UPDATE jobs SET pdf = ? WHERE id = ? AND resume = ?').run(pdf, jobId, job.resume);
 }
 // What publish read and printed, stored only while the job's text is still the text it was made from: two writes in a
 // row (two Keeps, a Keep and a Save) can finish printing out of order. Each text prints to its own file (lib/pdf.ts,
@@ -596,16 +627,17 @@ export function reflagOpen(): void {
   for (const j of jobs) { try { reflag(j.id, context); } catch { /* skipped */ } }
 }
 
-// One job's Skills line from the list, with no model: written only if it differs, and only if the resume is still the text
-// that was read and still not edited (the server may save the owner's edit at the same moment). The stored PDF is
-// dropped in the same write, so it is never older than the text: the PDF route prints it again when it is asked for.
-// What was repaired when it was written still holds, since only the Skills line changed. True when it was written.
+// One job's Skills line, and with CARL its Technologies lines, from the list, with no model: written only if they differ,
+// and only if the resume is still the text that was read and still not edited (the server may save the owner's edit at
+// the same moment). The stored PDF is dropped in the same write, so it is never older than the text: the PDF route prints
+// it again when it is asked for. What was repaired when it was written still holds, since only those lines changed. True
+// when it was written.
 export function rewriteSkillsLine(j: JobRow & { edited?: number }): boolean {
-  const resume = withSkills(j.resume, j.posting, j.pages);
+  const resume = withSkillLines(j.resume, j.posting, j.pages);
   if (resume === j.resume) return false;
   const analysis: Analysis = j.analysis ? JSON.parse(j.analysis) : { ...EMPTY };
   if (analysis.written?.sig === sigOf(j.resume)) analysis.written.sig = sigOf(resume);
-  const done = setResume(j.id, resume, 'same', 'skills', 'The Skills line was written again from your reviewed list.', { guard: { resume: j.resume, edited: 0 }, set: { analysis: JSON.stringify(analysis), pdf: '' } });
+  const done = setResume(j.id, resume, 'same', 'skills', carlOn() ? 'The Skills and Technologies lines were written again from your reviewed list.' : 'The Skills line was written again from your reviewed list.', { guard: { resume: j.resume, edited: 0 }, set: { analysis: JSON.stringify(analysis), pdf: '' } });
   if (done) saveResume(j, resume);
   return done;
 }
@@ -646,7 +678,7 @@ export function skillsLineOf(jobId: number): string {
   if (!j || j.resume === '' || j.outcome !== '' || j.edited === 1) return '';
   const f = failed(jobId);
   if (f && f.note !== '' && f.marked_at === dueRow().marked_at) return f.note;
-  try { return skillsDue().due && withSkills(j.resume, j.posting, j.pages) !== j.resume ? 'Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF.' : ''; } catch { return ''; }
+  try { return skillsDue().due && withSkillLines(j.resume, j.posting, j.pages) !== j.resume ? 'Your skills list changed. This resume gets the new list in about 2 minutes, or when you open its PDF.' : ''; } catch { return ''; }
 }
 // The worker's part: after the quiet, each unsent resume a model wrote takes its Skills line from the list, and each one
 // written, or still waiting for its PDF from a pass cut short, is printed (`print`). Each job on its own: one that fails
@@ -671,7 +703,7 @@ export async function refreshDueSkills(now: number, print: (jobId: number) => Pr
       if (!fresh || fresh.edited === 1 || fresh.outcome !== '') continue;
       const wrote = rewriteSkillsLine(fresh);
       if (wrote) { written.push(j.id); await print(j.id); }
-      else if (withSkills(fresh.resume, fresh.posting, fresh.pages) !== fresh.resume) { pending = true; continue; }
+      else if (withSkillLines(fresh.resume, fresh.posting, fresh.pages) !== fresh.resume) { pending = true; continue; }
       else if (fresh.pdf === '') {
         // Its text is new but its PDF is not, after a pass cut short: printed once for this change, the try recorded
         // first. Past that, the PDF route prints it when it is asked for.
