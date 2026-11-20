@@ -52,9 +52,9 @@ const WORK: { what: string; table: string; where: string }[] = [
 // The record and what is derived from it, in the order they are emptied. Projects go before facts, and the marks and
 // the tables triggers write into go last: a trigger on a deleted project or fact (lib/standing.ts writes kept marks
 // onto facts before a kept project goes) can only write into a table that is emptied after it.
-export const RECORD = ['project_proposals', 'projects', 'story_practice', 'facts', 'roles', 'capture_turns', 'capture_sittings', 'talk', 'sources', 'deleted_facts'];
+export const RECORD = ['project_proposals', 'projects', 'story_practice', 'facts', 'roles', 'capture_turns', 'capture_sittings', 'profile_answers', 'talk', 'sources', 'deleted_facts'];
 export const DERIVED = ['answered', 'raised_questions', 'linkedin_positions', 'fact_origins', 'fact_standing', 'project_standing', 'kept_words',
-  'skills', 'repo_activity', 'derived_lines', 'queue_snoozes', 'skills_due_jobs'];
+  'skills', 'repo_activity', 'derived_lines', 'queue_snoozes', 'skills_due_jobs', 'stand_outs'];
 // Single-row tables put back to their start state, and tables of which only some rows go (the work log).
 export const RESET_IN_PLACE = ['profile', 'skills_review', 'skills_due', 'activity_bank', 'activity'];
 // The work log's kinds about the record, and the ones about a job's resume and messages.

@@ -1,34 +1,59 @@
 # Design direction
 
-Rule 4 was changed by the owner on 2026-11-18: the owner's record is taken as given, with no mark of where a value came from.
+The studio adapts the Linear design system from Better Design
+(<https://better-design.com/design-systems/linear>). It uses near-black surfaces, Geist, one indigo accent
+and compact spacing. The owner chose this direction on 2026-11-20. It replaces the "typeset record" direction of 2026-11-17 (one
+ink, hairline rules, no cards).
 
-The studio is a typeset record of a working life. It looks like a well-set document and a catalogue
-record. It behaves like a short queue of things that need the owner, with slow work kept out of the way.
+Page structure follows a second reference the owner chose the same day: one next action on a screen, a
+sidebar, cards with a plain title that says what the text is for, and long text folded behind one control.
 
-The owner approved this direction on 2026-11-17. It replaces the earlier direction (grouped lists, cards
-and badges). Section 1 and section 2 are rules: they do not change. Section 3 holds the values that are
-still open; the lab (`lab/`) exists to choose them.
+Sections 1 to 6 are the look. Section 2 holds the behaviour rules, which did not change except where
+marked. Sections 8 to 12 describe single screens and keep their numbers because the code cites them; where
+their wording about the look (rules, two sizes, no boxes, grey words) differs from sections 1 to 6, sections
+1 to 6 win, and each of those screens takes the new parts when it is next rebuilt.
+
+**What comes from Linear and what is ours.** Linear's system gives the colours, the radius scale, the
+motion values, the font, the density and its five layout sizes, and the icon set (Iconoir). It declares no
+type scale, no spacing scale beyond those five sizes, no light theme and no status colours for text. Those
+are this project's choices and are marked "ours" below.
 
 ## 1. Rules for the look
 
-1. **Two type sizes on a screen, two weights, Geist only.** The sizes are `text` and `title`. All text is
-   flush left. Nothing is centred. A third size is a defect.
-2. **A hairline rule and white space separate things.** No box, card, fill behind text, shadow, pill or
-   rounded container. Controls that the platform draws (a text field, a select) keep their own shape.
-3. **One ink, one paper, at most two greys.** `grey` is for secondary text. `line` is for rules. Emphasis
-   comes from weight and position. Red (`-exact-system-red`) is only for a failure or a destructive action.
-   An accent colour, if the owner keeps one, marks only the one item in focus and links.
-4. **Every fact, role, job and resume is a record.** A record has a permanent reference number and a date or
-   date range. Its fields always come in the same order: reference, name, dates, extent, status. The owner's record
-   is taken as the owner gave it: no screen marks where a value of it came from or how sure it is.
-5. **One score for each thing, and status is one plain word.** Status words come from the fixed list in
-   section 5. A word outside the list is a defect.
+Look rules are numbered L1 to L9. The plain numbers 6 to 12 are the behaviour rules of section 2, which the code cites. Where code or an older note says "rule 4" it means L6, and "rule 5" means L7.
+
+- **L1. Dark only.** The system has one theme. The app sets the dark scheme itself, so the platform's own
+   controls are dark too. There is no light theme until the owner asks for one.
+- **L2. Depth is a lighter fill and one outline.** A card is one step lighter than the page; a control or a
+   well is one step lighter than the card; a hovered row is one step lighter again. Each has a 1px `line`
+   outline of one colour on every side. No drop shadow on anything that sits in the page. No gradient, no
+   glow, no glass.
+- **L3. One accent.** Indigo marks the main action of a screen, the focus ring, a selected control and text
+   selection. It is never decoration and never a status. A link or a selected word in text uses `link`,
+   the accent made lighter so it passes contrast on the dark page.
+- **L4. Colour for status only with words.** Green, amber and red say a state, always next to a word or an
+   icon that says the same thing. Red is for a failure or a destructive action.
+- **L5. Type is Geist in a fixed scale of five sizes and three weights** (section 3). The page title is the
+   size of a section heading, not a display size. The one display size is for the one thing a page is
+   about (a person's name, one number). Bold is for that, for section headings and for a value that is
+   selected. Labels are sentence case; no capitals with wide spacing.
+- **L6. Every record keeps its fields in one order:** reference, name, dates, extent, status. The owner's
+   record is taken as the owner gave it. No screen marks how sure a value is or asks the owner to confirm
+   it. A line may open the owner's own words behind it when the owner asks for them (section 4, "Your
+   words"); that is the only thing shown about where a value came from.
+- **L7. One score for each thing, and status is one word** from the list in section 5, drawn as a tag.
+- **L8. No completeness meter, no percentage of a profile done.** (Owner, 2026-11-17.)
+- **L9. Facts on a line are separate items with a gap between them.** A screen rebuilt in this system does
+   not join facts with a middle dot. `joinDot` stays on screens not yet rebuilt and goes when they are.
 
 ## 2. Rules for the behaviour
 
-6. **Home is one queue of things that need the owner:** questions from the tool, new jobs, facts to confirm,
-   applications gone quiet. One item is in focus. Each answer is one key or one tap. Each answer can be
-   undone for a short time. The queue can reach empty, and then it says so in one line.
+Unchanged from 2026-11-17 except rule 6, which no longer lists "facts to confirm" (the owner's facts are
+confirmed by being given).
+
+6. **Home is one queue of things that need the owner:** questions from the tool, new jobs, applications
+   gone quiet. One item is in focus. Each answer is one key or one tap. Each answer can be undone for a
+   short time. The queue can reach empty, and then it says so in one line.
 7. **The resume is the screen.** Evidence, flags and questions sit in the margin beside the bullet they
    concern. The tool never changes the owner's text without a visible mark that the owner can reject. Every
    claim links to its fact.
@@ -36,7 +61,8 @@ still open; the lab (`lab/`) exists to choose them.
    and its usual duration. Finished work is announced once, in a "since you were here" line. The word
    "queued" never stands alone.
 9. **The tool never guesses.** An unknown pauses only that item and becomes a stored question that says
-   what it blocks. An answer is stored and never asked again.
+   what it blocks. An answer is stored and never asked again. A question asks for more of the story; it
+   never asks whether something the owner said is true, and never questions a date.
 10. **Machine detail stays out of view.** Backups, sign-ins and program checks are behind one door (System).
     No other screen names a server, a folder, a model or a file.
     "Start a new record" lives there too, under the backup controls, because it is the one action whose safety
@@ -46,88 +72,139 @@ still open; the lab (`lab/`) exists to choose them.
     the deployed studio the screen takes a backup first and goes on only when it succeeded, then backs up the new
     record at once and says in one line what was deleted, what was kept and whether that backup was taken. On a
     machine with no studio around it, the section shows on its own and the reset goes on with no backup.
+11. **A screen has one next action.** It is the only filled button on the screen. Everything else is a plain
+    or outlined control.
+12. **Text the tool wrote says what it is used for,** in one short line under its title ("Resumes and
+    messages start from these"). An edit by the owner is kept; a later reading never replaces it.
 
-## 3. Open values (the lab chooses these)
+## 3. Values
 
-A look is one JSON object. The lab draws every screen from it, and the app reads the saved one.
+Colours are tokens in `app.tamber`, each fixed to one value (`scheme=fixed`). No literal colour in a view.
 
-| Key | Meaning | Default | Range |
+| Token | Value | Linear's name | Use |
 | --- | --- | --- | --- |
-| `home` | What the first screen is | `queue` | `queue`, `document`, `glance` |
-| `record` | How a record is drawn | `catalogue` | `catalogue` (stacked fields), `ledger` (one row, columns) |
-| `refs` | Where a reference number shows | `gutter` | `gutter`, `inline`, `hidden` |
-| `textSize` | Size of `text`, px | 16 | 15 to 18 |
-| `ratio` | `title` size divided by `text` size | 1.75 | 1.5 to 2 |
-| `strong` | The heavy weight (the light one is 400) | 600 | 500 to 700 |
-| `leading` | Line height of `text` | 1.5 | 1.35 to 1.65 |
-| `measure` | Width of the main column, rem | 38 | 32 to 44 |
-| `margin` | Width of the notes column, rem | 16 | 12 to 20 |
-| `rowGap` | Space between rows, px | 12 | 6 to 20 |
-| `sectionGap` | Space between sections, px | 48 | 28 to 72 |
-| `ruleWeight` | Rule thickness, px | 1 | 0.5 to 2 |
-| `greys` | Number of greys | 2 | 1 or 2 |
-| `paper` | Paper tone | `white` | `white`, `warm`, `cool` |
-| `accent` | The accent colour | `none` | `none`, `orange` (`#bf5700`, the app's old accent) |
-| `notes` | Most margin notes beside one line | 2 | 0 to 3 |
-| `seed` | The number the variation was drawn from | | any integer |
+| `look.paper` | `#08090a` | background | the page |
+| `look.card` | `#0d0e11` | card | a card, the sidebar |
+| `look.raised` | `#16171b` | secondary, input | a control, a well, a tag |
+| `look.hover` | `#1d1e22` | accent | a hovered or selected row |
+| `look.line` | `#24262b` | border | every outline and rule |
+| `look.ink` | `#f7f8f8` | foreground | text |
+| `look.grey` | `#9b9eab` | muted-foreground | secondary text (7.2 to 1 on a card) |
+| `look.faint` | `#868798` | secondary-foreground | a caption, a count (5.4 to 1 on a card) |
+| `look.accent`, `AccentColor` | `#5e6ad2` | primary, ring | the main action, focus, selection |
+| `look.on-accent` | `#ffffff` | primary-foreground | a label on the accent |
+| `look.link` | `#95a4f6` | ours | a link or selected word in text (8.2 to 1 on a card) |
+| `look.danger` | `#7f1d1d` | destructive | the fill of a destructive button |
+| `look.green` | `#67d283` | ours | a good state, as text |
+| `look.amber` | `#e9b452` | ours | a state that needs the owner, as text |
+| `look.red` | `#fd736d` | ours | a failure, as text |
 
-Colours, light then dark: ink `#111111` / `#ededed`; paper white `#ffffff` / `#111111`, warm `#fbf9f4` /
-`#141311`, cool `#f7f9fb` / `#0f1215`; grey `#5c5c5c` / `#a6a6a6`; line `#d9d9d9` / `#333333`; orange `#bf5700` / `#e8813a`. With one
-grey, rules use `grey` at 35% opacity. Grey text on paper must pass WCAG AA (4.5 to 1). Orange on warm
-paper is just under that (about 4.4 to 1), so orange text needs the heavy weight there.
+The accent as text on the page is 4.2 to 1, under the 4.5 to 1 floor: use `look.link` for text. White on
+the accent is 4.4 to 1, which Linear ships for its button label; keep that label at the medium weight.
 
-Found when the lab drew these values:
+Type (ours; sizes taken from the system's component styles). All in rem.
 
-- Two rules never touch. A section head has a rule above it; the first record under it has none.
-- A record in `catalogue` style takes three lines, not six: name; then dates, extent and status on one
-  line; then, for a job, where its posting was found. The field order does not change.
-- On a phone the gutter takes about 70px of 390px. `refs` set to `inline` suits a phone better.
-- With `notes` at 0 the notes column is not drawn, so the main column keeps the page.
+| Name | Size | Weight | Line height | Use |
+| --- | --- | --- | --- | --- |
+| `display` | 1.75rem (28px) | 600 | 1.35 | the one thing the page is about |
+| `title` | 1.25rem (20px) | 600 | 1.3 | the page title, a section heading |
+| `lead` | 1rem (16px) | 500 | 1.4 | a card's title, a record's name |
+| `text` | 0.875rem (14px) | 400 | 1.5 | running text, a control's label (500) |
+| `small` | 0.8125rem (13px) | 400 or 500 | 1.4 | a label, secondary detail |
+| `caption` | 0.6875rem (11px) | 500 | 1.4 | a tag, a count, a table's column head |
+
+Display and title are set tighter (`letter-spacing` -0.02em and -0.01em). Numbers that line up use
+tabular figures. A measure of running text is at most 42rem.
+
+Space (Linear's compact density; the step is 0.25rem).
+
+| Role | Value |
+| --- | --- |
+| Sidebar width | 11.5rem |
+| Page inset | 1rem (1.5rem from 1040px wide) |
+| Gap between sections or cards | 1.5rem |
+| Gap between columns, and between rows in a card | 0.75rem |
+| Card padding | 1rem, capped at 24px |
+| Inside a group (label to field, title to its line) | 0.25rem to 0.5rem |
+
+Shape: radius 4px (a key cap), 6px (a control), 8px (a card), 12px (a sheet); a tag is fully round.
+Outline: 1px, `look.line`. Motion: 120ms for a control, 160ms for a surface, 220ms for a sheet, easing
+`cubic-bezier(0.25, 0.46, 0.45, 0.94)`; nothing moves under reduced motion.
+
+Widths: one column under 640px; the sidebar and a right rail of 20rem from 1040px.
 
 ## 4. Named patterns
 
 | Name | What it is here |
 | --- | --- |
-| Accession number | The permanent reference on a record: `F-0142` a fact, `R-07` a role, `J-023` a job, `V-023-C` a resume version. Set in tabular figures. Never reused. |
+| Shell | From 1040px wide: a sidebar on `look.card` with the six places, and the page beside it. Narrower: the places in one bar at the top, which scrolls when the labels need more room. The current place has the `look.hover` fill, never a coloured edge. |
+| Card | A group of things that belong together: `look.card`, a 1px outline, 8px radius, 1rem padding. Its title is `lead`; one `small` grey line under it may say what the text is for. One control at its top right at most. Cards do not nest. |
+| Rail | From 1040px wide, a 20rem column to the right of the main column for what the owner can add or answer. On Profile at narrower widths, the question follows the identity and the document link follows the main column. |
+| Tag | A status word from section 5 or a count: `caption`, fully round, `look.raised` fill with `look.grey` text; green, amber or red text when the state is one of those. |
+| Next action | The one filled button of a screen (rule 11), with a count when there is one ("5 ready"). |
+| Folded text | Long text shows its first lines and one control, "Read more" or "Show all 4". A whole document opens as its own route. |
+| One question | One open question at a time, with why it is asked in one grey line, a field for the answer, and Skip. It says how many are open, as a count, never as progress. |
+| Your words | On a line of the record, a control that opens the words the owner said or wrote that the line was taken from, with the date. A line with none shows nothing. |
+| Accession number | The permanent reference on a record: `F-0142` a fact, `R-07` a role, `J-023` a job, `V-023-C` a resume version. Set in tabular figures, `small`, `look.faint`. Never reused. |
 | Where a posting was found | On a job only: one grey line under it, "From Greenhouse" or "Pasted in by you". A posting is not the owner's own information. |
-| Extent and date range | "2019–2023 · 48 facts" on a role. An en dash between years, a middle dot between parts. |
+| Extent and date range | "2019–2023" and "48 facts" on a role, as two items. An en dash between years. |
 | Sidenote | A note in the margin column, on the row of the bullet it concerns. Under 640px wide it moves below the bullet, indented. |
-| Running balance | While a posting is mapped: "7 of 9 requirements answered · 2 open". |
+| Running balance | While a posting is mapped: "7 of 9 requirements answered", "2 open". |
 | Revision letter | The version of a tailored resume (A, B, C) with a dated list of what changed. |
 | Triage queue | The home queue. Verbs: answer, snooze, undo. |
 | Suggestion | A change the tool proposes: the old words struck through in grey, the new words beside them, and Keep / Reject. |
 | Activity row | One row for slow work: what, stage, started, usual duration. |
 | Digest | "Since you were here": what finished, one line each, shown once. |
-| Rotting mark | "No reply in 14 days" on an application. |
-| Overlap marker | Two roles that both say Present, drawn as a mark on both, never hidden. |
+| Rotting mark | "No reply in 14 days" on an application, as an amber tag. |
+
+Withdrawn: the overlap marker (two roles that both say Present). The owner's dates are honoured and never
+marked (2026-11-18). Code that still draws or asks about it is to be removed.
 
 Exact cannot raise text above the line, so a reference number is never a superscript. A margin note lines
 up with a whole bullet or paragraph, never with one line inside it, so each resume bullet is its own row.
 
 ## 5. Status words
 
-One word, in `text` size, in grey unless it needs the owner. The whole list:
+One word, as a tag. The whole list:
 
 - A job: `New`, `Reading`, `Read`, `Writing`, `Ready`, `Sent`, `Quiet`, `Closed`, `Failed`.
 - A question: `Open`, `Answered`, `Snoozed`.
 - Slow work: `Waiting` (always with its place: "Waiting, 2 ahead"), `Running`, `Done`, `Failed`.
 - The public page: `Draft`, `Live`, `Offline`.
 
+`Ready` and `Done` are green. `Quiet` and `Open` are amber. `Failed` is red. The rest are grey.
+
 ## 6. How to build it in Exact
 
-- Do not use: `list` with `appearance="auto"` or a grouped `listStyle`, `section` cards, `Badge`,
-  `SummaryCard`, `buttonStyle="bordered"`, `"filled"` or `"glass"`, `border-radius`, `box-shadow`, or a
-  `background-color` behind text. Write rows with `row`, `column`, `view` and `text`.
-- A rule is `hr`, or `border-bottom` with an explicit width.
-- An action is a `button` with no `buttonStyle` (the platform's plain text button) or a `link`. The main
-  action of a screen is in the heavy weight. A destructive action is red and asks first.
-- Sizes are in rem so the browser's text size setting still works.
-- Colours are tokens in `app.tamber` with `light-dark()`. No literal colour in a view.
-- Two columns come from a grid; read the viewport width and use one column under 640px.
-- Numbers that line up use `font-variant-numeric="tabular-nums"`.
-- Keep keyboard focus visible, keep semantic roles and labels, and keep every `testId` the tests use.
-- The shared pieces (a rule, a section head, a record, a status word, a sidenote, an action) are components.
-  A screen does not set a size, weight or colour itself.
+Linear's system is written for the web as `ds-*` classes. The studio applies its colours, typography and
+layout through shared Exact components.
+
+- **The shared parts are components in `look.contract`.** A screen sets no size, weight, colour, radius or
+  gap itself. To change a value, change it there or in `app.tamber`.
+- **A card** is a `column` with `background-color="look.card"`, `border="1px solid look.line"` (or the
+  width, style and colour the build accepts), `border-radius` and padding from `look.contract`. This
+  replaces the earlier ban on boxes, fills and rounded containers.
+- **A tag** is a `row` with the `look.raised` fill and full radius, holding one `caption` text. Do not use
+  `Badge` from `exact:content` unless it takes these tokens.
+- **The main action** uses the platform's `buttonStyle="bordered-prominent"`, filled with `AccentColor`.
+  A destructive action uses `destructive=true` and asks first. The shared secondary button uses `look.raised`,
+  one `look.line` outline and a wrapping label. Quiet actions use the link colour and a 44px hit target.
+  Both retain button semantics and keyboard focus.
+- **A field** is the platform's `input`, `textarea` or `select`, with a visible label above it in `small`.
+- **The scheme** is set once at the root (`color-scheme="dark"` on the root, and `setScheme("dark")` where
+  the app starts), so every platform control is dark.
+- **The font** is declared once (`font "Geist" = "assets/fonts/Geist.ttf"`, the variable file, with its
+  licence beside it) and named once at the root.
+- **A rule** is `hr`, or a `border-bottom` with an explicit width, in `look.line`.
+- **Sizes are in rem** so the browser's text size setting still works.
+- **Two columns come from the viewport width:** one column under 640px, the sidebar and the rail from 1040px.
+- **An icon** is `image "symbol:<role>"`, or an Iconoir SVG declared in `app.tamber`'s `icons` block. Never
+  a character or an emoji. A place in the sidebar may be a word alone.
+- **Hover** only lightens the fill by one step. It never moves a control and never uses the accent.
+- **Keep keyboard focus visible, keep semantic roles and labels, and keep every `testId` the tests use.**
+
+Not used: a drop shadow in the page, a gradient, a literal colour in a view, centred running text, capitals
+with wide spacing, a coloured bar on the edge of a selected item, an emoji, a spinner for a long wait.
 
 ## 7. Left out on purpose
 

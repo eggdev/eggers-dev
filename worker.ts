@@ -12,10 +12,13 @@ import { read } from './lib/ingest.ts';
 import { assess, compose, FactsError, readAgain, fetchPosting, finishWritten, keepEarlier, publish, refreshDueSkills, reflagOpen, storeComposed, type Analysis, type JobRow } from './lib/jobs.ts';
 import { syncQuestions } from './lib/checks.ts';
 import { syncRecordQuestions } from './lib/gaps.ts';
+import { syncAgenda } from './lib/agenda.ts';
+import { sourceOrigins } from './lib/origins.ts';
 import { positions, storePositions } from './lib/linkedin.ts';
 import { holdSince, rewriteDue } from './lib/raised.ts';
 import { inData } from './lib/paths.ts';
 import { write } from './lib/profile.ts';
+import { drainAnswer, waitingAnswers } from './lib/nextquestion.ts';
 import { prune, reply, type TalkRow } from './lib/talk.ts';
 import { draft, storeDrafts } from './lib/outreach.ts';
 import { runQueued } from './lib/propose.ts';
@@ -41,6 +44,7 @@ function checkQuestions(indent: string): void {
   const steps: [string, () => unknown][] = [
     ['questions', () => syncQuestions(Date.now())],
     ['the record’s questions', () => syncRecordQuestions(Date.now())],
+    ['the agenda', () => syncAgenda(Date.now())],
     ['flags', () => reflagOpen()],
   ];
   for (const [name, run] of steps) {
@@ -175,7 +179,11 @@ db.run("UPDATE talk SET status = 'queued', note = '' WHERE status = 'running'");
 void (async () => {
   for (;;) {
     const turn = db.query("SELECT * FROM talk WHERE status = 'queued' ORDER BY id LIMIT 1").get() as TalkRow | null;
-    if (!turn) { await Bun.sleep(700); continue; }
+    if (!turn) {
+      if (waitingAnswers() > 0 && drainAnswer.immediate()) continue;
+      await Bun.sleep(700);
+      continue;
+    }
     db.query("UPDATE talk SET status = 'running' WHERE id = ?").run(turn.id);
     try { await reply(turn, inData('inbox')); console.log(`talk: replied to message ${turn.id}`); }
     catch (e) { db.query("UPDATE talk SET status = 'failed', note = ? WHERE id = ?").run((e as Error).message, turn.id); console.log(`talk: failed: ${(e as Error).message}`); }
@@ -234,6 +242,8 @@ for (;;) {
     // Deleted while it was being read: keep nothing.
     if (!db.query('SELECT id FROM sources WHERE id = ?').get(source.id)) continue;
     const n = applyExtraction(source.id, found, Date.now());
+    // A pasted text's facts are linked to the passage their evidence quotes, where it is in the text (lib/origins.ts).
+    try { sourceOrigins(source.id); } catch (e) { console.log(`  the words behind its facts could not be linked: ${(e as Error).message}`); }
     // A LinkedIn export's positions are also kept as rows, to compare with the roles (a text with none changes nothing).
     if (source.kind === 'text') { const kept = storePositions(source.body, source.id, Date.now()); if (kept) console.log(`  ${kept} LinkedIn positions kept`); }
     // File a repository's project under the employer whose organisation or name it carries, and give each

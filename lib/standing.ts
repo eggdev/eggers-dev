@@ -1,6 +1,6 @@
 // Where each piece of work stands: when it was last worked and whether it still runs, who may see it, and where it
-// comes in the one ordered list of projects. Nothing calls this yet: the server, the worker and the writers read the
-// record as before. Every change here is additive: two new tables and their triggers, created when this file is imported.
+// comes in the one ordered list of projects. The You screen (lib/you.ts) reads the order and the marks; the writers
+// read the record as before. Every change here is additive: two new tables and their triggers, created when this file is imported.
 // "Standing" here is not `roles.standing` (employer, own, contract, personal: the kind of work a role was).
 //
 // - A project's start and end stay in `projects` (or, for a carried project, in the `roles` row it points at). This
@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 import { carryFacts, db, norm, type CarriedFact, type RoleRow, type Skipped } from './db.ts';
 import type { Surface } from './rules.ts';
-import { factRef, placeOf, type ProjectRow } from './tree.ts';
+import { factRef, levelOf, placeOf, type ProjectRow } from './tree.ts';
 
 // running: still in use. ended: finished as planned. off: turned off or shut down. unknown: the owner has not said.
 export const STATES = ['running', 'ended', 'off', 'unknown'] as const;
@@ -389,6 +389,13 @@ export function mayUse(factId: number, surface: Surface): boolean {
   return allows(factMark(factId).mark, surface);
 }
 
+// Every fact that is kept, by its own mark or through a kept project: factMark's rule for all facts in one query, for a
+// reader of the whole record (lib/you.ts). mayUse(id, surface) is false for exactly these on every surface but 'answer'.
+export const keptFacts = (): Set<number> =>
+  new Set((db.query(`SELECT k.id FROM facts k WHERE EXISTS (SELECT 1 FROM fact_standing r WHERE r.fact_id = k.id AND r.mark = 'kept') OR ${inKept('k.role_id', 'k.project_id')}`).all() as { id: number }[]).map((r) => r.id));
+// Every project the owner marked kept.
+export const keptProjects = (): Set<number> => new Set((db.query("SELECT project_id FROM project_standing WHERE mark = 'kept'").all() as { project_id: number }[]).map((r) => r.project_id));
+
 // The facts offered for the draft of the public collection: marked public by the owner, not kept by any rule above,
 // and with text, detail and metric still exactly as the owner approved them. A fact reworded since (by a reading
 // through `replaces`, by Talk, by an edit) waits until the owner marks it again. Only the words are approved: a fact
@@ -593,7 +600,9 @@ export type RankItem = { id: number; state: WorkState; lastWorked: string; month
 const STATE_ORDER: Record<WorkState, number> = { running: 0, ended: 1, unknown: 2, off: 3 };
 
 // The order of the projects the owner has not placed:
-// 1. state: running, then ended, then unknown, then off (work that runs says the most about the owner now);
+// 1. state: running, then ended, then unknown, then off (work that runs says the most about the owner now). A project
+//    whose state the owner has not said, and that is current by the record's own convention, counts as running here
+//    (currentByRecord below, applied in rankItems);
 // 2. the most recent last work first; a project with no month comes after every project with one;
 // 3. the longer work first (months worked), then the more commits;
 // 4. the lower id first, so the same input always gives the same order.
@@ -628,8 +637,9 @@ export function rank(items: RankItem[]): number[] {
 
 const ym = (s: string) => (s.length === 4 ? `${s}-01` : s.slice(0, 7));
 // Months from start to end, both counted: 2024-01 to 2024-03 is 3. A start of only a year counts from its January.
-// An empty end is the present only while the work is running (today is passed in, YYYY-MM); otherwise the size is
-// not known and counts as 0. Nothing here guesses a date the owner did not give.
+// An empty end is the present only while the work is running (today is passed in, YYYY-MM): set so by the owner, or
+// current by the record's own convention (currentByRecord). Otherwise the size is not known and counts as 0. Nothing
+// here guesses a date the owner did not give.
 export function monthsWorked(start: string, end: string, state: WorkState, today: string): number {
   const s = ym(start), e = end !== '' ? ym(end) : state === 'running' ? today : '';
   if (!isMonth(s) || !isMonth(e)) return 0;
@@ -640,19 +650,46 @@ export function monthsWorked(start: string, end: string, state: WorkState, today
 // The repository table belongs to lib/repoactivity.ts, which may not have been imported.
 const reposTable = () => db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'repo_activity'").get() !== null;
 
+// Whether a project is current by the record's own convention, where a role with a start and an empty end is current
+// ("Present"). Read each time and never stored: it is used only while the owner has not said the project's state, and
+// a state they set always wins (rankItems).
+// - The project has no end of its own (a project's own end, or a carried project's row's end, keeps it ended).
+// - The role it belongs to is a role (lib/tree.ts) with an empty end: for a project in a role, that role; for a carried
+//   project, the role its row is filed under. A side project or a repository nobody placed has no role: no row says it
+//   is current, so it stays as the owner left it (unknown).
+// - There is a start: the project's own, or, for a project with no dates of its own, its role's. With neither, nothing
+//   says when the work began, and nothing is guessed.
+export function currentByRecord(p: ProjectRow, roles: RoleRow[]): boolean {
+  const own = projectDates(p, roles);
+  if (own.end !== '') return false;
+  let roleId = p.role_id;
+  if (p.via_role !== null) {
+    const row = roles.find((r) => r.id === p.via_role);
+    if (!row || levelOf(row, roles) !== 'project') return false;
+    roleId = row.part_of;
+  }
+  const role = roles.find((r) => r.id === roleId);
+  if (!role || levelOf(role, roles) !== 'role' || role.end !== '') return false;
+  return own.start !== '' || (p.via_role === null && p.start === '' && role.start !== '');
+}
+
 // The rank's input for every project in the record, read from the database. today is YYYY-MM.
-// lastWorked is the owner's month, else the project's end, else the month of the owner's last commit in a repository
-// tied to it (lib/repoactivity.ts). commits sums the owner's commits in the repositories tied to the project, or to
-// the `roles` row a carried project points at.
+// state is the owner's, or running for a project current by the record (currentByRecord) whose state they have not
+// said. lastWorked is the owner's month, else today for such a current project, else the project's end, else the month
+// of the owner's last commit in a repository tied to it (lib/repoactivity.ts). months counts a current project's own
+// dates up to today; a project with no start of its own has no size (0), even when its role's start made it current.
+// commits sums the owner's commits in the repositories tied to the project, or to the `roles` row a carried project
+// points at.
 export function rankItems(today: string): RankItem[] {
   const roles = allRoles(), projects = allProjects();
   const standing = new Map((db.query('SELECT * FROM project_standing').all() as StandingRow[]).map((r) => [r.project_id, toStanding(r)]));
   const repos = reposTable() ? db.query('SELECT role_id, project_id, last_commit, commits FROM repo_activity').all() as { role_id: number | null; project_id: number | null; last_commit: string; commits: number }[] : [];
   return projects.map((p) => {
-    const s = standing.get(p.id), d = projectDates(p, roles), state = s?.state ?? 'unknown';
+    const s = standing.get(p.id), d = projectDates(p, roles), said = s?.state ?? 'unknown';
+    const current = said === 'unknown' && currentByRecord(p, roles), state: WorkState = current ? 'running' : said;
     const mine = repos.filter((x) => x.project_id === p.id || (p.via_role !== null && x.role_id === p.via_role));
     const lastCommit = mine.map((x) => x.last_commit.slice(0, 7)).filter(isMonth).sort().at(-1) ?? '';
-    const lastWorked = s?.lastWorked || (isMonth(ym(d.end)) ? ym(d.end) : '') || lastCommit;
+    const lastWorked = s?.lastWorked || (current ? today : '') || (isMonth(ym(d.end)) ? ym(d.end) : '') || lastCommit;
     return { id: p.id, state, lastWorked, months: monthsWorked(d.start, d.end, state, today), commits: mine.reduce((n, x) => n + x.commits, 0), ownerPlace: s?.place ?? null };
   });
 }

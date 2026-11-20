@@ -102,6 +102,10 @@ const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === '
 // An exact time in words, '' for none.
 const when = (ms: number) => (ms > 0 ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(ms) : '');
 // One note per line: a line that matches several checks lists them together ("money; a link or an address").
+function count(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new Error('The server returned an invalid count.');
+  return value;
+}
 const notesOf = (v: unknown) => (Array.isArray(v) ? v : []).map((n) => obj(n) ?? {}).map((n) => ({ line: num(n.line), kind: text(n.kind), text: text(n.text) }))
   .reduce<{ line: number; kind: string; text: string }[]>((all, n) => {
     const last = all[all.length - 1];
@@ -122,7 +126,7 @@ const id = (v: string) => encodeURIComponent(v);
 // The profile's Markdown as parts the screen sets in its two sizes: each heading with the paragraphs and list items
 // under it, the inline marks (bold, italic, code, a link's address) taken out. The words are kept as written.
 const plain = (t: string) => t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/(\*\*|__)(.+?)\1/g, '$2').replace(/\*(\S(?:.*?\S)?)\*/g, '$1').replace(/(^|\s)_(\S(?:.*?\S)?)_(?=\s|[.,;:!?]|$)/g, '$1$2').replace(/`([^`]+)`/g, '$1').trim();
-function partsOf(body: string): { head: string; lines: { kind: string; text: string }[] }[] {
+function partsOf(body: string): Result<'loadProfile'>['parts'] {
   const parts: { head: string; lines: { kind: string; text: string }[] }[] = [{ head: '', lines: [] }];
   let para: string[] = [];
   const last = () => parts[parts.length - 1];
@@ -135,7 +139,14 @@ function partsOf(body: string): { head: string; lines: { kind: string; text: str
     else para.push(line.trim());
   }
   end();
-  return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') })).filter((p) => p.head !== '' || p.lines.length > 0);
+  const headings = new Map<string, number>();
+  return parts.map((p) => ({ head: p.head, lines: p.lines.filter((l) => l.text !== '') }))
+    .filter((p) => p.head !== '' || p.lines.length > 0)
+    .map((p) => {
+      const occurrence = (headings.get(p.head) ?? 0) + 1;
+      headings.set(p.head, occurrence);
+      return { id: JSON.stringify([p.head, occurrence]), ...p };
+    });
 }
 // A write to a sitting as its reply: the refusal in words, the sitting it was about, and whether it has ended.
 // stale: the question answered no longer waited; the screen reads the sitting again and keeps the draft.
@@ -261,14 +272,14 @@ const sources: Sources = {
   removeAsked: ([question]) => write('DELETE', `/interview-questions/${id(question)}`),
   // One fact whole, while it is open.
   loadFact: async ([fact]): Promise<Result<'loadFact'>> => {
-    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', skills: '', evidence: '', said: [] };
+    const none = { loaded: false, id: '', kind: '', text: '', detail: '', metric: '', baseline: '', ownPart: '', skills: '', evidence: '', said: [] };
     if (fact === '') return none;
     // A fact deleted while it was open is gone, not a failed read.
     const res = await fetch(`${API}/facts/${id(fact)}`, { exactTimeout: 10000, headers });
     if (res.status === 404) return none;
     if (!res.ok) throw new Error(`The server answered ${res.status}.`);
     const f = (await res.json()) as Record<string, unknown>;
-    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), skills: text(f.skills), evidence: text(f.evidence),
+    return { loaded: true, id: text(f.id), kind: text(f.kind), text: text(f.text), detail: text(f.detail), metric: text(f.metric), baseline: text(f.baseline), ownPart: text(f.ownPart), skills: text(f.skills), evidence: text(f.evidence),
       said: rows(f.said ?? []).map((q) => text(q)) };
   },
   // The role as one line ("title at employer"), or, once a line was refused as unclear, its title and employer apart.
@@ -284,7 +295,8 @@ const sources: Sources = {
   // place: role:<id> or side for a project that is placed here; '' leaves it where it is.
   saveProject: ([project, changed, title, when, lives, result, context, action, learning, place]) =>
     made('PATCH', `/projects/${id(project)}`, { ...only(changed, { title, when, lives, result, context, action, learning }), ...(!changed.includes('place') ? {} : place === 'side' ? { side: true } : place.startsWith('role:') ? { roleId: place.slice(5) } : {}) }),
-  saveFact: ([fact, changed, body, detail, metric, kind]) => made('PATCH', `/facts/${id(fact)}`, only(changed, { text: body, detail, metric, kind })),
+  saveFact: ([fact, changed, body, detail, metric, kind, baseline, ownPart]) =>
+    made('PATCH', `/facts/${id(fact)}`, only(changed, { text: body, detail, metric, kind, baseline, ownPart })),
   moveFact: ([fact, home]) => made('PATCH', `/facts/${id(fact)}`, where(home, '')),
   // A project's facts stay when it is deleted.
   removeItem: ([kind, item]) => made('DELETE', `/${kind === 'role' ? 'roles' : kind === 'project' ? 'projects' : 'facts'}/${id(item)}${kind === 'project' ? '?facts=keep' : ''}`),
@@ -435,6 +447,42 @@ const sources: Sources = {
   loadDirection: async (): Promise<Result<'loadDirection'>> => ({ loaded: true, body: text(((await get('/direction')) as { body?: unknown }).body) }),
   saveDirection: ([body]) => write('POST', '/direction', { body }),
   askProfile: () => write('POST', '/profile/write'),
+  // The profile's side of the record (GET /you, lib/you.ts, lib/nextquestion.ts): what stands out, the projects left
+  // out of it, the one question to answer next (none: `asking` false) and how many are open, and the counts of
+  // everything told. A question's key goes back to the server untouched.
+  loadYou: async (): Promise<Result<'loadYou'>> => {
+    const y = (await get('/you')) as Record<string, unknown>;
+    const n = obj(y.next), t = obj(y.told) ?? {};
+    return { loaded: true,
+      standsOut: rows(y.standsOut ?? []).map((l) => ({ place: count(l.place), factId: text(l.factId), projectId: text(l.projectId), projectTitle: text(l.projectTitle), text: text(l.text), metric: text(l.metric), edited: l.edited === true, hasRecordLine: l.hasRecordLine === true })),
+      leftOut: rows(y.leftOut ?? []).map((l) => ({ projectId: text(l.projectId), projectTitle: text(l.projectTitle), hasOwnLine: l.hasOwnLine === true })),
+      asking: n !== null,
+      next: { key: text(n?.key), text: text(n?.text), from: text(n?.from), kind: text(n?.kind), input: text(n?.input),
+        choices: rows(n?.choices ?? []).map((c) => text(c)), inputs: rows(n?.inputs ?? []).map((c) => text(c)), route: text(n?.route) },
+      open: count(y.open), waiting: count(y.waiting), told: { roles: count(t.roles), projects: count(t.projects), facts: count(t.facts), withWords: count(t.withWords) } };
+  },
+  // A reply includes any refusal in words, so the draft can stay in the field.
+  answerYou: ([key, words]) => write('POST', '/you/answer', { key, words }),
+  skipYou: ([key]) => write('POST', '/you/skip', { key }),
+  // A line of what stands out in the owner's own words; a project left out; and the step back (a left-out project
+  // returns, or the owner's line gives way to the record's).
+  saveStandOut: ([projectId, line]) => write('POST', '/you/stands-out', { projectId, text: line }),
+  leaveOutStandOut: ([projectId]) => write('POST', '/you/stands-out/leave-out', { projectId }),
+  bringBackStandOut: ([projectId]) => write('POST', '/you/stands-out/bring-back', { projectId }),
+  restoreStandOut: ([projectId]) => write('POST', '/you/stands-out/restore', { projectId }),
+  // Everything told, as one document (GET /told): an origin's day comes as `when`, kept as `said`.
+  loadTold: async (): Promise<Result<'loadTold'>> => {
+    const t = (await get('/told')) as Record<string, unknown>, c = obj(t.counts) ?? {};
+    const fact = (f: Record<string, unknown>) => ({ id: text(f.id), ref: text(f.ref), text: text(f.text), metric: text(f.metric),
+      origins: rows(f.origins ?? []).map((o) => ({ id: text(o.id), kind: text(o.kind), said: text(o.when), quote: text(o.quote) })) });
+    const project = (p: Record<string, unknown>) => ({ id: text(p.id), ref: text(p.ref), title: text(p.title), start: text(p.start), end: text(p.end),
+      parts: rows(p.parts ?? []).map((x) => ({ name: text(x.name), text: text(x.text) })), facts: rows(p.facts ?? []).map(fact) });
+    return { loaded: true,
+      roles: rows(t.roles ?? []).map((r) => ({ id: text(r.id), ref: text(r.ref), title: text(r.title), company: text(r.company), start: text(r.start), end: text(r.end),
+        projects: rows(r.projects ?? []).map(project), facts: rows(r.facts ?? []).map(fact) })),
+      sides: rows(t.sides ?? []).map(project), unplaced: rows(t.unplaced ?? []).map(project), general: rows(t.general ?? []).map(fact),
+      counts: { roles: count(c.roles), projects: count(c.projects), facts: count(c.facts), withWords: count(c.withWords) } };
+  },
   // The public collection. A draft and notes save nothing; only Save does.
   loadPublic: async (): Promise<Result<'loadPublic'>> => {
     const p = (await get('/public')) as Record<string, unknown>;

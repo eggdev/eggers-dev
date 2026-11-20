@@ -6,6 +6,7 @@
 import { answeredQuestions, db, KINDS, nextId, type RoleRow } from './db.ts';
 import { direction } from './direction.ts';
 import { ask } from './llm.ts';
+import { addTalkOrigin, unansweredBefore } from './origins.ts';
 import { SIGNAL, WRITING } from './writing.ts';
 
 // who: you | claude. status: done | queued | running | failed (a reply being written). added is a
@@ -15,7 +16,11 @@ db.run(`CREATE TABLE IF NOT EXISTS talk (
   status TEXT NOT NULL DEFAULT 'done', note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`);
 
 export type TalkRow = { id: number; who: string; body: string; added: string; status: string; note: string; created_at: number };
-export type Question = { text: string; from: string };
+// source says, for code, which part of the tool wrote the question: resume (what a resume's writer could not get from
+// the bank), review (the council's review of a resume), skim (a six-second skim of a resume), profile (the profile's
+// gaps) or job (what a posting's reading found missing). from says the same for the person, in words.
+export type QuestionSource = 'resume' | 'review' | 'skim' | 'profile' | 'job';
+export type Question = { text: string; from: string; source: QuestionSource };
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -27,15 +32,15 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 export function openQuestions(limit = 30): Question[] {
   const done = new Set((db.query('SELECT question FROM answered').all() as { question: string }[]).map((r) => norm(r.question)));
   const out: Question[] = [], seen = new Set<string>();
-  const add = (text: string, from: string) => { const k = norm(text); if (k === '' || done.has(k) || seen.has(k)) return; seen.add(k); out.push({ text: text.trim(), from }); };
+  const add = (text: string, from: string, source: QuestionSource) => { const k = norm(text); if (k === '' || done.has(k) || seen.has(k)) return; seen.add(k); out.push({ text: text.trim(), from, source }); };
   const jobs = db.query("SELECT company, title, analysis FROM jobs WHERE analysis != '' AND outcome = '' ORDER BY fit DESC").all() as { company: string; title: string; analysis: string }[];
   type Read = { gaps?: string[]; questions?: string[]; review?: { questions?: string[] }; skim?: { questions?: string[] } };
   const parsed = jobs.map((j) => { try { return { j, a: JSON.parse(j.analysis) as Read }; } catch { return { j, a: {} as Read }; } });
-  for (const { j, a } of parsed) for (const q of a.questions ?? []) add(q, `From writing your ${j.company} resume`);
-  for (const { j, a } of parsed) for (const q of a.review?.questions ?? []) add(q, `From the review of your ${j.company} resume`);
-  for (const { j, a } of parsed) for (const q of a.skim?.questions ?? []) add(q, `From a six-second skim of your ${j.company} resume`);
-  for (const g of ((db.query('SELECT gaps FROM profile WHERE id = 1').get() as { gaps: string } | null)?.gaps ?? '').split('\n')) add(g, 'From your profile');
-  for (const { j, a } of parsed) for (const q of (a.gaps ?? []).slice(0, 3)) add(q, `For ${j.title} at ${j.company}`);
+  for (const { j, a } of parsed) for (const q of a.questions ?? []) add(q, `From writing your ${j.company} resume`, 'resume');
+  for (const { j, a } of parsed) for (const q of a.review?.questions ?? []) add(q, `From the review of your ${j.company} resume`, 'review');
+  for (const { j, a } of parsed) for (const q of a.skim?.questions ?? []) add(q, `From a six-second skim of your ${j.company} resume`, 'skim');
+  for (const g of ((db.query('SELECT gaps FROM profile WHERE id = 1').get() as { gaps: string } | null)?.gaps ?? '').split('\n')) add(g, 'From your profile', 'profile');
+  for (const { j, a } of parsed) for (const q of (a.gaps ?? []).slice(0, 3)) add(q, `For ${j.title} at ${j.company}`, 'job');
   return out.slice(0, limit);
 }
 
@@ -43,26 +48,31 @@ export const messages = () => db.query('SELECT * FROM talk ORDER BY id').all() a
 
 // What the person said, and a reply for the worker to write. Refused while a reply is still being written.
 export function say(body: string, now: number): string {
-  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'A reply is still being written. Wait for it, then send.';
-  db.transaction(() => {
+  return db.transaction(() => {
+    if (hasReplyInHand()) return 'A reply is still being written. Wait for it, then send.';
     db.query("INSERT INTO talk (who, body, created_at) VALUES ('you', ?, ?)").run(body.trim(), now);
     db.query("INSERT INTO talk (who, status, created_at) VALUES ('claude', 'queued', ?)").run(now + 1);
-  })();
-  return '';
+    return '';
+  }).immediate();
 }
 // An open question, put to the person as Claude's turn: no model is needed to ask what is already written.
 export function put(question: string, now: number): string {
-  if ((db.query("SELECT count(*) AS n FROM talk WHERE status IN ('queued', 'running')").get() as { n: number }).n > 0) return 'A reply is still being written. Wait for it, then pick a question.';
-  db.query("INSERT INTO talk (who, body, created_at) VALUES ('claude', ?, ?)").run(question.trim(), now);
-  return '';
+  return db.transaction(() => {
+    if (hasReplyInHand()) return 'A reply is still being written. Wait for it, then pick a question.';
+    db.query("INSERT INTO talk (who, body, created_at) VALUES ('claude', ?, ?)").run(question.trim(), now);
+    return '';
+  }).immediate();
 }
+export const hasReplyInHand = () => db.query("SELECT 1 FROM talk WHERE status IN ('queued', 'running') LIMIT 1").get() !== null;
 export const forget = () => db.run('DELETE FROM talk');
 
-type Fact = { roleKey: string; kind: string; text: string; detail: string; metric: string; skills: string[]; replaces: string };
+// said: the owner's own words the fact was taken from, copied from their last message. Optional, and nullable under
+// codex's strict schema (strictSchema in lib/llm.ts): anything but a string counts as not given.
+type Fact = { roleKey: string; kind: string; text: string; detail: string; metric: string; skills: string[]; replaces: string; said?: unknown };
 const SCHEMA = { type: 'object', additionalProperties: false, required: ['reply', 'facts', 'answered'], properties: {
   reply: { type: 'string' }, answered: { type: 'array', items: { type: 'string' } },
   facts: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['roleKey', 'kind', 'text', 'detail', 'metric', 'skills', 'replaces'],
-    properties: { roleKey: { type: 'string' }, kind: { type: 'string', enum: [...KINDS] }, text: { type: 'string' }, detail: { type: 'string' }, metric: { type: 'string' }, skills: { type: 'array', items: { type: 'string' } }, replaces: { type: 'string' } } } } } };
+    properties: { roleKey: { type: 'string' }, kind: { type: 'string', enum: [...KINDS] }, text: { type: 'string' }, detail: { type: 'string' }, metric: { type: 'string' }, skills: { type: 'array', items: { type: 'string' } }, replaces: { type: 'string' }, said: { type: 'string' } } } } } };
 
 // Writes the reply to the person's last message and puts what they said about their work in the bank.
 export async function reply(row: TalkRow, cwd: string): Promise<void> {
@@ -80,6 +90,7 @@ export async function reply(row: TalkRow, cwd: string): Promise<void> {
    - "facts" holds what this last message added about their work, each as one fact for the bank. Record only what they said. Never invent, round up or infer a number, a title, a date or an outcome. If they are unsure of a number, record their words ("about 40 people") and no more.
    - "text" is one plain sentence in the past tense with no leading pronoun. "detail" is the story as they told it, in two to five plain sentences. "metric" is the measured result exactly as they gave it, or "". "skills" lists technologies and methods the fact shows.
    - "roleKey" is the key of the role or project it belongs to from the list below ("role:3"), or "" if it belongs to none.
+   - "said" is the passage of their last message the fact comes from, copied exactly, character for character: one passage, not pieces joined.
    - When their message fills in or corrects a fact the bank already has, set "replaces" to that fact's key ("fact:120") and write the whole fact as it should now stand: every field you give takes the old one's place, so an empty "metric" means the fact now has no measured result, and "roleKey" is where it now belongs. Otherwise "replaces" is "".
    - A message that adds nothing about their work (a question to you, a thought about their direction, small talk) gives "facts": [].
 2. When they want to think about their career, roles to aim for, or how to tell their story, talk it through as an honest, experienced peer. Use what the bank and their notes show. Say what you actually think, including when it is not what they hope to hear. Do not flatter. Do not make decisions for them.
@@ -111,6 +122,9 @@ ${thread.map((m) => `${m.who === 'you' ? 'Person' : 'You'}: ${m.body}`).join('\n
 
 Reply to the person's last message.` });
   const now = Date.now(), added: string[] = [];
+  // The owner's messages this reply answers (every one since the last reply written): the words behind each fact it
+  // writes are found among them (talkOriginOf in lib/origins.ts). None when the reply is to the tool's own turn alone.
+  const said = unansweredBefore(row.id);
   db.transaction(() => {
     for (const f of r.facts ?? []) {
       const text = (f.text ?? '').trim();
@@ -128,9 +142,14 @@ Reply to the person's last message.` });
         db.query("UPDATE facts SET text = ?, detail = CASE WHEN ? != '' THEN ? ELSE detail END, metric = ?, role_id = coalesce(?, role_id), project_id = CASE WHEN coalesce(?, role_id) IS NOT role_id THEN NULL ELSE project_id END, kind = ?, skills = ?, evidence = evidence || ' ' || ?, status = 'confirmed' WHERE id = ?")
           .run(text, f.detail.trim(), f.detail.trim(), f.metric.trim(), roleId, roleId, kind, skills, evidence, old.id);
         // Reworded, a told fact no longer says what its quoted passages showed (lib/derive.ts): they go with the old words.
-        if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fact_origins'").get()) db.query("DELETE FROM fact_origins WHERE fact_id = ? AND kind = 'told'").run(old.id);
-      } else db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?)`)
-        .run(roleId, kind, text, f.detail.trim(), f.metric.trim(), skills, evidence, now);
+        // Its other origins stay: the earlier words in Talk or a source are still behind it, and this message is added below.
+        db.query("DELETE FROM fact_origins WHERE fact_id = ? AND kind = 'told'").run(old.id);
+      }
+      const id = old ? old.id : (db.query(`INSERT INTO facts (id, role_id, kind, text, detail, metric, skills, evidence, source_id, status, created_at) VALUES (${nextId('facts')}, ?, ?, ?, ?, ?, ?, ?, NULL, 'confirmed', ?) RETURNING id`)
+        .get(roleId, kind, text, f.detail.trim(), f.metric.trim(), skills, evidence, now) as { id: number }).id;
+      // The words behind it: the passage the model copied, in the one message that holds it; else the whole message when
+      // only one is unanswered; else none. Only words that are in a message are ever stored.
+      addTalkOrigin(id, said, f.said, now);
       // The person is shown which facts are new and which were rewritten.
       added.push(old ? `Updated: ${text}` : text);
     }

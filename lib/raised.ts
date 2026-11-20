@@ -4,8 +4,10 @@
 // - `key` is stable for a finding, so the same finding is never asked twice, however often it is found.
 // - `live` is 1 while the finding still holds. One that the data no longer shows is not asked.
 // - An answered question stays answered: finding it again changes nothing.
-// - A question is closed only by `answer` (POST /questions), which also does what the answer asks. Talk does
-//   not list these questions and cannot close one: closing one without applying its answer would be a guess.
+// - A question is closed only by `answer` (POST /questions), which also does what the answer asks, or by `settle`,
+//   which the owner asks for in so many words on the You screen (lib/nextquestion.ts): told in their own words (a kind
+//   that asks for a story, such as `agenda`), or skipped. Talk's model does not list these questions and cannot close
+//   one: closing one without applying its answer would be a guess.
 // A kind may register what an answer does (set a role's label, mark a skill): see `onAnswer`.
 import { db } from './db.ts';
 
@@ -105,5 +107,16 @@ export function answer(key: string, choice: number, value: string, now: number, 
   const refused = appliers.get(q.kind)?.(q, choice, value, now) ?? '';
   if (refused) return refused;
   db.query('UPDATE raised_questions SET answered_at = ?, answer = ? WHERE key = ?').run(now, [q.choices[choice] ?? '', value].filter(Boolean).join(': '), key);
+  return '';
+}
+
+// Closes an open question with no action: the owner told it in their own words (which go to Talk, lib/nextquestion.ts)
+// or skipped it. `said` is kept as the answer. Nothing the question's kind would do on an answer is done: a skip asks
+// for nothing, and words go through Talk, where the bank learns from them. Returns '' when done, else why not.
+export function settle(key: string, said: string, now: number): string {
+  const q = raisedByKey(key);
+  if (!q || !q.live) return 'That question is no longer open.';
+  if (q.answeredAt > 0) return 'That question is already answered.';
+  db.query('UPDATE raised_questions SET answered_at = ?, answer = ? WHERE key = ? AND answered_at = 0').run(now, said, key);
   return '';
 }

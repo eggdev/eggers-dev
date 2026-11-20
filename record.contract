@@ -4,7 +4,7 @@
 // and Sources.
 // Each screen is drawn only with the shared pieces of look.contract. The data and the actions are the root's
 // (app.contract); a form keeps its drafts itself.
-use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, experienceLook from "./look.contract"
+use Page, Section, Title, SectionHead, Line, StrongLine, QuietLine, FailLine, Numbered, Bulleted, Action, MainAction, DangerAction, GoTo, QuietAction, ValueField, Prose, RailPage, Columns, MainColumn, Rail, Card, CardHead, Display, Small, MediumLine, Tag, NextAction, Words, FoldedBlock, CheckLine, Record, RecordHead, Labelled, FieldLabel, SearchField, SubLine, SubLink, WorkLine, Actions, Choices, ChoiceWord, InlineField, Ref, TreeRow, TreeSub, TreeLine, TreeList, Beside, BesideList, BesidePane, UnderRow, Crumbs, Crumb, FieldRow, FieldPair, PairField, InPlaceForm, ItemTitle, PaneSection, statusWord, look, lookTight, RoleHead, experienceLook from "./look.contract"
 use WorkItem, usualWords, inHand, workStatus, workPlace, workUsual from "./activity.contract"
 use Telling, TellLine, StoryStart, StoryLine from "./telling.contract"
 
@@ -113,6 +113,8 @@ shape FactFull
   text: string
   detail: string
   metric: string
+  baseline: string
+  ownPart: string
   skills: string
   evidence: string
   // For a fact written from a told story: the passages of the owner's own answers it quotes.
@@ -146,6 +148,7 @@ shape ProfileLine
 
 // One part of the profile under its heading ("" before the first heading).
 shape ProfilePart
+  id: string
   head: string
   lines: ProfileLine[]
 
@@ -161,6 +164,106 @@ shape Profile
   stale: bool
   written: string
   facts: number
+
+// What stands out in the record (GET /you): one line for each of the leading projects, the owner's own lines first.
+// place: its number in the list, 1 first. factId: the fact the line comes from ("" for none). metric: the fact's
+// measured result ("" for none, and for the owner's own line). edited: the owner wrote the line.
+shape StandOut
+  place: number
+  factId: string
+  projectId: string
+  projectTitle: string
+  text: string
+  metric: string
+  edited: bool
+  hasRecordLine: bool
+
+// A project the owner left out of what stands out; hasOwnLine: a line they wrote for it comes back with it.
+shape LeftOut
+  projectId: string
+  projectTitle: string
+  hasOwnLine: bool
+
+// The one question to answer next. input: text (answered in words here) or route (answered
+// where `route` leads).
+shape NextQuestion
+  key: string
+  text: string
+  from: string
+  kind: string
+  input: string
+  choices: string[]
+  inputs: string[]
+  route: string
+
+// How much the owner has told, as the server counts it.
+shape ToldCounts
+  roles: number
+  projects: number
+  facts: number
+  withWords: number
+
+// The profile's side of the record (GET /you). asking: a question is open (`next` holds it); open: how many are.
+shape You
+  loaded: bool
+  standsOut: StandOut[]
+  leftOut: LeftOut[]
+  asking: bool
+  next: NextQuestion
+  open: number
+  waiting: number
+  told: ToldCounts
+
+// Everything told, as one document (GET /told). An origin is the owner's own words behind a fact: its kind (talk,
+// source, told, typed), the day they were written ("Mar 3, 2026", "" when not known) and the words.
+shape ToldOrigin
+  id: string
+  kind: string
+  said: string
+  quote: string
+
+shape ToldFact
+  id: string
+  ref: string
+  text: string
+  metric: string
+  origins: ToldOrigin[]
+
+shape ToldPart
+  name: string
+  text: string
+
+shape ToldProject
+  id: string
+  ref: string
+  title: string
+  start: string
+  end: string
+  parts: ToldPart[]
+  facts: ToldFact[]
+
+shape ToldRole
+  id: string
+  ref: string
+  title: string
+  company: string
+  start: string
+  end: string
+  projects: ToldProject[]
+  facts: ToldFact[]
+
+shape Told
+  loaded: bool
+  roles: ToldRole[]
+  sides: ToldProject[]
+  unplaced: ToldProject[]
+  general: ToldFact[]
+  counts: ToldCounts
+
+// A count and its noun: "1 role", "3 roles".
+fn countOf(n: number, one: string, many: string): string = `${n} ${n == 1 ? one : many}`
+// The profile's opening: its first part that holds words, its lines one under another.
+fn openingOf(parts: ProfilePart[]): string = match first(parts.filter(p => p.lines.length > 0)) { case some(p) => p.lines.map(l => l.text).join("\n"), case none => "" }
 
 // The person's direction notes, as Markdown.
 shape Direction
@@ -196,9 +299,11 @@ fn monthName(m: string): string = m == "01" ? "Jan" : m == "02" ? "Feb" : m == "
 // "2023-03" as "Mar 2023"; a year alone as itself.
 fn ymText(s: string): string = s.length == 7 ? `${monthName(s.slice(5, 7))} ${s.slice(0, 4)}` : s
 // A role's dates: "Mar 2023–Present"; "" with no start.
-fn roleWhen(r: TreeRole): string = r.start == "" ? "" : `${ymText(r.start)}–${r.end == "" ? "Present" : ymText(r.end)}`
+fn roleWhen(r: TreeRole): string = roleSpan(r.start, r.end)
+fn roleSpan(start: string, end: string): string = start == "" ? "" : `${ymText(start)}–${end == "" ? "Present" : ymText(end)}`
 // A project's years: "2023–2024", "2024", "2023–Present"; "" with no start.
-fn projectWhen(p: TreeProject): string = p.start == "" ? "" : p.end == "" ? `${p.start.slice(0, 4)}–Present` : p.start.slice(0, 4) == p.end.slice(0, 4) ? p.start.slice(0, 4) : `${p.start.slice(0, 4)}–${p.end.slice(0, 4)}`
+fn projectWhen(p: TreeProject): string = projectSpan(p.start, p.end)
+fn projectSpan(start: string, end: string): string = start == "" ? "" : end == "" ? `${start.slice(0, 4)}–Present` : start.slice(0, 4) == end.slice(0, 4) ? start.slice(0, 4) : `${start.slice(0, 4)}–${end.slice(0, 4)}`
 // What the owner types for a project's dates, from what is stored: "2023–2024", "2024".
 fn projectWhenTyped(p: TreeProject): string = p.start == "" ? "" : p.end == "" ? `${ymText(p.start)} – now` : p.start == p.end ? ymText(p.start) : `${ymText(p.start)} – ${ymText(p.end)}`
 fn joinParts(parts: string[]): string = parts.filter(p => p != "").join(" · ")
@@ -870,7 +975,7 @@ component ItemPane
           ItemHead(code=f.ref, name=f.text, strong=false, sub=joinParts([f.metric, kindLabel(f.kind)]), mark=justMark(s.open, s), full=s.beside, close=close)
           if fact.loaded and fact.id == f.id
             if s.editing == s.open
-              EditFactForm(fact=f, detail=fact.detail, error=changeHere, busy=s.busy, save=saveFact, cancel=stopEdit)
+              EditFactForm(fact=fact, error=changeHere, busy=s.busy, save=saveFact, cancel=stopEdit)
             else
               if fact.detail != ""
                 Labelled(label="Story", value=fact.detail, testId="fact-detail-text")
@@ -882,6 +987,10 @@ component ItemPane
                 Labelled(label="Skills", value=fact.skills, testId="fact-skills")
               if fact.evidence != ""
                 Labelled(label="Evidence", value=fact.evidence, testId="fact-evidence")
+              if fact.baseline != ""
+                Labelled(label="Number before", value=fact.baseline, testId="fact-baseline")
+              if fact.ownPart != ""
+                Labelled(label="Your own part", value=fact.ownPart, testId="fact-own-part")
               MoveFact(fact=f, homes=factHomes(tree), error=(s.deleting == "" ? changeHere : ""), busy=s.busy, move=moveFact)
               if s.deleting == s.open
                 DeleteAsk(question=`Delete ${f.ref}? It is removed from your record and stays out when its source is read again. This cannot be undone.`, label=`Delete ${f.ref}`, error=changeHere, busy=s.busy, yes=remove(s.open), no=keepIt)
@@ -1241,18 +1350,19 @@ component EditProjectForm
 // A fact edited: its words, its story, its number and its category. Cancel with a change asks first, in the page.
 component EditFactForm
   props
-    fact: TreeFact
-    detail: string
+    fact: FactFull
     error: string
     busy: bool
     save: action
     cancel: action
   state body = fact.text
-  state story = detail
+  state story = fact.detail
   state metric = fact.metric
   state kind = fact.kind
+  state baseline = fact.baseline
+  state ownPart = fact.ownPart
   state asking = false
-  derive dirty = body != fact.text or story != detail or metric != fact.metric or kind != fact.kind
+  derive changes = [body != fact.text ? "text" : "", story != fact.detail ? "detail" : "", metric != fact.metric ? "metric" : "", kind != fact.kind ? "kind" : "", baseline != fact.baseline ? "baseline" : "", ownPart != fact.ownPart ? "ownPart" : ""].filter(k => k != "")
   action editBody(v: string)
     body = v
   action editStory(v: string)
@@ -1261,15 +1371,19 @@ component EditFactForm
     metric = v
   action pickKind(v: string)
     kind = v
+  action editBaseline(v: string)
+    baseline = v
+  action editOwnPart(v: string)
+    ownPart = v
   action leave
-    if dirty
+    if changes.length > 0
       asking = true
     else
       cancel()
   action keepEditing
     asking = false
   action submit
-    save(fact.id, [body != fact.text ? "text" : "", story != detail ? "detail" : "", metric != fact.metric ? "metric" : "", kind != fact.kind ? "kind" : ""].filter(k => k != ""), body, story, metric, kind)
+    save(fact.id, changes, body, story, metric, kind, baseline, ownPart)
   view
     InPlaceForm(label="Edit the fact", testId="edit-fact-form")
       FieldLabel(label="Fact")
@@ -1278,6 +1392,10 @@ component EditFactForm
         textarea value=story input=editStory placeholder="The situation, what you did and decided, what was hard, what came of it" aria-label="Story (optional)" rows=5 testId="edit-story"
       FieldLabel(label="Number (optional)")
         input value=metric input=editMetric submit=submit placeholder="47 to 9 minutes" aria-label="Number (optional)" autocomplete="off" testId="edit-metric"
+      FieldLabel(label="Number before (optional)")
+        input value=baseline input=editBaseline submit=submit aria-label="Number before (optional)" autocomplete="off" testId="edit-baseline"
+      FieldLabel(label="Your own part (optional)")
+        textarea value=ownPart input=editOwnPart aria-label="Your own part (optional)" rows=2 testId="edit-own-part"
       FieldLabel(label="Category")
         select value=kind change=pickKind aria-label="Category" align-self="flex-start" max-width="100%" testId="edit-kind"
           option "Accomplishment" value="accomplishment"
@@ -1337,8 +1455,10 @@ component DeleteAsk
         DangerAction(label=label, press=yes, disabled=busy, testId="delete-yes")
         Action(label="Keep it", press=no, disabled=false, keys="", testId="delete-no")
 
-// The profile: one document written from the whole record, set in the two sizes, and the questions whose
-// answers would strengthen it. Writing it is slow work, said in one line.
+// The profile (DESIGN.md section 4: Card, Rail, Folded text, One question, Your words, Next action): who the owner is, the document readers meet them by, what stands out in the record and what they are
+// looking for, in the main column; the one question to answer and everything told, in the rail. From 1040px wide the
+// rail stands beside the main column. The question follows the identity on narrower screens. Writing the document is slow work, said
+// in one line. The page's one filled button is Save answer.
 component ProfileScreen
   props
     profile: Profile
@@ -1347,7 +1467,6 @@ component ProfileScreen
     askError: string
     asking: bool
     write: action
-    ask: action
     retry: action
     // How much slow work is ahead of the profile while it waits ("2 ahead"), and how long writing it usually takes,
     // from the activity list (-1 when not known).
@@ -1355,66 +1474,350 @@ component ProfileScreen
     usual: number
     // The writing's state: the activity list's (waiting | running) while it has the writing open, else the profile's own.
     state: string
+    // Who the owner is (Details) and their direction notes; each loaded with the page.
+    me: Person
+    meFailed: bool
+    meError: string
+    retryMe: action
+    notes: Direction
+    // What stands out, the question and the counts (GET /you), and why it could not be loaded.
+    you: You
+    youFailed: bool
+    youError: string
+    retryYou: action
+    wide: bool
+    // The answer being written, why the last answer or skip was refused, and whether one is on its way.
+    draft: string
+    draftChanged: bool
+    answerError: string
+    answering: bool
+    editDraft: action
+    answer: action
+    skip: action
+    useDraft: action
+    clearDraft: action
+    // The line being edited (its project, "" for none), its words, why its save was refused; why a Leave out or a
+    // restore was refused; whether one of them is on its way.
+    editing: string
+    lineDraft: string
+    originalLine: string
+    editingTitle: string
+    lineError: string
+    standError: string
+    standBusy: bool
+    startLine: action
+    editLine: action
+    saveLine: action
+    cancelLine: action
+    leaveOut: action
+    restore: action
+    bringBack: action
   derive writing = inHand(state)
   derive place = (state == "queued" or state == "waiting") and ahead >= 0 ? (ahead == 0 ? "next" : `${ahead} ahead`) : ""
   derive usually = `Usually ${usualWords(usual)}.`
   derive work = statusWord("work", state)
+  derive opening = openingOf(profile.parts)
   view
-    Page(testId="profile")
+    RailPage(wide=wide, testId="profile")
       Section(testId="profile-top")
         Title(text="Profile", testId="profile-title")
-      if not profile.loaded
-        Section(testId="profile-wait")
-          if failed
-            FailLine(text=error, testId="profile-error")
-            Action(label="Try again", press=retry, disabled=false, keys="", testId="profile-retry")
+      if not you.loaded or youFailed
+        Section(testId="profile-you-state")
+          if you.loaded
+            Small(text="This could not be refreshed.", testId="you-stale")
+            Action(label="Try again", press=retryYou, disabled=false, keys="", testId="you-retry")
           else
-            QuietLine(text="Loading your profile…", testId="profile-loading")
-      else if profile.body == "" and writing
-        Section(testId="profile-wait")
-          WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. ${usually}`, testId="profile-writing")
-      else if profile.body == "" and profile.facts == 0
-        Section(testId="profile-empty")
-          Line(text="Your profile is written from the facts in your record. Tell a story from one of your jobs to start.", testId="profile-empty-text")
-          GoTo(label="Go to Experience", href=path("bank"), testId="profile-add")
-      else if profile.body == ""
-        Section(testId="profile-empty")
-          if profile.status == "failed"
-            FailLine(text=`Writing failed. ${profile.note}`, testId="profile-failed")
-          else if askError != ""
-            FailLine(text=askError, testId="profile-failed")
-          else
-            Line(text=`It can be written from the ${factCount(profile.facts)} in your record: who you are, how you work, what you delivered and why to hire you.`, testId="profile-empty-text")
-          MainAction(label="Write profile", press=write, disabled=asking, keys="", testId="profile-write")
-      else
-        Section(testId="profile-about")
-          if writing
-            WorkLine(word=work, place=place, text=`Rewriting this from your record. ${usually} The text below is the last version.`, testId="profile-state")
-          else if profile.status == "failed"
-            FailLine(text=`Rewriting failed. ${profile.note}`, testId="profile-state")
-          else if askError != ""
-            FailLine(text=askError, testId="profile-state")
-          else
-            QuietLine(text=(profile.stale ? `Written on ${profile.written}. Your record has changed since. Rewrite it to include the changes.` : `Written on ${profile.written}, from your record.`), testId="profile-state")
-          Action(label="Rewrite", press=write, disabled=(writing or asking), keys="", testId="profile-rewrite")
-        column gap=look().sectionGap testId="profile-body"
-          for p, i in profile.parts key=`${i}`
-            Section(testId=`profile-part-${i}`)
-              if p.head != ""
-                SectionHead(text=p.head, testId=`profile-head-${i}`)
-              for l, n in p.lines key=`${n}`
-                if l.kind == "item"
-                  Bulleted(testId=`profile-item-${i}-${n}`)
-                    Line(text=l.text, testId=`profile-line-${i}-${n}`)
+            YouWait(failed=youFailed, error=youError, retry=retryYou, testId="you")
+      Columns(wide=wide, testId="profile-columns")
+        MainColumn(testId="profile-main")
+          // Who the owner is: the name, the one thing the page is about, from Details.
+          Card(testId="profile-identity")
+            row align-items="flex-start" flex-wrap="wrap" gap=lookTight() min-width=0
+              column flex="1 1 12rem" min-width=0 gap=lookTight()
+                if not me.loaded
+                  YouWait(failed=meFailed, error=meError, retry=retryMe, testId="profile-name")
+                else if me.name.trim() == ""
+                  Line(text="Add your name in Details.", testId="profile-name-none")
                 else
-                  Line(text=l.text, testId=`profile-line-${i}-${n}`)
-        if profile.gaps.length > 0
-          Section(testId="profile-gaps")
-            SectionHead(text="Worth adding", testId="profile-gaps-head")
-            QuietLine(text="Answers to these would strengthen it. Pick one to answer it in Talk.", testId="profile-gaps-hint")
-            for g, i in profile.gaps key=g
-              Numbered(n=i + 1)
-                Action(label=g, press=ask(g), disabled=false, keys="", testId=`gap-${i}`)
+                  Display(text=me.name, level=0, testId="profile-name")
+                  if me.location.trim() != ""
+                    Small(text=me.location, testId="profile-location")
+              GoTo(label="Details", href=path("details"), testId="profile-details")
+          if not wide and you.loaded
+            ProfileQuestion(you=you, draft=draft, draftChanged=draftChanged, error=answerError, busy=answering, edit=editDraft, save=answer, skip=skip, useDraft=useDraft, clear=clearDraft)
+          // The document readers meet the owner by, folded behind its opening, and the action that writes it again.
+          Card(testId="profile-document")
+            CardHead(title="How readers meet you", note="Resumes, messages and the public page start from this.", testId="profile-document-head")
+              if profile.loaded and profile.body != ""
+                Action(label="Rewrite", press=write, disabled=(writing or asking), keys="", testId="profile-rewrite")
+              else if profile.loaded and not writing and profile.facts > 0
+                Action(label="Write profile", press=write, disabled=asking, keys="", testId="profile-write")
+            if not profile.loaded
+              if failed
+                FailLine(text=error, testId="profile-error")
+                Action(label="Try again", press=retry, disabled=false, keys="", testId="profile-retry")
+              else
+                QuietLine(text="Loading your profile…", testId="profile-loading")
+            else if profile.body == "" and writing
+              WorkLine(word=work, place=place, text=`Writing your profile from ${factCount(profile.facts)}. ${usually}`, testId="profile-writing")
+            else if profile.body == "" and profile.facts == 0
+              Line(text="Your profile is written from the facts in your record. Tell a story from one of your jobs to start.", testId="profile-empty-text")
+              GoTo(label="Go to Experience", href=path("bank"), testId="profile-add")
+            else if profile.body == ""
+              if profile.status == "failed"
+                FailLine(text=`Writing failed. ${profile.note}`, testId="profile-failed")
+              else if askError != ""
+                FailLine(text=askError, testId="profile-failed")
+              else
+                Line(text=`It can be written from the ${factCount(profile.facts)} in your record: who you are, how you work, what you delivered and why to hire you.`, testId="profile-empty-text")
+            else
+              if writing
+                WorkLine(word=work, place=place, text=`Rewriting this from your record. ${usually} The text below is the last version.`, testId="profile-state")
+              else if profile.status == "failed"
+                FailLine(text=`Rewriting failed. ${profile.note}`, testId="profile-state")
+              else if askError != ""
+                FailLine(text=askError, testId="profile-state")
+              else
+                Small(text=(profile.stale ? `Written on ${profile.written}. Your record has changed since. Rewrite it to include the changes.` : `Written on ${profile.written}, from your record.`), testId="profile-state")
+              FoldedBlock(preview=opening, lines=4, more="Read the whole profile", less="Show the opening only", folds=(profile.parts.length > 1 or opening.length > 320), testId="profile-body")
+                for p, i in profile.parts key=p.id
+                  column gap=lookTight() testId=`profile-part-${i}`
+                    if p.head != ""
+                      RoleHead(text=p.head, testId=`profile-head-${i}`)
+                    for l, n in p.lines key=`${n}`
+                      if l.kind == "item"
+                        Bulleted(testId=`profile-item-${i}-${n}`)
+                          Line(text=l.text, testId=`profile-line-${i}-${n}`)
+                      else
+                        Line(text=l.text, testId=`profile-line-${i}-${n}`)
+          // What stands out: highlights from the record, each theirs to edit or leave out.
+          if you.loaded
+            Card(testId="stands")
+              CardHead(title="What stands out", note="Highlights from your record. Edit any line to use your own words.", testId="stands-head")
+              if you.standsOut.length == 0
+                Line(text="Nothing to show yet. Tell a story in Experience and its strongest line appears here.", testId="stands-none")
+                GoTo(label="Go to Experience", href=path("bank"), testId="stands-go")
+              for l in you.standsOut key=l.projectId
+                Numbered(n=l.place)
+                  if editing == l.projectId
+                    StandOutEditor(title=l.projectTitle, draft=lineDraft, original=l.text, error=lineError, busy=standBusy, edit=editLine, save=saveLine, cancel=cancelLine)
+                  else
+                    row align-items="baseline" flex-wrap="wrap" column-gap=look().rowGap row-gap=lookTight() min-width=0
+                      Line(text=l.text, testId=`stands-${l.place}-text`)
+                      if l.metric != ""
+                        Small(text=l.metric, testId=`stands-${l.place}-metric`)
+                    Small(text=l.projectTitle, testId=`stands-${l.place}-project`)
+                    if editing == ""
+                      Actions(testId=`stands-${l.place}-actions`)
+                        QuietAction(label="Edit", press=startLine(l.projectId, l.projectTitle, l.text), disabled=standBusy, testId=`stands-${l.place}-edit`)
+                        QuietAction(label="Leave out", press=leaveOut(l.projectId), disabled=standBusy, testId=`stands-${l.place}-leave`)
+                        if l.edited and l.hasRecordLine
+                          QuietAction(label="Use the record's line", press=restore(l.projectId), disabled=standBusy, testId=`stands-${l.place}-restore`)
+              if editing != "" and not you.standsOut.map(l => l.projectId).includes(editing)
+                StandOutEditor(title=editingTitle, draft=lineDraft, original=originalLine, error=lineError, busy=standBusy, edit=editLine, save=saveLine, cancel=cancelLine)
+              if you.leftOut.length > 0
+                column gap=lookTight() testId="stands-left"
+                  Small(text="Left out", testId="stands-left-head")
+                  for o, i in you.leftOut key=o.projectId
+                    row align-items="baseline" flex-wrap="wrap" column-gap=look().rowGap min-width=0
+                      Line(text=o.projectTitle, testId=`stands-left-${i}`)
+                      if o.hasOwnLine
+                        Small(text="with your line", testId=`stands-left-${i}-own`)
+                      if editing == ""
+                        QuietAction(label="Bring back", press=bringBack(o.projectId), disabled=standBusy, testId=`stands-left-${i}-back`)
+              if standError != ""
+                FailLine(text=standError, testId="stands-error")
+          // What the owner is looking for: whether their direction notes are written, and the way to them.
+          Card(testId="looking")
+            CardHead(title="What you are looking for", note="Search and fit are judged against this.", testId="looking-head")
+            if notes.loaded
+              Line(text=(notes.body.trim() != "" ? "You have written your direction notes." : "You have not written your direction notes yet."), testId="looking-line")
+            GoTo(label="Direction", href=path("direction"), testId="looking-go")
+        if you.loaded
+          Rail(wide=wide, label="To answer and to read", testId="profile-rail")
+            if wide
+              ProfileQuestion(you=you, draft=draft, draftChanged=draftChanged, error=answerError, busy=answering, edit=editDraft, save=answer, skip=skip, useDraft=useDraft, clear=clearDraft)
+            Card(testId="told-card")
+              CardHead(title="Everything you have told", note="The whole record as one document, with your own words behind each line.", testId="told-card-head")
+              row flex-wrap="wrap" column-gap=look().rowGap row-gap=lookTight() min-width=0
+                Line(text=countOf(you.told.roles, "role", "roles"), testId="told-roles")
+                Line(text=countOf(you.told.projects, "project", "projects"), testId="told-projects")
+                Line(text=countOf(you.told.facts, "fact", "facts"), testId="told-facts")
+                Line(text=`${you.told.withWords} with your words`, testId="told-words")
+              GoTo(label="Read it", href=path("told"), testId="told-read")
+
+component ProfileQuestion
+  props
+    you: You
+    draft: string
+    draftChanged: bool
+    error: string
+    busy: bool
+    edit: action
+    save: action
+    skip: action
+    useDraft: action
+    clear: action
+  derive textQuestion = you.asking and you.next.input == "text"
+  view
+    Card(testId="ask")
+      CardHead(title="A question for you", note="", testId="ask-head")
+        if you.asking
+          Tag(text=`${you.open} open`, tone="grey", testId="ask-count")
+      if you.asking
+        Small(text=you.next.from, testId="ask-from")
+        Line(text=you.next.text, testId="ask-text")
+        if you.next.input == "route"
+          GoTo(label="Answer in Experience", href=you.next.route, testId="ask-go")
+      else
+        Line(text="Nothing to ask right now.", testId="ask-none")
+      if textQuestion or draft != ""
+        FieldLabel(label="Your answer")
+          textarea value=draft input=edit(you.next.key) aria-label="Your answer" rows=4 disabled=busy aria-invalid=(error != "") testId="ask-answer"
+      if error != ""
+        FailLine(text=error, testId="ask-error")
+      if draftChanged
+        Small(text="The question changed while you were writing. Read it again.", testId="ask-changed")
+      Actions(testId="ask-actions")
+        if textQuestion
+          NextAction(label="Save answer", count="", press=save, disabled=(draft.trim() == "" or busy or draftChanged), testId="ask-save")
+        if draft != ""
+          if textQuestion and draftChanged
+            QuietAction(label="Use my words for this question", press=useDraft(you.next.key), disabled=busy, testId="ask-use")
+          QuietAction(label="Clear my words", press=clear, disabled=busy, testId="ask-clear")
+        else if you.asking
+          Action(label="Skip", press=skip(you.next.key), disabled=busy, keys="", testId="ask-skip")
+      if you.waiting > 0
+        Small(text=(you.waiting == 1 ? "1 answer is waiting to be read." : `${you.waiting} answers are waiting to be read.`), testId="ask-hint")
+      else if textQuestion
+        Small(text="Your answer goes into Talk, and the record learns from it.", testId="ask-hint")
+
+// A loading line or a single retry for the request that failed.
+component YouWait
+  props
+    failed: bool
+    error: string
+    retry: action
+    testId: string
+  view
+    if failed
+      FailLine(text=error, testId=`${testId}-error`)
+      Action(label="Try again", press=retry, disabled=false, keys="", testId=`${testId}-retry`)
+    else
+      QuietLine(text="Loading…", testId=`${testId}-loading`)
+
+// One line of what stands out, being written by the owner: a one-line field, Save and Cancel, and under the field why
+// a save was refused, in the server's words.
+component StandOutEditor
+  props
+    title: string
+    original: string
+    draft: string
+    error: string
+    busy: bool
+    edit: action
+    save: action
+    cancel: action
+  view
+    column gap=lookTight() min-width=0
+      FieldLabel(label=`Your line for ${title}`)
+        input value=draft input=edit submit=save aria-label=`Your line for ${title}` disabled=busy autocomplete="off" testId="stands-field"
+      if error != ""
+        FailLine(text=error, testId="stands-field-error")
+      Actions(testId="stands-field-actions")
+        Action(label="Save", press=save, disabled=(busy or draft.trim() == original.trim()), keys="", testId="stands-save")
+        Action(label="Cancel", press=cancel, disabled=busy, keys="", testId="stands-cancel")
+
+// Everything the owner has told, as one document (GET /told): each job, newest first, with its projects (their four
+// parts and their facts) and the facts in no project; then side projects, projects not placed yet and other facts.
+// Each fact shows its reference and, for each passage the owner said or wrote it in, a control that opens their words.
+component ToldScreen
+  props
+    told: Told
+    failed: bool
+    error: string
+    back: action
+    retry: action
+  view
+    Page(testId="told")
+      Section(testId="told-top")
+        Action(label="Back to Profile", press=back, disabled=false, keys="", testId="told-back")
+        Title(text="Everything you have told", testId="told-title")
+      if not told.loaded
+        Section(testId="told-wait")
+          YouWait(failed=failed, error=error, retry=retry, testId="told")
+      else if told.roles.length == 0 and told.sides.length == 0 and told.unplaced.length == 0 and told.general.length == 0
+        Section(testId="told-empty")
+          Line(text="You have not told anything yet.", testId="told-empty-text")
+          GoTo(label="Go to Experience", href=path("bank"), testId="told-go")
+      else
+        for r in told.roles key=r.id
+          Section(testId=`told-role-${r.id}`)
+            row align-items="baseline" flex-wrap="wrap" column-gap=look().rowGap row-gap=lookTight() min-width=0
+              SectionHead(text=[r.title, r.company].filter(x => x != "").join(", "), testId=`told-role-${r.id}-name`)
+              if roleSpan(r.start, r.end) != ""
+                Small(text=roleSpan(r.start, r.end), testId=`told-role-${r.id}-when`)
+            for p, i in r.projects key=p.id
+              ToldProjectBlock(project=p, testId=`told-role-${r.id}-p${i}`)
+            if r.facts.length > 0
+              column gap=lookTight()
+                Small(text="Not in a project", testId=`told-role-${r.id}-loose`)
+                for f, k in r.facts key=f.id
+                  ToldFactLine(fact=f, testId=`told-role-${r.id}-f${k}`)
+        if told.sides.length > 0
+          Section(testId="told-sides")
+            SectionHead(text="Side projects", testId="told-sides-head")
+            for p, i in told.sides key=p.id
+              ToldProjectBlock(project=p, testId=`told-side-${i}`)
+        if told.unplaced.length > 0
+          Section(testId="told-unplaced")
+            SectionHead(text="Not placed yet", testId="told-unplaced-head")
+            for p, i in told.unplaced key=p.id
+              ToldProjectBlock(project=p, testId=`told-unplaced-${i}`)
+        if told.general.length > 0
+          Section(testId="told-general")
+            SectionHead(text="Other facts", testId="told-general-head")
+            for f, k in told.general key=f.id
+              ToldFactLine(fact=f, testId=`told-general-f${k}`)
+
+// One project of the told document: its title and years, each part's name over its words, then its facts. testIds
+// follow its place in the document (`testId`): the title `testId-title`, a part `testId-part-0`, a fact `testId-f0`.
+component ToldProjectBlock
+  props
+    project: ToldProject
+    testId: string
+  view
+    column gap=lookTight() padding-top=look().rowGap min-width=0 testId=testId
+      row align-items="baseline" flex-wrap="wrap" column-gap=look().rowGap row-gap=lookTight() min-width=0
+        MediumLine(text=project.title, testId=`${testId}-title`)
+        if projectSpan(project.start, project.end) != ""
+          Small(text=projectSpan(project.start, project.end), testId=`${testId}-when`)
+      for t, i in project.parts key=t.name
+        column min-width=0 testId=`${testId}-part-${i}`
+          Small(text=t.name, testId=`${testId}-part-${i}-name`)
+          Prose(text=t.text, strong=false, testId=`${testId}-part-${i}-text`)
+      if project.facts.length > 0
+        column gap=lookTight() padding-top=lookTight()
+          Small(text="Lines", testId=`${testId}-lines`)
+          for f, k in project.facts key=f.id
+            ToldFactLine(fact=f, testId=`${testId}-f${k}`)
+
+// One fact of the told document: its words, its number, its reference, and the owner's own words behind it, each
+// behind a "Your words" control. A fact with no words behind it shows nothing more. testIds: the words `testId-text`,
+// the number `testId-metric`, the reference `testId-ref`, each control `testId-words-0`.
+component ToldFactLine
+  props
+    fact: ToldFact
+    testId: string
+  view
+    column gap=lookTight() min-width=0 testId=testId
+      row align-items="baseline" flex-wrap="wrap" column-gap=look().rowGap row-gap=lookTight() min-width=0
+        Line(text=fact.text, testId=`${testId}-text`)
+        if fact.metric != ""
+          Small(text=fact.metric, testId=`${testId}-metric`)
+        Ref(code=fact.ref, testId=`${testId}-ref`)
+      for o, n in fact.origins key=o.id
+        Words(label="Your words", quote=o.quote, said=o.said, testId=`${testId}-words-${n}`)
 
 // The direction notes, edited as Markdown. They steer what the profile argues for, how jobs are judged and how
 // resumes are shaped. Save returns to the profile; leaving with a change asks first.
@@ -1580,7 +1983,7 @@ component HowYouWork
             QuietLine(text=l.basis, testId=`derived-${i}-basis`)
             Actions(testId=`derived-${i}-actions`)
               if filter == l.key
-                MainAction(label="Show everything", press=clear, disabled=false, keys="", testId=`derived-${i}-clear`)
+                Action(label="Show everything", press=clear, disabled=false, keys="", testId=`derived-${i}-clear`)
               else
                 Action(label=`Show ${itemsWord(l.items)}`, press=show(l.key), disabled=false, keys="", testId=`derived-${i}-show`)
               if l.verdict == "kept"
@@ -1644,7 +2047,7 @@ component Suggestions
                 FailLine(text=s.proposalError, testId=`proposal-${p.id}-error`)
               Actions(testId=`proposal-${p.id}-actions`)
                 if p.status != "stale"
-                  MainAction(label="Keep", press=keep(p.id), disabled=s.busy, keys="", testId=`proposal-${p.id}-keep`)
+                  Action(label="Keep", press=keep(p.id), disabled=s.busy, keys="", testId=`proposal-${p.id}-keep`)
                 Action(label="Edit", press=edit(p.id), disabled=false, keys="", testId=`proposal-${p.id}-edit`)
                 Action(label="Not a project", press=reject(p.id), disabled=s.busy, keys="", testId=`proposal-${p.id}-reject`)
 

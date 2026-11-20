@@ -202,7 +202,7 @@ test "facts are in the record with no review step; a role shows its reference an
   expect state tree.facts.length == 2
   expect tree missing "fact-3"
 
-test "the profile is asked for, shows as being written, then shows the document with what is worth adding, and says when the bank has moved on"
+test "the profile is asked for, shows as being written, then shows the document, and says when the bank has moved on"
   clock data
   tap "nav-record"
   tap "sub-profile"
@@ -217,7 +217,12 @@ test "the profile is asked for, shows as being written, then shows the document 
   clock +10000
   clock data
   expect tree has "profile-body"
-  expect text "gap-0" == "What did the billing export replace, and who used it?"
+  // A document no longer than its summary is shown whole, with nothing to fold. Its questions (what is worth adding)
+  // are asked one at a time in the page's question card, not listed under it.
+  expect text "profile-head-0" == "Summary"
+  expect text "profile-line-0-0" == "I build billing systems."
+  expect tree missing "profile-body-toggle"
+  expect tree missing "gap-0"
   expect state profile.stale == false
   expect enabled "profile-rewrite"
   request POST "/facts" {"roleId": 1, "kind": "responsibility", "text": "Ran the on-call rotation."}
@@ -458,7 +463,7 @@ test "your details are refused without a name, saved with one, and shown again w
   tap "details-save"
   clock data
   expect text "details-error" == "Enter your name."
-  type "details-name" "Ada Lovelace"
+  type "details-name" "Avery Quillford"
   type "details-email" "ada at example"
   tap "details-save"
   clock data
@@ -467,7 +472,7 @@ test "your details are refused without a name, saved with one, and shown again w
   tap "details-save"
   clock data
   clock settle
-  expect state me.name == "Ada Lovelace"
+  expect state me.name == "Avery Quillford"
   expect state me.location == "Brooklyn, NY"
   expect tree missing "details-save"
   expect text "sub-current" == "Profile"
@@ -2189,6 +2194,121 @@ test "a new record is started only once the phrase is typed; Experience is then 
   clock settle
   expect text "bank-empty-text" == "Your record starts with a job."
 
+// The profile on the emptied record: every card says there is nothing yet. Then the profile's own questions are asked
+// one at a time: an answer is refused while a reply in Talk is being written and keeps what was typed, is taken once
+// the answer is queued while Talk is busy, then the last question is skipped. The record stays empty
+// for the next test.
+test "on the emptied record the profile says there is nothing yet; its answer waits while Talk writes, and the next question can be skipped"
+  size 1280x800
+  at "/profile"
+  request POST "/test/idle" {}
+  reload
+  clock data
+  clock settle
+  clock data
+  expect text "profile-title" == "Profile"
+  expect text "sub-current" == "Profile"
+  expect text "profile-name" == "Avery Quillford"
+  expect text "profile-empty-text" == "Your profile is written from the facts in your record. Tell a story from one of your jobs to start."
+  expect tree missing "profile-write"
+  expect text "stands-none" == "Nothing to show yet. Tell a story in Experience and its strongest line appears here."
+  expect tree missing "stands-left"
+  expect text "looking-head" == "What you are looking for"
+  expect text "ask-none" == "Nothing to ask right now."
+  expect tree missing "ask-count"
+  expect tree missing "ask-save"
+  expect text "told-roles" == "0 roles"
+  expect text "told-projects" == "0 projects"
+  expect text "told-facts" == "0 facts"
+  expect text "told-words" == "0 with your words"
+  tap "told-read"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "told"
+  expect text "sub-current" == "Profile"
+  expect text "told-empty-text" == "You have not told anything yet."
+  tap "told-back"
+  clock data
+  clock settle
+  expect state topName == "profile"
+  // The profile's questions, as the writer of the profile leaves them.
+  request POST "/profile/save" {"body": "## Summary\n\nI ran an invented night market.\n\n## How I work\n\n- I start with the stall holders.", "gaps": ["What did the night market sell, and to whom?", "Who did you work with on the market?"]}
+  reload
+  clock data
+  clock settle
+  clock data
+  // A document longer than its summary is folded behind it, and opens whole in place.
+  expect text "profile-body-preview" == "I ran an invented night market."
+  expect tree missing "profile-head-1"
+  expect text "profile-body-toggle" == "Read the whole profile"
+  tap "profile-body-toggle"
+  expect text "profile-head-1" == "How I work"
+  expect text "profile-line-1-0" == "I start with the stall holders."
+  expect text "profile-body-toggle" == "Show the opening only"
+  expect text "ask-count" == "2 open"
+  expect text "ask-from" == "From your profile"
+  expect text "ask-text" == "What did the night market sell, and to whom?"
+  expect disabled "ask-save"
+  expect text "ask-hint" == "Your answer goes into Talk, and the record learns from it."
+  request POST "/talk" {"body": "I also ran the stalls' rota."}
+  type "ask-answer" "Lanterns and noodles, to the people of the harbour."
+  expect tree missing "ask-skip"
+  tap "ask-clear"
+  expect state youDraft == ""
+  expect tree has "ask-skip"
+  type "ask-answer" "Lanterns and noodles, to the people of the harbour."
+  tap "ask-save"
+  clock data
+  clock settle
+  clock data
+  expect state youDraft == ""
+  expect tree missing "ask-error"
+  expect text "ask-hint" == "1 answer is waiting to be read."
+  expect text "ask-count" == "1 open"
+  expect text "ask-text" == "Who did you work with on the market?"
+  tap "ask-skip"
+  clock data
+  clock settle
+  clock data
+  expect text "ask-none" == "Nothing to ask right now."
+  expect tree missing "ask-count"
+  request POST "/test/idle" {}
+
+test "Profile keeps a draft across reload and asks before applying it to a different question"
+  at "/profile"
+  size 1280x800
+  request POST "/test/idle" {}
+  request POST "/profile/save" {"body": "## Summary\n\nI ran an invented night market.", "gaps": ["What held up the depot opening?", "What did you automate at the depot?"]}
+  reload
+  clock data
+  clock settle
+  expect text "ask-text" == "What held up the depot opening?"
+  type "ask-answer" "I automated the nightly inventory."
+  expect tree missing "ask-skip"
+  request POST "/profile/save" {"body": "## Summary\n\nI ran an invented night market.", "gaps": ["What did you automate at the depot?"]}
+  tap "ask-save"
+  clock data
+  clock settle
+  clock data
+  expect text "ask-error" == "That question is no longer open."
+  reload
+  clock data
+  clock settle
+  expect state youDraft == "I automated the nightly inventory."
+  expect text "ask-changed" == "The question changed while you were writing. Read it again."
+  expect disabled "ask-save"
+  tap "ask-use"
+  expect tree missing "ask-changed"
+  expect enabled "ask-save"
+  tap "ask-save"
+  clock data
+  clock settle
+  clock data
+  expect state youDraft == ""
+  expect text "ask-none" == "Nothing to ask right now."
+  request POST "/test/idle" {}
+
 // After the new record: the first run. Home and Experience say how to start, and a job asks for its first story.
 test "on the emptied record a job is added from the first-run state, and Home then asks for its first story"
   size 1280x800
@@ -2233,3 +2353,171 @@ test "on the emptied record a job is added from the first-run state, and Home th
   clock data
   expect state nav.tab == "bank"
   expect text "pane-title" == "Analyst"
+
+// What stands out and everything told, on the record of the test before: a story is told under its job and written by
+// the stand-in model with the owner's words behind its fact. Its line leads the profile, is edited (an empty line is
+// refused in words), given back to the record, left out and brought back; the told page shows the job, the project's
+// part, the fact and the owner's words behind it. At a narrow width the rail's cards follow the main ones.
+test "what stands out is edited, refused when empty, given back, left out and brought back; the told page shows a job, a part, a fact and the owner's words"
+  size 1280x800
+  at "/record/role/10"
+  clock data
+  clock settle
+  clock data
+  tap "story-start"
+  clock settle
+  type "story-title" "The night market rota"
+  tap "story-add"
+  clock data
+  clock settle
+  clock data
+  expect state topName == "tell"
+  type "tell-answer" "I set up the stall rota for the night market and ran it every Friday."
+  tap "tell-send"
+  clock data
+  expect state sitting.id == "5"
+  expect state sitting.turns.2 .id == "55"
+  tap "tell-stop"
+  clock data
+  clock settle
+  request POST "/test/derive" {"sitting": 5, "result": {"context": "", "action": "I set up the stall rota for the night market.", "result": "", "learning": "", "facts": [{"text": "Set up the stall rota for the night market.", "detail": "", "metric": "", "baseline": "", "team": "", "own_part": "", "skills": [], "kind": "accomplishment", "quotes": [{"turn": 55, "quote": "I set up the stall rota for the night market"}]}]}}
+  tap "sub-profile"
+  clock data
+  clock settle
+  clock data
+  expect text "stands-1-text" == "Set up the stall rota for the night market."
+  expect text "stands-1-project" == "The night market rota"
+  expect tree missing "stands-1-metric"
+  expect tree missing "stands-1-restore"
+  expect text "told-roles" == "1 role"
+  expect text "told-projects" == "1 project"
+  expect text "told-facts" == "1 fact"
+  expect text "told-words" == "1 with your words"
+  // An empty line is refused in the server's words, and the editor stays open.
+  tap "stands-1-edit"
+  clock settle
+  expect disabled "stands-save"
+  expect tree missing "stands-1-leave"
+  type "stands-field" ""
+  tap "stands-save"
+  clock data
+  expect text "stands-field-error" == "Write the line, or leave the project out."
+  expect tree has "stands-field"
+  tap "stands-cancel"
+  tap "stands-1-edit"
+  expect tree missing "stands-field-error"
+  type "stands-field" "Ran the Friday stall rota for the whole market."
+  tap "profile-details"
+  clock settle
+  back
+  clock data
+  clock settle
+  expect text "stands-field" == "Ran the Friday stall rota for the whole market."
+  tap "stands-save"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "stands-field"
+  expect text "stands-1-text" == "Ran the Friday stall rota for the whole market."
+  expect text "stands-1-restore" == "Use the record's line"
+  tap "stands-1-restore"
+  clock data
+  clock settle
+  clock data
+  expect text "stands-1-text" == "Set up the stall rota for the night market."
+  expect tree missing "stands-1-restore"
+  tap "stands-1-leave"
+  clock data
+  clock settle
+  clock data
+  expect tree missing "stands-1-text"
+  expect text "stands-left-head" == "Left out"
+  expect text "stands-left-0" == "The night market rota"
+  tap "stands-left-0-back"
+  clock data
+  clock settle
+  clock data
+  expect text "stands-1-text" == "Set up the stall rota for the night market."
+  expect tree missing "stands-left"
+  tap "told-read"
+  clock data
+  clock settle
+  clock data
+  expect text "told-title" == "Everything you have told"
+  expect text "told-role-10-name" == "Analyst, Corbel Yard"
+  expect text "told-role-10-when" == "Mar 2023–Present"
+  expect text "told-role-10-p0-title" == "The night market rota"
+  expect text "told-role-10-p0-part-0-name" == "Action"
+  expect text "told-role-10-p0-part-0-text" == "I set up the stall rota for the night market."
+  expect text "told-role-10-p0-f0-text" == "Set up the stall rota for the night market."
+  expect text "told-role-10-p0-lines" == "Lines"
+  expect tree missing "told-role-10-p0-f0-words-0-quote"
+  tap "told-role-10-p0-f0-words-0"
+  expect text "told-role-10-p0-f0-words-0-quote" == "“I set up the stall rota for the night market”"
+  tap "told-back"
+  clock data
+  clock settle
+  expect state topName == "profile"
+
+// On a narrow window the question follows the identity and the document link follows the main column.
+test "on a narrow window the profile is one column"
+  size 420x900
+  at "/profile"
+  clock data
+  clock settle
+  clock data
+  expect tree has "stands"
+  expect tree has "profile-rail"
+  expect tree has "ask"
+  expect tree has "told-card"
+
+
+test "Everything you have told opens directly and separates side projects and facts outside a project"
+  at "/profile/told"
+  size 1280x800
+  request POST "/projects" {"title": "Moonbeam Map", "side": true, "context": "The trail maps were out of date.", "action": "I drew a new map.", "result": "The new map went up on the trail."}
+  request POST "/facts" {"roleId": 10, "kind": "accomplishment", "text": "Tracked late deliveries.", "metric": "8 depots"}
+  reload
+  clock data
+  clock settle
+  expect text "told-title" == "Everything you have told"
+  expect text "told-side-0-title" == "Moonbeam Map"
+  expect text "told-role-10-loose" == "Not in a project"
+  expect text "told-role-10-f0-metric" == "8 depots"
+  expect tree missing "told-role-10-f0-words-0"
+  tap "told-back"
+  clock data
+  clock settle
+  expect state topName == "profile"
+  expect text "ask-text" == "What came of “The night market rota”?"
+  expect text "ask-go" == "Answer in Experience"
+  expect tree missing "ask-save"
+  tap "ask-skip"
+  clock data
+  clock settle
+  clock data
+  expect text "ask-text" == "What was going on before you started “The night market rota”?"
+
+test "the fact editor saves the number before and the owner's own part"
+  at "/record/role/10/day"
+  size 1280x900
+  clock data
+  clock settle
+  tap "Tracked late deliveries."
+  clock data
+  clock settle
+  tap "pane-edit"
+  clock settle
+  type "edit-baseline" "12 depots"
+  type "edit-own-part" "I wrote the delivery tracker."
+  tap "edit-save"
+  clock data
+  clock settle
+  clock data
+  expect state factFull.baseline == "12 depots"
+  expect state factFull.ownPart == "I wrote the delivery tracker."
+  reload
+  clock data
+  clock settle
+  expect state factFull.baseline == "12 depots"
+  expect state factFull.ownPart == "I wrote the delivery tracker."
